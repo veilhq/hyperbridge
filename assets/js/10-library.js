@@ -24,10 +24,9 @@
   }
 
   // Placeholder for a capture in flight: a morphing gradient, a label and the source domain.
-  function buildPending(entry) {
+  function buildPending() {
     var panel = makeEl("span", "library-pending");
-    panel.appendChild(makeEl("span", "library-pending-label", "Capturing"));
-    if (entry.domain) panel.appendChild(makeEl("span", "library-pending-domain", entry.domain));
+    panel.appendChild(makeEl("span", "library-pending-label", "Capturing..."));
     return panel;
   }
 
@@ -47,7 +46,7 @@
       if (entry.width && entry.height) img.style.aspectRatio = entry.width + " / " + entry.height;
       card.appendChild(img);
     } else if (entry.state === "pending") {
-      card.appendChild(buildPending(entry));
+      card.appendChild(buildPending());
       card.setAttribute("data-pending", "true");
     } else {
       card.appendChild(makeEl("span", "library-thumb-empty"));

@@ -44,8 +44,7 @@
   50%  { background-position: 100% 30%, 20% 80%, 30% 100%, 70% 20%; }
   100% { background-position: 60% 100%, 80% 0%, 0% 60%, 100% 80%; }
 }
-.library-pending-label { font-size: var(--fs-mono); color: var(--live); letter-spacing: var(--track-label); text-transform: uppercase; }
-.library-pending-domain { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); color: var(--text-dim); }
+.library-pending-label { font-family: var(--font-body); font-size: var(--fs-prose-ui); font-weight: var(--fw-semibold); color: var(--text-bright); }
 .library-card[data-pending="true"] .library-card-details { display: none; }
 @media (prefers-reduced-motion: reduce) { .library-pending { animation: none; } }
 html.a11y-reduce-motion .library-pending { animation: none; }
