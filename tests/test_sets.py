@@ -18,6 +18,14 @@ class SetTests(LibraryOpsCase):
         self.assertFalse(sets.create_set("   ")["ok"])
         self.assertEqual(sets.create_set("posters")["error"], "That set exists.")
 
+    def test_description_is_stored_trimmed_and_editable(self):
+        made = sets.create_set("Posters", "  Gig   posters  ")["set"]
+        self.assertEqual(made["description"], "Gig posters")
+        self.assertEqual(sets.rename_set(made["id"], "Posters", "New")["set"]["description"], "New")
+        self.assertEqual(sets.rename_set(made["id"], "Prints")["set"]["description"], "New")
+        self.assertEqual(sets.list_sets()[0]["description"], "New")
+        self.assertEqual(len(sets.create_set("Long", "x" * 500)["set"]["description"]), sets.MAX_DESCRIPTION)
+
     def test_list_counts_entries_and_orders_by_name(self):
         a, b = self.add_entry("A"), self.add_entry("B")
         zed = sets.create_set("Zed")["set"]["id"]

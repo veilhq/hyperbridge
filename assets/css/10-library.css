@@ -19,6 +19,36 @@
 .library-card:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: var(--space-1); }
 .library-card-image { display: block; width: 100%; height: auto; }
 .library-thumb-empty { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--bg-surface); }
+/* Pending capture: slow-drifting accent, cool and warm washes over the surface placeholder. */
+.library-pending {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2);
+  width: 100%; aspect-ratio: 4 / 3; box-sizing: border-box; padding: var(--space-4);
+  --tone-live: var(--live);
+  --tone-cool: var(--cool);
+  --tone-warm: var(--warm);
+  --tone-comp: var(--comp);
+  background-color: var(--bg-surface);
+  background-image:
+    radial-gradient(circle at center, color-mix(in srgb, var(--tone-live) 45%, transparent), transparent 65%),
+    radial-gradient(circle at center, color-mix(in srgb, var(--tone-cool) 40%, transparent), transparent 65%),
+    radial-gradient(circle at center, color-mix(in srgb, var(--tone-warm) 35%, transparent), transparent 65%),
+    radial-gradient(circle at center, color-mix(in srgb, var(--tone-comp) 30%, transparent), transparent 65%);
+  background-size: 160% 160%, 140% 140%, 180% 180%, 150% 150%;
+  background-repeat: no-repeat;
+  background-position: 0% 0%, 100% 100%, 100% 0%, 0% 100%;
+  animation: libraryMorph calc(var(--period-ambient) * 1.5) ease-in-out infinite alternate;
+  text-align: center;
+}
+@keyframes libraryMorph {
+  0%   { background-position: 0% 0%, 100% 100%, 100% 0%, 0% 100%; }
+  50%  { background-position: 100% 30%, 20% 80%, 30% 100%, 70% 20%; }
+  100% { background-position: 60% 100%, 80% 0%, 0% 60%, 100% 80%; }
+}
+.library-pending-label { font-size: var(--fs-mono); color: var(--live); letter-spacing: var(--track-label); text-transform: uppercase; }
+.library-pending-domain { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); color: var(--text-dim); }
+.library-card[data-pending="true"] .library-card-details { display: none; }
+@media (prefers-reduced-motion: reduce) { .library-pending { animation: none; } }
+html.a11y-reduce-motion .library-pending { animation: none; }
 .library-card-details {
   position: absolute; left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3);
@@ -40,3 +70,15 @@
 html.a11y-reduce-motion .library-card,
 html.a11y-reduce-motion .library-card-details { transition: none; }
 .library-sentinel { height: var(--space-1); }
+
+/* Multi-select: selected cards take the selection color; the bar floats above the dock. */
+.library-card { user-select: none; }
+.library-card[data-selected="true"] { border-color: var(--selected); outline: var(--border-rail) solid var(--selected); outline-offset: calc(var(--border-rail) * -1); }
+.select-bar {
+  position: fixed; left: 50%; bottom: calc(var(--space-6) * 3); transform: translateX(-50%);
+  z-index: var(--z-dropdown); display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  background: var(--bg-card); border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius-dir-surface);
+}
+.select-bar[hidden], .select-bar [hidden] { display: none; }
+.select-count { margin-right: var(--space-2); font-size: var(--fs-mono); color: var(--selected); white-space: nowrap; }

@@ -1,5 +1,6 @@
 """Link capture: normalize and queue URLs, extract page metadata, store images and thumbnails."""
 
+import hashlib
 import io
 import json
 import re
@@ -16,6 +17,7 @@ THUMB_EDGE = 480
 MAX_PIXELS = 50_000_000
 MAX_HTML_BYTES = 2_000_000
 MAX_IMAGES = 20
+MAX_TITLE = 100
 _TRACKING_PARAMS = {"fbclid", "gclid", "ref"}
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 _FORMAT_SUFFIX = {"PNG": "png", "JPEG": "jpg", "GIF": "gif", "WEBP": "webp"}
@@ -257,6 +259,24 @@ def instagram_media(embed_bytes) -> list:
     return list(dict.fromkeys(url for url in urls if isinstance(url, str) and url.startswith("http")))
 
 
+def _image_key(url: str) -> str:
+    """Return a key that is the same for size variants of one image (Pinterest serves each at several widths)."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").endswith("pinimg.com"):
+        return "pinimg:" + parts.path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    return url
+
+
+def shorten_title(title: str) -> str:
+    """Cut a long page title to MAX_TITLE characters at a word boundary, ending in an ellipsis."""
+    if len(title) <= MAX_TITLE:
+        return title
+    cut = title[: MAX_TITLE - 3]
+    if " " in cut[MAX_TITLE // 2:]:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" -|,:;") + "..."
+
+
 def extract_metadata(html_bytes, base_url) -> dict:
     """Return title, description, creator, publisher, type, year and image_url from page HTML."""
     result = {key: "" for key in _FIELDS}
@@ -292,6 +312,7 @@ def extract_metadata(html_bytes, base_url) -> dict:
     result["title"] = first(
         meta.get("og:title"), meta.get("twitter:title"), ld["title"], parser.title
     )
+    result["title"] = shorten_title(result["title"])
     result["description"] = first(
         meta.get("og:description"), meta.get("twitter:description"), ld["description"],
         meta.get("description"),
@@ -319,9 +340,17 @@ def extract_metadata(html_bytes, base_url) -> dict:
         if not candidate:
             continue
         absolute = urljoin(base_url or "", candidate)
-        if urlsplit(absolute).scheme in ("http", "https") and absolute not in seen:
-            seen.add(absolute)
+        if urlsplit(absolute).scheme not in ("http", "https"):
+            continue
+        key = _image_key(absolute)
+        if key not in seen:
+            seen.add(key)
             result["image_urls"].append(absolute)
+        elif "/originals/" in absolute:
+            # A Pinterest size variant already listed is upgraded to its full-size original.
+            for index, listed in enumerate(result["image_urls"]):
+                if _image_key(listed) == key:
+                    result["image_urls"][index] = absolute
     result["image_urls"] = result["image_urls"][:MAX_IMAGES]
     result["image_url"] = result["image_urls"][0] if result["image_urls"] else ""
     return result
@@ -446,11 +475,16 @@ def _capture_entry(conn, entry, fetcher) -> None:
             values["image_url"] = posted[0]
     _apply_metadata(conn, entry, values, _timestamp())
     stored = 0
+    fetched = set()
     for image_url in values["image_urls"]:
         try:
             image = fetcher(image_url)
             if not _is_image(image):
                 raise CaptureError("Preview image URL did not return an image")
+            digest = hashlib.sha256(image.body).hexdigest()
+            if digest in fetched:
+                continue
+            fetched.add(digest)
             _store_image(conn, entry, image.body, stored)
             stored += 1
         except Exception:  # noqa: BLE001 - one bad image does not fail the entry

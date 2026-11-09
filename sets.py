@@ -6,6 +6,7 @@ from datetime import datetime
 import db
 
 MAX_NAME = 100
+MAX_DESCRIPTION = 200
 
 
 def _now() -> str:
@@ -16,9 +17,13 @@ def _clean(name) -> str:
     return " ".join(str(name or "").split())[:MAX_NAME]
 
 
+def _clean_description(text) -> str:
+    return " ".join(str(text or "").split())[:MAX_DESCRIPTION]
+
+
 def _row(conn, set_id: int) -> dict | None:
     row = conn.execute(
-        "SELECT s.id, s.name, (SELECT COUNT(*) FROM set_entries se WHERE se.set_id = s.id) AS count"
+        "SELECT s.id, s.name, s.description, (SELECT COUNT(*) FROM set_entries se WHERE se.set_id = s.id) AS count"
         " FROM sets s WHERE s.id = ?", (set_id,)
     ).fetchone()
     return dict(row) if row else None
@@ -29,7 +34,7 @@ def list_sets() -> list[dict]:
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT s.id, s.name, COUNT(se.entry_id) AS count FROM sets s"
+            "SELECT s.id, s.name, s.description, COUNT(se.entry_id) AS count FROM sets s"
             " LEFT JOIN set_entries se ON se.set_id = s.id GROUP BY s.id ORDER BY s.name COLLATE NOCASE"
         ).fetchall()
         return [dict(row) for row in rows]
@@ -37,7 +42,7 @@ def list_sets() -> list[dict]:
         conn.close()
 
 
-def create_set(name) -> dict:
+def create_set(name, description="") -> dict:
     """Create a set; returns {"ok": True, "set": {...}} or {"ok": False, "error": "..."}."""
     name = _clean(name)
     if not name:
@@ -45,7 +50,10 @@ def create_set(name) -> dict:
     conn = db.connect()
     try:
         try:
-            cursor = conn.execute("INSERT INTO sets (name, created_at) VALUES (?, ?)", (name, _now()))
+            cursor = conn.execute(
+                "INSERT INTO sets (name, description, created_at) VALUES (?, ?, ?)",
+                (name, _clean_description(description), _now()),
+            )
         except sqlite3.IntegrityError:
             return {"ok": False, "error": "That set exists."}
         return {"ok": True, "set": _row(conn, cursor.lastrowid)}
@@ -53,8 +61,8 @@ def create_set(name) -> dict:
         conn.close()
 
 
-def rename_set(set_id: int, name) -> dict:
-    """Rename a set; same result shape as create_set."""
+def rename_set(set_id: int, name, description=None) -> dict:
+    """Rename a set and, when given, replace its description; same result shape as create_set."""
     name = _clean(name)
     if not name:
         return {"ok": False, "error": "Name the set."}
@@ -63,7 +71,13 @@ def rename_set(set_id: int, name) -> dict:
         if _row(conn, set_id) is None:
             return {"ok": False, "error": "Set not found."}
         try:
-            conn.execute("UPDATE sets SET name = ? WHERE id = ?", (name, set_id))
+            if description is None:
+                conn.execute("UPDATE sets SET name = ? WHERE id = ?", (name, set_id))
+            else:
+                conn.execute(
+                    "UPDATE sets SET name = ?, description = ? WHERE id = ?",
+                    (name, _clean_description(description), set_id),
+                )
         except sqlite3.IntegrityError:
             return {"ok": False, "error": "That set exists."}
         return {"ok": True, "set": _row(conn, set_id)}

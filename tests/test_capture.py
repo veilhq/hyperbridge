@@ -118,6 +118,17 @@ class ExtractMetadataTests(unittest.TestCase):
         self.assertEqual(meta["year"], "2021")
         self.assertEqual(meta["image_url"], "https://example.com/cover.png")
 
+    def test_long_title_is_cut_at_a_word_boundary(self):
+        long_title = "Spring catalogue " * 20
+        html = ('<html><head><meta property="og:title" content="%s"></head></html>' % long_title).encode()
+        title = capture.extract_metadata(html, PAGE_URL)["title"]
+        self.assertLessEqual(len(title), capture.MAX_TITLE)
+        self.assertTrue(title.endswith("..."))
+        self.assertIn(title[:-3].split()[-1], ("Spring", "catalogue"))
+
+    def test_short_title_is_untouched(self):
+        self.assertEqual(capture.shorten_title("Short"), "Short")
+
     def test_json_ld_fills_gaps(self):
         data = {
             "@context": "https://schema.org",
@@ -386,6 +397,19 @@ class MultiImageTests(unittest.TestCase):
             [f"https://x.example/{name}.jpg" for name in "abcd"],
         )
         self.assertEqual(result["image_url"], "https://x.example/a.jpg")
+
+    def test_size_variants_of_one_pinterest_image_collapse_to_one(self):
+        html = (
+            b'<meta property="og:image" content="https://i.pinimg.com/736x/ab/cd/abcd1234.jpg">'
+            b'<meta name="twitter:image" content="https://i.pinimg.com/564x/ab/cd/abcd1234.jpg">'
+            b'<script type="application/ld+json">{"image": ["https://i.pinimg.com/originals/ab/cd/abcd1234.jpg",'
+            b' "https://i.pinimg.com/736x/ef/01/ef012345.jpg"]}</script>'
+        )
+        result = capture.extract_metadata(html, "https://www.pinterest.com/pin/1/")
+        self.assertEqual(
+            result["image_urls"],
+            ["https://i.pinimg.com/originals/ab/cd/abcd1234.jpg", "https://i.pinimg.com/736x/ef/01/ef012345.jpg"],
+        )
 
     def test_post_page_collects_its_own_media_and_skips_other_posts(self):
         base = "https://pbs.twimg.com/media/"

@@ -9,6 +9,8 @@
   var state = { query: "", setId: null, entries: [], total: 0, loading: false, ticket: 0, signature: "" };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
+  var selected = new Set();
+  var anchorId = null;
   var searchTimer = null;
   var pollTimer = null;
 
@@ -19,6 +21,14 @@
     if (className) el.className = className;
     if (text !== undefined) el.textContent = text;
     return el;
+  }
+
+  // Placeholder for a capture in flight: a morphing gradient, a label and the source domain.
+  function buildPending(entry) {
+    var panel = makeEl("span", "library-pending");
+    panel.appendChild(makeEl("span", "library-pending-label", "Capturing"));
+    if (entry.domain) panel.appendChild(makeEl("span", "library-pending-domain", entry.domain));
+    return panel;
   }
 
   // Builds one entry card as a focusable button that announces its id on click.
@@ -36,13 +46,14 @@
       img.loading = "lazy";
       if (entry.width && entry.height) img.style.aspectRatio = entry.width + " / " + entry.height;
       card.appendChild(img);
+    } else if (entry.state === "pending") {
+      card.appendChild(buildPending(entry));
+      card.setAttribute("data-pending", "true");
     } else {
       card.appendChild(makeEl("span", "library-thumb-empty"));
     }
 
-    if (entry.state === "pending") {
-      card.appendChild(makeEl("span", "library-card-flag status-chip status-chip-outlined-muted", "Pending"));
-    } else if (entry.state === "failed") {
+    if (entry.state === "failed") {
       card.appendChild(makeEl("span", "library-card-flag library-failed status-chip status-chip-outlined-accent", "Failed"));
     }
 
@@ -51,9 +62,8 @@
     if (entry.domain) body.appendChild(makeEl("span", "library-card-domain", entry.domain));
     card.appendChild(body);
 
-    card.addEventListener("click", function () {
-      document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: entry.id } }));
-    });
+    if (selected.has(entry.id)) card.setAttribute("data-selected", "true");
+    card.addEventListener("click", function (event) { onCardClick(event, entry.id); });
     return card;
   }
 
@@ -172,7 +182,7 @@
   function loadSets() {
     var bridge = api();
     if (!bridge || !bridge.list_sets) return;
-    Promise.resolve(bridge.list_sets()).then(function (list) { setsCache = list || []; }).catch(function () {});
+    Promise.resolve(bridge.list_sets()).then(function (list) { setsCache = list || []; paintSelection(); }).catch(function () {});
   }
 
   function openSource(id) {
@@ -214,6 +224,142 @@
     }).catch(function () { toast("error", "Could not discard."); });
   }
 
+  // Selection: Ctrl/Cmd-click toggles, Shift-click selects a range, and any click toggles while a selection exists.
+  function paintSelection() {
+    grid.querySelectorAll(".library-card").forEach(function (card) {
+      if (selected.has(Number(card.getAttribute("data-id")))) card.setAttribute("data-selected", "true");
+      else card.removeAttribute("data-selected");
+    });
+    $("#select-bar").hidden = !selected.size;
+    $("#select-count").textContent = selected.size + " selected";
+    $("#sel-remove").hidden = !state.setId;
+    $("#sel-add").hidden = !setsCache.length;
+  }
+
+  function clearSelection() {
+    if (!selected.size) return;
+    selected.clear();
+    anchorId = null;
+    paintSelection();
+  }
+
+  function toggleSelected(id) {
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    anchorId = id;
+    paintSelection();
+  }
+
+  function selectRange(id) {
+    var ids = state.entries.map(function (entry) { return entry.id; });
+    var from = ids.indexOf(anchorId);
+    var to = ids.indexOf(id);
+    if (from < 0 || to < 0) {
+      toggleSelected(id);
+      return;
+    }
+    ids.slice(Math.min(from, to), Math.max(from, to) + 1).forEach(function (item) { selected.add(item); });
+    paintSelection();
+  }
+
+  function onCardClick(event, id) {
+    if (event.shiftKey && anchorId !== null) selectRange(id);
+    else if (event.shiftKey || event.ctrlKey || event.metaKey || selected.size) toggleSelected(id);
+    else document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: id } }));
+  }
+
+  function selectedIds() { return Array.from(selected); }
+
+  // Runs a bridge call per selected id and reports how many succeeded.
+  function bulk(call, done) {
+    var ids = selectedIds();
+    return Promise.all(ids.map(function (id) {
+      return Promise.resolve(call(id)).then(function (ok) { return !!ok; }).catch(function () { return false; });
+    })).then(function (results) {
+      done(results.filter(Boolean).length, ids.length);
+    });
+  }
+
+  function bulkPlace(item) {
+    var bridge = api();
+    bulk(function (id) { return bridge.place_entry(id, item.id); }, function (ok, total) {
+      toast(ok === total ? "success" : "error", ok === total ? "Placed " + ok + "." : "Placed " + ok + " of " + total + ".");
+      changed();
+    });
+  }
+
+  function bulkRemove() {
+    var bridge = api();
+    var setId = state.setId;
+    if (!setId) return;
+    bulk(function (id) { return bridge.remove_entry(id, setId); }, function (ok) {
+      toast("success", "Removed " + ok + ".");
+      clearSelection();
+      load(true);
+      changed();
+    });
+  }
+
+  function bulkSave() {
+    var bridge = api();
+    Promise.resolve(bridge.save_entries_assets(selectedIds())).then(reportSave).catch(function () { toast("error", "Could not save images."); });
+  }
+
+  function bulkDiscard() {
+    var bridge = api();
+    bulk(function (id) { return bridge.discard_entry(id); }, function (ok, total) {
+      toast(ok === total ? "success" : "error", ok === total ? "Discarded " + ok + "." : "Discarded " + ok + " of " + total + ".");
+      clearSelection();
+      load(true);
+      refreshStats();
+      changed();
+    });
+  }
+
+  function setMenuItems() {
+    return setsCache.map(function (item) {
+      return { label: escapeHtml(item.name), action: function () { bulkPlace(item); } };
+    });
+  }
+
+  function bulkMenuItems() {
+    var items = [];
+    if (setsCache.length) items.push({ label: "Add to set", children: setMenuItems() });
+    if (state.setId) items.push({ label: "Remove from set", action: bulkRemove });
+    items.push({ label: "Download", action: bulkSave });
+    items.push({ separator: true });
+    items.push({ label: "Discard " + selected.size, action: bulkDiscard });
+    return items;
+  }
+
+  // Opens the set menu above the bar's add button.
+  function openSetMenu(event) {
+    event.stopPropagation();
+    var rect = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
+  }
+
+  function setupSelection() {
+    $("#sel-add").addEventListener("click", openSetMenu);
+    $("#sel-remove").addEventListener("click", bulkRemove);
+    $("#sel-save").addEventListener("click", bulkSave);
+    $("#sel-discard").addEventListener("click", bulkDiscard);
+    $("#sel-clear").addEventListener("click", clearSelection);
+    if (window.HvContextMenu) window.HvContextMenu.register("#sel-add", setMenuItems);
+    document.addEventListener("keydown", function (event) {
+      if ($("#app").inert) return;
+      var tag = event.target && event.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (event.key === "Escape") {
+        clearSelection();
+      } else if ((event.ctrlKey || event.metaKey) && (event.key === "a" || event.key === "A")) {
+        event.preventDefault();
+        state.entries.forEach(function (entry) { selected.add(entry.id); });
+        paintSelection();
+      }
+    });
+  }
+
   // Right-click menu for a grid card.
   function setupMenu() {
     if (!window.HvContextMenu) return;
@@ -222,6 +368,7 @@
       var entry = state.entries.find(function (item) { return item.id === id; });
       var bridge = api();
       if (!entry || !bridge) return [];
+      if (selected.size > 1 && selected.has(id)) return bulkMenuItems();
       var items = [
         { label: "Open", action: function () { document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: id } })); } },
         { label: "Open source", action: function () { openSource(id); } },
@@ -279,6 +426,7 @@
       var query = searchInput.value.trim();
       if (query === state.query) return;
       state.query = query;
+      clearSelection();
       load(true);
     }, SEARCH_DEBOUNCE_MS);
   }
@@ -305,8 +453,10 @@
     urlInput.addEventListener("input", function () { showError(""); });
     searchInput.addEventListener("input", onSearchInput);
     watchSentinel();
+    setupSelection();
     document.addEventListener("hyperbridge:filter", function (event) {
       state.setId = event.detail.setId || null;
+      clearSelection();
       load(true);
     });
     document.addEventListener("hyperbridge:changed", function () {

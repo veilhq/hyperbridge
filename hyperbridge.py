@@ -28,6 +28,7 @@ WINDOW_TITLE = "Hyperbridge"
 
 sys.path.insert(0, str(HYPERSPACE_ROOT / ".hyperkit" / "python"))
 from hyper_logging import setup_logger  # noqa: E402
+from palette import GRADIENT_MAPS, build_palette_oklch  # noqa: E402
 
 logger = setup_logger("hyperbridge")
 
@@ -71,14 +72,20 @@ class HyperbridgeAPI:
     """PyWebView JS bridge for Hyperbridge."""
 
     def get_accent(self) -> dict:
-        """Read the accent from Hypervisor's preferences.json."""
+        """Return the palette derived from Hypervisor's accent, preset, and palette mode."""
         prefs_file = HYPERVISOR_DIR / "preferences.json"
         try:
             data = json.loads(prefs_file.read_text(encoding="utf-8"))
+            gradient_map = data.get("hypervisor-gradient-map", "")
+            if data.get("hypervisor-theme-mode", "custom") == "preset" and gradient_map:
+                preset = GRADIENT_MAPS.get(gradient_map) or data.get("userGradientMaps", {}).get(gradient_map)
+                if preset:
+                    return {key: preset[key] for key in ("accent", "warm", "cool", "comp")}
             accent = data.get("hypervisor-accent", "#00ff41")
+            mode = data.get("hypervisor-palette-mode", "split")
+            return build_palette_oklch(accent, mode)
         except Exception:
-            accent = "#00ff41"
-        return {"accent": accent, "warm": "#ffb000", "cool": "#00cccc", "comp": "#ff3333"}
+            return build_palette_oklch("#00ff41", "split")
 
     def get_stats(self) -> dict:
         """Return library totals; a fresh connection per call keeps threads independent."""
@@ -150,13 +157,13 @@ class HyperbridgeAPI:
         """Return every set with its entry count."""
         return sets.list_sets()
 
-    def create_set(self, name: str) -> dict:
+    def create_set(self, name: str, description: str = "") -> dict:
         """Create a set."""
-        return sets.create_set(name)
+        return sets.create_set(name, description)
 
-    def rename_set(self, set_id: int, name: str) -> dict:
-        """Rename a set."""
-        return sets.rename_set(int(set_id), name)
+    def rename_set(self, set_id: int, name: str, description: str | None = None) -> dict:
+        """Rename a set and optionally replace its description."""
+        return sets.rename_set(int(set_id), name, description)
 
     def delete_set(self, set_id: int) -> bool:
         """Delete a set; its entries stay in the library."""
@@ -202,6 +209,21 @@ class HyperbridgeAPI:
             return {"status": "saved", "count": library.copy_files(files, folder)}
         except Exception as err:
             logger.warning("save_entry_assets failed: %s", err)
+            return {"status": "failed", "count": 0}
+
+    def save_entries_assets(self, entry_ids: list) -> dict:
+        """Ask for a folder and copy every asset of the given entries into it."""
+        try:
+            files = library.entries_files(entry_ids or [])
+            if not files:
+                return {"status": "failed", "count": 0}
+            chosen = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+            if not chosen:
+                return {"status": "cancelled", "count": 0}
+            folder = chosen if isinstance(chosen, str) else chosen[0]
+            return {"status": "saved", "count": library.copy_files(files, folder)}
+        except Exception as err:
+            logger.warning("save_entries_assets failed: %s", err)
             return {"status": "failed", "count": 0}
 
     def add_link(self, url: str) -> dict:

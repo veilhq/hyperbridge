@@ -184,6 +184,14 @@ def entry_files(entry_id: int) -> list:
     return [found for found in (asset_file(item["id"]) for item in entry["assets"]) if found]
 
 
+def entries_files(entry_ids) -> list:
+    """Return the downloadable (source path, file name) pairs for several entries."""
+    files = []
+    for entry_id in entry_ids:
+        files.extend(entry_files(int(entry_id)))
+    return files
+
+
 def copy_files(files, folder) -> int:
     """Copy files into a folder, adding a numeric suffix rather than overwriting; returns the count."""
     from pathlib import Path

@@ -12,20 +12,34 @@
   <div class="workspace">
     <aside class="sets-rail" id="sets-rail" aria-label="Sets">
       <div class="sets-list" id="sets-list">
-        <button class="sets-item" id="sets-all" type="button" data-set="" aria-current="true"><span class="sets-name">All</span><span class="sets-count" id="all-count"></span></button>
+        <button class="sets-item" id="sets-all" type="button" data-set="" aria-current="true"><span class="sets-text"><span class="sets-name">All</span><span class="sets-desc">Everything captured</span></span><span class="sets-count" id="all-count"></span></button>
       </div>
       <div class="sets-more" id="sets-more"></div>
       <form class="sets-form" id="sets-form" novalidate hidden>
         <input class="form-input" id="sets-name" placeholder="Set name" maxlength="100" aria-label="Set name" autocomplete="off">
+        <input class="form-input" id="sets-desc" placeholder="Description (optional)" maxlength="200" aria-label="Set description" autocomplete="off">
+        <button class="sets-form-submit" type="submit" hidden></button>
       </form>
       <span class="sets-error" id="sets-error" role="alert" hidden></span>
     </aside>
     <main class="library" id="library">
+      <header class="set-head" id="set-head" hidden>
+        <h1 class="set-head-title" id="set-head-title"></h1>
+        <p class="set-head-desc" id="set-head-desc" hidden></p>
+      </header>
       <p class="library-empty" id="library-empty" hidden></p>
       <div class="library-grid" id="library-grid"></div>
       <div class="library-sentinel" id="library-sentinel" aria-hidden="true"></div>
     </main>
   </div>
+</div>
+<div class="select-bar" id="select-bar" role="toolbar" aria-label="Selection" hidden>
+  <span class="select-count" id="select-count" role="status"></span>
+  <button class="action-icon" id="sel-add" type="button" aria-label="Add to set" data-tooltip="Add to set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
+  <button class="action-icon" id="sel-remove" type="button" aria-label="Remove from set" data-tooltip="Remove from set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
+  <button class="action-icon" id="sel-save" type="button" aria-label="Download" data-tooltip="Download"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg></button>
+  <button class="action-icon action-icon-danger" id="sel-discard" type="button" aria-label="Discard" data-tooltip="Discard"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+  <button class="action-icon" id="sel-clear" type="button" aria-label="Clear selection" data-tooltip="Clear selection"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
 </div>
 <div class="dock" id="dock" data-collapsed="false">
   <button class="dock-toggle" id="dock-toggle" type="button" aria-expanded="true" aria-controls="dock-panel" aria-label="Collapse controls">

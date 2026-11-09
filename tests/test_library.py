@@ -135,3 +135,13 @@ class DiscardTests(LibraryOpsCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EntriesFilesTests(LibraryOpsCase):
+    def test_collects_files_across_entries_and_skips_unknown(self):
+        first = self.add_entry()
+        second = self.add_entry()
+        self.add_asset(first)
+        self.add_asset(second)
+        files = library.entries_files([first, second, 999])
+        self.assertEqual(len(files), 2)

@@ -5,7 +5,7 @@
   var sets = [];
   var selectedId = null;
   var renamingId = null;
-  var moreEl, formEl, nameEl, errorEl, allEl;
+  var moreEl, formEl, nameEl, descEl, errorEl, allEl;
 
   function api() { return window.pywebview && window.pywebview.api; }
 
@@ -27,11 +27,13 @@
     renamingId = null;
     formEl.hidden = true;
     nameEl.value = "";
+    descEl.value = "";
     showError("");
   }
 
-  function openForm(value) {
+  function openForm(value, description) {
     formEl.hidden = false;
+    descEl.value = description || "";
     nameEl.value = value || "";
     nameEl.focus();
     nameEl.select();
@@ -47,18 +49,39 @@
       row.className = "sets-item";
       row.setAttribute("data-set", item.id);
       if (item.id === selectedId) row.setAttribute("aria-current", "true");
+      var text = document.createElement("span");
+      text.className = "sets-text";
       var label = document.createElement("span");
       label.className = "sets-name";
       label.textContent = item.name;
+      text.appendChild(label);
+      if (item.description) {
+        var desc = document.createElement("span");
+        desc.className = "sets-desc";
+        desc.textContent = item.description;
+        text.appendChild(desc);
+      }
       var count = document.createElement("span");
       count.className = "sets-count";
       count.textContent = item.count;
-      row.appendChild(label);
+      row.appendChild(text);
       row.appendChild(count);
       moreEl.appendChild(row);
     });
     if (selectedId === null) allEl.setAttribute("aria-current", "true");
     else allEl.removeAttribute("aria-current");
+    renderHead(current);
+  }
+
+  // Shows the open set's title and description at the top of the library.
+  function renderHead(current) {
+    var head = $("#set-head");
+    var desc = $("#set-head-desc");
+    head.hidden = !current;
+    if (!current) return;
+    $("#set-head-title").textContent = current.name;
+    desc.textContent = current.description || "";
+    desc.hidden = !current.description;
   }
 
   function refresh() {
@@ -82,10 +105,11 @@
     event.preventDefault();
     var bridge = api();
     var name = nameEl.value.trim();
+    var description = descEl.value.trim();
     if (!bridge || !name) return;
     var call = renamingId !== null
-      ? bridge.rename_set(renamingId, name)
-      : bridge.create_set(name);
+      ? bridge.rename_set(renamingId, name, description)
+      : bridge.create_set(name, description);
     Promise.resolve(call).then(function (result) {
       if (!result || !result.ok) {
         showError(result && result.error ? result.error : "Could not save.");
@@ -102,7 +126,7 @@
 
   function onRename(item) {
     renamingId = item.id;
-    openForm(item.name);
+    openForm(item.name, item.description);
   }
 
   // Deletes a set; its entries stay in the library.
@@ -133,7 +157,7 @@
       var item = sets.find(function (entry) { return entry.id === Number(row.getAttribute("data-set")); });
       if (!item) return [];
       return [
-        { label: "Rename", action: function () { onRename(item); } },
+        { label: "Edit", action: function () { onRename(item); } },
         { label: "Delete", action: function () { onDelete(item); } },
         { separator: true },
         fresh,
@@ -169,6 +193,7 @@
     setupMenu();
     formEl = $("#sets-form");
     nameEl = $("#sets-name");
+    descEl = $("#sets-desc");
     errorEl = $("#sets-error");
     allEl = $("#sets-all");
 
@@ -185,7 +210,14 @@
         event.preventDefault();
       }
     });
-    nameEl.addEventListener("blur", function () {
+    descEl.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        stopRename();
+        event.preventDefault();
+      }
+    });
+    formEl.addEventListener("focusout", function (event) {
+      if (event.relatedTarget && formEl.contains(event.relatedTarget)) return;
       if (!nameEl.value.trim()) stopRename();
     });
     document.addEventListener("hyperbridge:changed", refresh);
