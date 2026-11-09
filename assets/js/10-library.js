@@ -8,6 +8,7 @@
 
   var state = { query: "", setId: null, entries: [], total: 0, loading: false, ticket: 0, signature: "" };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
+  var setsCache = [];
   var searchTimer = null;
   var pollTimer = null;
 
@@ -151,6 +152,102 @@
     if (window.HvToast) window.HvToast.show({ variant: variant, message: message });
   }
 
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function reportSave(result) {
+    var status = result && result.status;
+    if (status === "saved") toast("success", result.count > 1 ? "Saved " + result.count + " files." : "Saved.");
+    else if (status === "cancelled") toast("info", "Cancelled.");
+    else toast("error", "Could not save images.");
+  }
+
+  function changed() {
+    document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+  }
+
+  function loadSets() {
+    var bridge = api();
+    if (!bridge || !bridge.list_sets) return;
+    Promise.resolve(bridge.list_sets()).then(function (list) { setsCache = list || []; }).catch(function () {});
+  }
+
+  function openSource(id) {
+    var bridge = api();
+    if (!bridge || !bridge.get_entry) return;
+    Promise.resolve(bridge.get_entry(id)).then(function (entry) {
+      if (!entry || !entry.source_url) return;
+      var link = document.createElement("a");
+      link.href = entry.source_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.click();
+    });
+  }
+
+  function placeIn(entryId, item) {
+    var bridge = api();
+    Promise.resolve(bridge.place_entry(entryId, item.id)).then(function (ok) {
+      if (ok) {
+        toast("success", "Placed.");
+        changed();
+      } else {
+        toast("error", "Could not place.");
+      }
+    }).catch(function () { toast("error", "Could not place."); });
+  }
+
+  function discard(entry) {
+    var bridge = api();
+    Promise.resolve(bridge.discard_entry(entry.id)).then(function (ok) {
+      if (ok) {
+        toast("success", "Discarded " + (entry.title || entry.domain || "entry") + ".");
+        load(true);
+        refreshStats();
+        changed();
+      } else {
+        toast("error", "Could not discard.");
+      }
+    }).catch(function () { toast("error", "Could not discard."); });
+  }
+
+  // Right-click menu for a grid card.
+  function setupMenu() {
+    if (!window.HvContextMenu) return;
+    window.HvContextMenu.register(".library-card[data-id]", function (card) {
+      var id = Number(card.getAttribute("data-id"));
+      var entry = state.entries.find(function (item) { return item.id === id; });
+      var bridge = api();
+      if (!entry || !bridge) return [];
+      var items = [
+        { label: "Open", action: function () { document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: id } })); } },
+        { label: "Open source", action: function () { openSource(id); } },
+        { label: "Download", action: function () {
+          Promise.resolve(bridge.save_entry_assets(id)).then(reportSave).catch(function () { toast("error", "Could not save images."); });
+        } },
+      ];
+      if (setsCache.length) {
+        items.push({
+          label: "Add to set",
+          children: setsCache.map(function (item) {
+            return { label: escapeHtml(item.name), action: function () { placeIn(id, item); } };
+          }),
+        });
+      }
+      if (state.setId) {
+        items.push({ label: "Remove from set", action: function () {
+          Promise.resolve(bridge.remove_entry(id, state.setId)).then(function () { load(true); changed(); });
+        } });
+      }
+      items.push({ separator: true });
+      items.push({ label: "Discard", action: function () { discard(entry); } });
+      return items;
+    });
+  }
+
   function onSubmit(event) {
     event.preventDefault();
     var bridge = api();
@@ -215,10 +312,16 @@
     document.addEventListener("hyperbridge:changed", function () {
       refresh();
       refreshStats();
+      loadSets();
     });
+    setupMenu();
 
-    if (api()) load(true);
-    else window.addEventListener("pywebviewready", function () { load(true); });
+    if (api()) {
+      load(true);
+      loadSets();
+    } else {
+      window.addEventListener("pywebviewready", function () { load(true); loadSets(); });
+    }
   }
 
   init();

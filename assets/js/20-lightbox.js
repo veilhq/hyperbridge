@@ -21,6 +21,12 @@
     return el;
   }
 
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
   function toast(variant, message) {
     if (window.HvToast) window.HvToast.show({ variant: variant, message: message });
   }
@@ -64,26 +70,25 @@
     if (!entry.sets.length) box.appendChild(makeEl("span", "lightbox-none", "No sets."));
     entry.sets.forEach(function (item) {
       var chip = makeEl("span", "status-chip status-chip-outlined-accent", item.name);
-      var drop = makeEl("button", "lightbox-chip-remove", "x");
+      var drop = makeEl("button", "lightbox-chip-remove");
+      drop.innerHTML = '<svg class="icon-glyph-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+      drop.setAttribute("data-tooltip", "Remove from " + item.name);
       drop.type = "button";
       drop.setAttribute("data-set", item.id);
       drop.setAttribute("aria-label", "Remove from " + item.name);
       chip.appendChild(drop);
       box.appendChild(chip);
     });
-    var picker = byId("lb-place");
     var placed = entry.sets.map(function (item) { return item.id; });
     var open = allSets.filter(function (item) { return placed.indexOf(item.id) < 0; });
-    picker.textContent = "";
-    var hint = makeEl("option", "", "Place in set...");
-    hint.value = "";
-    picker.appendChild(hint);
-    open.forEach(function (item) {
-      var option = makeEl("option", "", item.name);
-      option.value = item.id;
-      picker.appendChild(option);
-    });
-    picker.hidden = !open.length;
+    if (!open.length) return;
+    var add = makeEl("button", "action-icon lightbox-set-add");
+    add.type = "button";
+    add.id = "lb-place";
+    add.setAttribute("aria-label", "Add to set");
+    add.setAttribute("data-tooltip", "Add to set");
+    add.innerHTML = '<svg class="icon-glyph-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
+    box.appendChild(add);
   }
 
   function renderSource(entry) {
@@ -128,7 +133,6 @@
     var asset = entry.assets[assetIndex];
     var multi = entry.assets.length > 1;
     lb.setAttribute("data-single", multi ? "false" : "true");
-    byId("lb-position").textContent = (assetIndex + 1) + " / " + entry.assets.length;
     var strip = byId("lb-strip");
     strip.textContent = "";
     entry.assets.forEach(function (_, i) {
@@ -165,7 +169,9 @@
     renderSets(entry);
     byId("act-save").hidden = !entry.assets.length;
     byId("act-save-all").hidden = entry.assets.length < 2;
-    byId("act-edit").textContent = entry.state === "failed" ? "Fill in" : "Edit";
+    var editLabel = entry.state === "failed" ? "Fill in" : "Edit";
+    byId("act-edit").setAttribute("aria-label", editLabel);
+    byId("act-edit").setAttribute("data-tooltip", editLabel);
     renderImage();
   }
 
@@ -212,7 +218,7 @@
       closeForm();
       render();
       if (!lb.open) openDialog();
-      byId("lb-close").focus();
+      lb.focus();
     }).catch(function () { toast("error", "Could not open entry."); });
   }
 
@@ -264,15 +270,29 @@
     });
   }
 
-  function onPlace() {
+  function placeInSet(setId) {
     var bridge = api();
-    var picker = byId("lb-place");
-    var setId = Number(picker.value);
     if (!bridge || !bridge.place_entry || !current || !setId) return;
     Promise.resolve(bridge.place_entry(current.id, setId)).then(function (ok) {
       if (!ok) toast("error", "Could not place.");
       else reloadEntry("Placed.");
     }).catch(function () { toast("error", "Could not place."); });
+  }
+
+  // Opens the shared menu of sets the entry is not yet in, anchored under the add button.
+  function onPlaceMenu(event) {
+    var add = event.target.closest("#lb-place");
+    if (!add || !window.HvContextMenu || !current) return;
+    event.stopPropagation();
+    var rect = add.getBoundingClientRect();
+    add.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom + 4 }));
+  }
+
+  function placeItems() {
+    var placed = current.sets.map(function (item) { return item.id; });
+    return allSets.filter(function (item) { return placed.indexOf(item.id) < 0; }).map(function (item) {
+      return { label: escapeHtml(item.name), action: function () { placeInSet(item.id); } };
+    });
   }
 
   function onSetRemove(event) {
@@ -352,7 +372,6 @@
       var id = event.detail.id;
       openEntry(id, document.querySelector('#library-grid [data-id="' + id + '"]'));
     });
-    byId("lb-close").addEventListener("click", function () { lb.close(); });
     byId("lb-prev").addEventListener("click", function () { cycleAsset(-1); });
     byId("lb-next").addEventListener("click", function () { cycleAsset(1); });
     byId("lb-strip").addEventListener("click", function (event) {
@@ -368,7 +387,8 @@
     byId("act-discard").addEventListener("click", onDiscard);
     byId("act-save").addEventListener("click", onSaveAsset);
     byId("act-save-all").addEventListener("click", onSaveAll);
-    byId("lb-place").addEventListener("change", onPlace);
+    byId("lb-sets").addEventListener("click", onPlaceMenu);
+    if (window.HvContextMenu) window.HvContextMenu.register("#lb-place", function () { return current ? placeItems() : []; });
     byId("lb-sets").addEventListener("click", onSetRemove);
     byId("f-cancel").addEventListener("click", function () {
       closeForm();

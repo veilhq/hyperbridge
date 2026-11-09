@@ -22,7 +22,7 @@ sys.path.insert(0, str(HYPERKIT_DIR / "python"))
 from hyperkit_css import hyperkit_css  # noqa: E402
 from design_lint import report as report_design_lint  # noqa: E402
 
-HYPERKIT_JS_MODULES = ["utils.js", "cursor-trail.js", "toast.js", "tooltip.js", "cursor-box.js"]
+HYPERKIT_JS_MODULES = ["utils.js", "cursor-trail.js", "toast.js", "tooltip.js", "context-menu.js", "cursor-box.js"]
 
 
 def concat_files(pattern):
@@ -54,7 +54,7 @@ def render_js_blocks():
 
 
 def build():
-    css = hyperkit_css(("cards",), app="Hyperbridge") + "\n" + concat_files("assets/css/*.css")
+    css = hyperkit_css(("cards", "components"), app="Hyperbridge") + "\n" + concat_files("assets/css/*.css")
     js_blocks = render_hyperkit_js_blocks() + "\n" + render_js_blocks()
     shell = (ROOT / "assets/shell.html").read_text(encoding="utf-8")
     html = shell.replace("{{CSS}}", css).replace("{{JS_BLOCKS}}", js_blocks)

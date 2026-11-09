@@ -37,11 +37,11 @@
   }
   window.applyAccent = applyAccent;
 
-  // Shows the entry total in the control bar.
+  // Shows the entry total beside the All set.
   function renderStats(stats) {
     var count = stats && typeof stats.entries === "number" ? stats.entries : 0;
-    var countEl = $("#entry-count");
-    if (countEl) countEl.textContent = count === 1 ? "1 entry" : count + " entries";
+    var countEl = $("#all-count");
+    if (countEl) countEl.textContent = count;
   }
   window.renderStats = renderStats;
 

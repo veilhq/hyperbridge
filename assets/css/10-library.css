@@ -10,7 +10,7 @@
 /* Full-bleed thumbnail card; the details panel slides up over the image on hover or focus. */
 .library-card {
   position: relative; display: block; width: 100%; padding: 0; margin: 0 0 var(--space-3);
-  break-inside: avoid; overflow: hidden; cursor: pointer; text-align: left; font: inherit;
+  break-inside: avoid; overflow: hidden; text-align: left; font: inherit;
   background: var(--bg-card); color: var(--text);
   border: var(--border-hair) solid var(--border); border-radius: var(--radius);
   transition: border-color var(--motion-base) var(--ease);
