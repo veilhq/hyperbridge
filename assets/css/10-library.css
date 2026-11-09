@@ -1,0 +1,42 @@
+/* === Hyperbridge: library grid === */
+.capture-form { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; position: relative; }
+.capture-input { flex: 1; }
+.capture-error { position: absolute; bottom: 100%; left: 0; margin-bottom: var(--space-3); color: var(--error); font-size: var(--fs-mono); }
+.capture-error[hidden] { display: none; }
+
+.library-grid { margin: var(--space-4) 0 var(--space-6); columns: 18rem; column-gap: var(--space-3); }
+.library-grid[hidden] { display: none; }
+
+/* Full-bleed thumbnail card; the details panel slides up over the image on hover or focus. */
+.library-card {
+  position: relative; display: block; width: 100%; padding: 0; margin: 0 0 var(--space-3);
+  break-inside: avoid; overflow: hidden; cursor: pointer; text-align: left; font: inherit;
+  background: var(--bg-card); color: var(--text);
+  border: var(--border-hair) solid var(--border); border-radius: var(--radius);
+  transition: border-color var(--motion-base) var(--ease);
+}
+.library-card:hover, .library-card:focus-visible { border-color: var(--interactive); }
+.library-card:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: var(--space-1); }
+.library-card-image { display: block; width: 100%; height: auto; }
+.library-thumb-empty { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--bg-surface); }
+.library-card-details {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3);
+  background: var(--bg-card); border-top: var(--border-hair) solid var(--border);
+  transform: translateY(100%);
+  transition: transform var(--motion-slow) var(--ease);
+}
+.library-card:hover .library-card-details, .library-card:focus-visible .library-card-details { transform: translateY(0); }
+.library-card-title {
+  font-family: var(--font-body); font-size: var(--fs-prose-ui); font-weight: var(--fw-semibold);
+  color: var(--text-bright); line-height: var(--lh-ui); letter-spacing: var(--track-tight); overflow-wrap: anywhere;
+}
+.library-card-domain { font-size: var(--fs-mono); color: var(--text-muted); }
+.library-card-flag { position: absolute; top: var(--space-2); right: var(--space-2); }
+.library-card-flag.library-failed { color: var(--error); border-color: var(--error); }
+@media (prefers-reduced-motion: reduce) {
+  .library-card, .library-card-details { transition: none; }
+}
+html.a11y-reduce-motion .library-card,
+html.a11y-reduce-motion .library-card-details { transition: none; }
+.library-sentinel { height: var(--space-1); }

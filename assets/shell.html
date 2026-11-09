@@ -9,17 +9,102 @@
 </head>
 <body>
 <div id="app">
-  <header class="topbar">
-    <div class="topbar-left">
-      <svg class="topbar-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M2 22h28v3H2zM5 22C5 8 27 8 27 22h-4c0-9-14-9-14 0zM15 14h2v8h-2z"/></svg>
-      <h1 class="topbar-title">Library</h1>
-      <span class="topbar-count" id="entry-count"></span>
-    </div>
-  </header>
-  <main class="library" id="library">
-    <p class="library-empty" id="library-empty">No entries.</p>
-  </main>
+  <div class="workspace">
+    <aside class="sets-rail" id="sets-rail" aria-label="Sets">
+      <div class="sets-list" id="sets-list">
+        <button class="sets-item" id="sets-all" type="button" data-set="" aria-current="true"><span class="sets-name">All</span></button>
+      </div>
+      <div class="sets-more" id="sets-more"></div>
+      <form class="sets-form" id="sets-form" novalidate hidden>
+        <input class="form-input" id="sets-name" placeholder="Set name" maxlength="100" aria-label="Set name" autocomplete="off">
+      </form>
+      <span class="sets-error" id="sets-error" role="alert" hidden></span>
+      <div class="sets-actions" id="sets-actions">
+        <button class="link-button" id="sets-new" type="button">New</button>
+        <button class="link-button" id="sets-rename" type="button" hidden>Rename</button>
+        <button class="link-button" id="sets-delete" type="button" hidden>Delete</button>
+      </div>
+    </aside>
+    <main class="library" id="library">
+      <p class="library-empty" id="library-empty" hidden></p>
+      <div class="library-grid" id="library-grid"></div>
+      <div class="library-sentinel" id="library-sentinel" aria-hidden="true"></div>
+    </main>
+  </div>
 </div>
+<div class="dock" id="dock" data-collapsed="false">
+  <button class="dock-toggle" id="dock-toggle" type="button" aria-expanded="true" aria-controls="dock-panel" aria-label="Collapse controls">
+    <svg class="dock-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36.16 36.16" fill="currentColor" aria-hidden="true"><g id="Layer_1-2" data-name="Layer 1"><g><g><path d="M18.08,12.24c6.54,0,11.9-5.16,12.23-11.62.02-.34-.27-.63-.61-.63h-5.41c-.32,0-.57.25-.6.57-.29,2.83-2.69,5.05-5.6,5.05S12.77,3.41,12.48.57c-.03-.32-.28-.57-.6-.57h-5.41c-.34,0-.63.29-.61.63.33,6.46,5.69,11.62,12.23,11.62Z"/><path d="M36.16,11.88v-5.41c0-.34-.29-.63-.63-.61-6.46.33-11.62,5.69-11.62,12.23s5.16,11.9,11.62,12.23c.34.02.63-.27.63-.61v-5.41c0-.32-.25-.57-.57-.6-2.83-.29-5.05-2.69-5.05-5.6s2.22-5.31,5.05-5.6c.32-.03.57-.28.57-.6Z"/><path d="M18.08,23.92c-6.54,0-11.9,5.16-12.23,11.62-.02.34.27.63.61.63h5.41c.32,0,.57-.25.6-.57.29-2.83,2.69-5.05,5.6-5.05s5.31,2.22,5.6,5.05c.03.32.28.57.6.57h5.41c.34,0,.63-.29.61-.63-.33-6.46-5.69-11.62-12.23-11.62Z"/><path d="M12.24,18.08C12.24,11.54,7.09,6.18.63,5.85c-.34-.02-.63.27-.63.61v5.41c0,.32.25.57.57.6,2.83.29,5.05,2.69,5.05,5.6s-2.22,5.31-5.05,5.6c-.32.03-.57.28-.57.6v5.41c0,.34.29.63.63.61,6.46-.33,11.62-5.69,11.62-12.23Z"/></g><path d="M18.28,13.92l.13.68c.3,1.6,1.55,2.86,3.16,3.16l.68.13c.22.04.22.36,0,.4l-.68.13c-1.6.3-2.86,1.55-3.16,3.16l-.13.68c-.04.22-.36.22-.4,0l-.13-.68c-.3-1.6-1.55-2.86-3.16-3.16l-.68-.13c-.22-.04-.22-.36,0-.4l.68-.13c1.6-.3,2.86-1.55,3.16-3.16l.13-.68c.04-.22.36-.22.4,0Z"/></g></g></svg>
+  </button>
+  <div class="dock-panel" id="dock-panel">
+    <span class="dock-count" id="entry-count"></span>
+    <form class="capture-form" id="capture-form" novalidate>
+      <input class="form-input capture-input" id="capture-url" type="url" placeholder="Paste a link" aria-label="Link" autocomplete="off" spellcheck="false">
+      <button class="action-button action-button-primary" id="capture-submit" type="submit">Capture</button>
+      <span class="capture-error" id="capture-error" role="alert" hidden></span>
+    </form>
+    <div class="dock-search" id="dock-search" data-open="false">
+      <input class="form-input library-search" id="library-search" type="search" placeholder="Search" aria-label="Search entries" autocomplete="off" tabindex="-1">
+      <button class="dock-icon" id="search-toggle" type="button" aria-expanded="false" aria-controls="library-search" aria-label="Search">
+        <svg class="dock-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="lb-scrim"></div>
+<dialog class="lightbox" id="lightbox" aria-labelledby="lb-title">
+  <div class="lightbox-panel">
+    <div class="lightbox-stage">
+      <button class="lightbox-nav lightbox-nav-prev" id="lb-prev" type="button" aria-label="Previous asset">&lsaquo;</button>
+      <img class="lightbox-image" id="lb-image" alt="">
+      <button class="lightbox-nav lightbox-nav-next" id="lb-next" type="button" aria-label="Next asset">&rsaquo;</button>
+      <span class="lightbox-position" id="lb-position"></span>
+      <div class="lightbox-strip" id="lb-strip" aria-label="Assets"></div>
+    </div>
+    <aside class="lightbox-rail">
+      <div class="lightbox-head">
+        <h2 class="lightbox-title" id="lb-title"></h2>
+        <button class="link-button" id="lb-close" type="button" aria-label="Close">Close</button>
+      </div>
+      <div class="lightbox-caption" id="lb-caption"></div>
+      <div class="lightbox-status" id="lb-status"></div>
+
+      <section class="lightbox-field" id="lb-view">
+        <div class="lightbox-label">Source</div>
+        <div class="lightbox-value" id="lb-source"></div>
+        <div class="lightbox-label">Tags</div>
+        <div class="lightbox-chips" id="lb-tags"></div>
+        <div class="lightbox-label">Sets</div>
+        <div class="lightbox-chips" id="lb-sets"></div>
+        <select class="form-select" id="lb-place" aria-label="Place in set"></select>
+      </section>
+
+      <form class="lightbox-form" id="lb-form" hidden>
+        <label class="lightbox-label" for="f-creator">Creator</label>
+        <input class="form-input" id="f-creator" autocomplete="off">
+        <label class="lightbox-label" for="f-publisher">Publisher</label>
+        <input class="form-input" id="f-publisher" autocomplete="off">
+        <label class="lightbox-label" for="f-title">Title</label>
+        <input class="form-input" id="f-title" autocomplete="off">
+        <label class="lightbox-label" for="f-type">Type</label>
+        <input class="form-input" id="f-type" autocomplete="off">
+        <label class="lightbox-label" for="f-year">Year</label>
+        <input class="form-input" id="f-year" autocomplete="off" inputmode="numeric">
+        <div class="lightbox-actions">
+          <button class="action-button action-button-primary" type="submit">Done</button>
+          <button class="action-button" type="button" id="f-cancel">Cancel</button>
+        </div>
+      </form>
+
+      <div class="lightbox-actions" id="lb-actions">
+        <button class="action-button" id="act-edit" type="button">Edit</button>
+        <button class="action-button" id="act-save" type="button">Download</button>
+        <button class="action-button" id="act-save-all" type="button">Download all</button>
+        <button class="action-button action-button-danger" id="act-discard" type="button">Discard</button>
+      </div>
+    </aside>
+  </div>
+</dialog>
 {{JS_BLOCKS}}
 </body>
 </html>

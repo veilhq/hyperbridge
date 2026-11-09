@@ -5,6 +5,15 @@
   var $ = function (selector) { return document.querySelector(selector); };
   window.$ = $;
 
+  // Re-tints the HyperKit cursors: SVG data URIs cannot reference CSS variables.
+  function syncCursors(hex) {
+    var ec = encodeURIComponent(hex);
+    var root = document.documentElement.style;
+    root.setProperty("--cursor-default", "url(\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='" + ec + "' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z'/></svg>\") 2 2, auto");
+    root.setProperty("--cursor-pointer", "url(\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='" + ec + "' stroke='" + ec + "' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z'/></svg>\") 2 2, pointer");
+    root.setProperty("--cursor-text", "url(\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='" + ec + "' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1'/><path d='M7 22h1a4 4 0 0 0 4-4V6a4 4 0 0 0-4-4H7'/></svg>\") 10 10, text");
+  }
+
   // Applies the accent palette synced from Hypervisor's preferences.
   function applyAccent(palette) {
     var hex = typeof palette === "string" ? palette : palette.accent;
@@ -18,6 +27,8 @@
     root.setProperty("--accent-glow", "rgba(" + r + "," + g + "," + b + ",0.06)");
     root.setProperty("--accent-border", "rgba(" + r + "," + g + "," + b + ",0.15)");
 
+    syncCursors(hex);
+
     if (typeof palette === "object") {
       if (palette.warm) root.setProperty("--warm", palette.warm);
       if (palette.cool) root.setProperty("--cool", palette.cool);
@@ -26,15 +37,70 @@
   }
   window.applyAccent = applyAccent;
 
-  // Shows the entry total and hides the empty state once the library has entries.
+  // Shows the entry total in the control bar.
   function renderStats(stats) {
     var count = stats && typeof stats.entries === "number" ? stats.entries : 0;
     var countEl = $("#entry-count");
-    var emptyEl = $("#library-empty");
     if (countEl) countEl.textContent = count === 1 ? "1 entry" : count + " entries";
-    if (emptyEl) emptyEl.hidden = count > 0;
   }
   window.renderStats = renderStats;
+
+  // Collapses the control bar to its logo button; the choice persists between sessions.
+  function setupDock() {
+    var dock = $("#dock");
+    var toggle = $("#dock-toggle");
+    var panel = $("#dock-panel");
+    if (!dock || !toggle || !panel) return;
+    function apply(collapsed) {
+      dock.setAttribute("data-collapsed", collapsed ? "true" : "false");
+      panel.inert = collapsed;
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      toggle.setAttribute("aria-label", collapsed ? "Expand controls" : "Collapse controls");
+    }
+    var saved = false;
+    try { saved = localStorage.getItem("hyperbridge-dock") === "collapsed"; } catch (err) { saved = false; }
+    apply(saved);
+    toggle.addEventListener("click", function () {
+      var collapsed = dock.getAttribute("data-collapsed") !== "true";
+      apply(collapsed);
+      try { localStorage.setItem("hyperbridge-dock", collapsed ? "collapsed" : "open"); } catch (err) { /* ignore */ }
+      if (!collapsed && $("#capture-url")) $("#capture-url").focus();
+    });
+  }
+  setupDock();
+
+  // The search icon opens an inline field; closing it clears the query.
+  function setupSearch() {
+    var box = $("#dock-search");
+    var toggle = $("#search-toggle");
+    var input = $("#library-search");
+    if (!box || !toggle || !input) return;
+    function setOpen(open) {
+      box.setAttribute("data-open", open ? "true" : "false");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      input.tabIndex = open ? 0 : -1;
+      if (open) {
+        input.focus();
+      } else if (input.value) {
+        input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+    toggle.addEventListener("mousedown", function (event) { event.preventDefault(); });
+    toggle.addEventListener("click", function () {
+      setOpen(box.getAttribute("data-open") !== "true");
+    });
+    input.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+    input.addEventListener("blur", function () {
+      if (!input.value.trim() && box.getAttribute("data-open") === "true") setOpen(false);
+    });
+  }
+  setupSearch();
 
   function onBridgeReady() {
     var api = window.pywebview && window.pywebview.api;
@@ -42,6 +108,10 @@
     if (api.get_accent) api.get_accent().then(applyAccent);
     if (api.get_stats) api.get_stats().then(renderStats);
   }
+
+  // Shared HyperKit cursor trail and companion box.
+  if (window.HvCursorTrail) window.HvCursorTrail.start(document.body);
+  if (window.HvCursorBox) window.HvCursorBox.start(document.body);
 
   if (window.pywebview && window.pywebview.api) {
     onBridgeReady();
