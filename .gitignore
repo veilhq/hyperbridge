@@ -1,0 +1,12 @@
+# Library: database, captured assets and exports stay local
+data/
+
+# Built artifact - regenerated on every launch
+generated_html.py
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Windows shortcut (machine-specific)
+*.lnk

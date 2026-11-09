@@ -1,0 +1,5 @@
+# Hyperbridge dependencies
+# Install with: pip install -r requirements.txt
+
+pywebview>=5.3
+Pillow>=10.0
