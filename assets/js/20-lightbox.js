@@ -475,9 +475,31 @@
     button.addEventListener("click", function () { apply(lb.getAttribute("data-fit") === "fit" ? "fill" : "fit"); });
   }
 
+  // Opens the current asset at its native pixel size in a scrollable full-window view.
+  function openFull() {
+    var asset = current && current.assets[assetIndex];
+    var view = byId("full-view");
+    if (!asset || !view) return;
+    loadImage(asset).then(function (uri) {
+      if (!uri) { toast("error", "Could not load the image."); return; }
+      byId("full-view-image").src = uri;
+      if (!view.open) view.showModal();
+      byId("full-view-scroll").scrollTo(0, 0);
+    });
+  }
+
+  function setupFull() {
+    var view = byId("full-view");
+    byId("lb-full").addEventListener("click", openFull);
+    byId("full-view-close").addEventListener("click", function () { view.close(); });
+    byId("full-view-image").addEventListener("click", function () { view.close(); });
+    view.addEventListener("close", function () { byId("full-view-image").removeAttribute("src"); });
+  }
+
   function init() {
     lb = byId("lightbox");
     if (!lb) return;
+    setupFull();
     document.addEventListener("hyperbridge:open", function (event) {
       var id = event.detail.id;
       openEntry(id, document.querySelector('#library-grid [data-id="' + id + '"]'));
