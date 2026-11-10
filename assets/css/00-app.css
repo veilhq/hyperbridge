@@ -64,5 +64,16 @@ html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-filter, ht
 html.a11y-reduce-motion .capture-error, html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .sets-form,
 html.a11y-reduce-motion .sets-error, html.a11y-reduce-motion .library-empty { animation: none !important; }
 .workspace { flex: 1; min-height: 0; display: flex; }
-.context-menu .menu-item { cursor: var(--cursor-pointer); }
+/* Accent cursors everywhere, as in the sibling apps: arrow by default, filled arrow on clickables, I-beam in text fields. */
+body, body * {
+  cursor: var(--cursor-default, url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2300ff41' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z'/></svg>") 2 2, auto) !important;
+}
+a, a *, button, button *, [role="button"], [role="button"] *, label, select, summary, input[type="checkbox"], input[type="color"], input[type="range"],
+.menu-item, .menu-item *, .lightbox-swatch, .full-view-image {
+  cursor: var(--cursor-pointer, url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%2300ff41' stroke='%2300ff41' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z'/></svg>") 2 2, pointer) !important;
+}
+input[type="text"], input[type="search"], input[type="url"], input[type="number"], input:not([type]), textarea, [contenteditable="true"] {
+  cursor: var(--cursor-text, url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2300ff41' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1'/><path d='M7 22h1a4 4 0 0 0 4-4V6a4 4 0 0 0-4-4H7'/></svg>") 10 10, text) !important;
+}
+button:disabled, button:disabled * { cursor: not-allowed !important; }
 .context-menu { z-index: calc(var(--z-modal) + 2); }
