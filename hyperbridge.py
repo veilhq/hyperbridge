@@ -302,6 +302,15 @@ class HyperbridgeAPI:
         """Stop following a source."""
         return self._feed_call("unfollow_source", lambda conn: arena.unfollow(conn, source_id), False)
 
+    def toggle_fullscreen(self) -> bool:
+        """Switch the window between fullscreen and windowed; returns whether it is now fullscreen."""
+        try:
+            webview.windows[0].toggle_fullscreen()
+            return True
+        except Exception as err:
+            logger.warning("toggle_fullscreen failed: %s", err)
+            return False
+
     def list_tags(self) -> list:
         """Return every tag with its entry count."""
         return library.list_tags()
