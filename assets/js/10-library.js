@@ -292,8 +292,7 @@ var candidates = null;
   // Names why a refresh brought nothing: no sources, nothing to pull from, or sources unreachable.
   function refreshNote(pulled) {
     if (!pulled || !pulled.ok) return "Could not refresh the feed.";
-    if (!pulled.enabled.length) return "No sources are switched on. Use the sliders icon to choose where the feed may pull from.";
-    if (!pulled.jobs) return "Nothing to pull from yet. Follow an Are.na channel in the sources view, or switch on Wikimedia Commons or The Met.";
+    if (!pulled.enabled.length || !pulled.jobs) return "Discover pulls from the Are.na channels on your followed list. Add one with the sliders icon.";
     if (pulled.failed >= pulled.jobs) return "Could not reach the sources. Check the internet connection and refresh.";
     return "";
   }

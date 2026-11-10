@@ -12,10 +12,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
+import arena  # noqa: E402
 import db  # noqa: E402
 import embed  # noqa: E402
 import feed  # noqa: E402
-import feed_sources  # noqa: E402
 from tests.test_db import LibraryCase  # noqa: E402
 
 AXES = {b"red": [1.0, 0.0, 0.0], b"warm": [0.9, 0.436, 0.0], b"blue": [0.0, 0.0, 1.0], b"copy": [1.0, 0.0, 0.0]}
@@ -92,22 +92,20 @@ class RankTests(EmbedCase):
 
 class FeedRankingTests(EmbedCase):
     def test_refresh_stores_scores_best_first(self):
+        import json
+
         self.seed_library()
-        feed_sources.set_source("commons", True)
-        self.add_entry(title="poster design")
         blue, warm = "https://img.example/blue", "https://img.example/warm"
-        pages = {"1": {"title": "File:A.jpg", "imageinfo": [{"url": blue, "thumburl": blue, "width": 800, "height": 800,
-                                                              "descriptionurl": "https://c.example/a"}]},
-                 "2": {"title": "File:B.jpg", "imageinfo": [{"url": warm, "thumburl": warm, "width": 800, "height": 800,
-                                                              "descriptionurl": "https://c.example/b"}]}}
+        blocks = [{"title": name, "image": {"original": {"url": url}, "display": {"url": url}}}
+                  for name, url in (("a", blue), ("b", warm))]
 
         def fetcher(url):
-            if "commons.wikimedia.org" in url:
-                import json
-                return SimpleNamespace(body=json.dumps({"query": {"pages": pages}}).encode(), final_url="", status=200,
-                                       content_type="application/json")
+            if "api.are.na" in url:
+                return SimpleNamespace(body=json.dumps({"title": "Chan", "length": 2, "contents": blocks}).encode(),
+                                       final_url="", status=200, content_type="application/json")
             return SimpleNamespace(body=url.encode(), final_url="", status=200, content_type="image/jpeg")
 
+        arena.follow(self.conn, "https://www.are.na/me/chan", fetcher)
         result = feed.refresh(self.conn, fetcher, random.Random(1), fake_embedder)
         self.assertTrue(result["ranked"])
         items = feed.list_items(self.conn)["items"]

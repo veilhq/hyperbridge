@@ -11,6 +11,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
+import arena  # noqa: E402
 import capture  # noqa: E402
 import feed  # noqa: E402
 import feed_sources  # noqa: E402
@@ -22,22 +23,7 @@ def reply(data):
     return SimpleNamespace(body=json.dumps(data).encode(), final_url="", status=200, content_type="application/json")
 
 
-COMMONS = {"query": {"pages": {"1": {"title": "File:Poster.jpg", "imageinfo": [{
-    "url": "https://upload.example/poster.jpg", "thumburl": "https://upload.example/t.jpg", "width": 800, "height": 600,
-    "descriptionurl": "https://commons.example/File:Poster.jpg",
-    "extmetadata": {"Artist": {"value": "<a href='x'>Ada &amp; Co</a>"}}}]},
-    "2": {"title": "File:Tiny.png", "imageinfo": [{"url": "https://upload.example/tiny.png", "width": 20, "height": 20}]}}}}
-
-
 def fake_fetcher(url):
-    if "commons.wikimedia.org" in url:
-        return reply(COMMONS)
-    if "collectionapi" in url and "/search" in url:
-        return reply({"objectIDs": [7]})
-    if "/objects/7" in url:
-        return reply({"isPublicDomain": True, "primaryImage": "https://met.example/7.jpg",
-                      "primaryImageSmall": "https://met.example/7s.jpg", "title": "Vase",
-                      "artistDisplayName": "Anon", "objectURL": "https://met.example/obj/7"})
     if "api.are.na" in url:
         return reply({"title": "Chan", "contents": [{"title": "b", "image": {
             "original": {"url": "https://arena.example/o.jpg"}, "display": {"url": "https://arena.example/d.jpg"}}}]})
@@ -85,62 +71,45 @@ class WeightTests(FeedCase):
 
 
 class RefreshTests(FeedCase):
+    def follow(self, url="https://www.are.na/me/chan"):
+        arena.follow(self.conn, url, fake_fetcher)
+
     def refresh(self):
         return feed.refresh(self.conn, fake_fetcher, random.Random(1))
 
-    def test_nothing_enabled_pulls_nothing(self):
+    def test_nothing_followed_pulls_nothing(self):
         self.tagged()
-        self.assertEqual(self.refresh()["added"], 0)
+        result = self.refresh()
+        self.assertEqual((result["added"], result["jobs"], result["enabled"]), (0, 0, []))
 
-    def test_commons_and_met_items_are_stored_with_credit(self):
+    def test_followed_channels_are_stored(self):
         self.tagged()
-        self.enable("commons", "met")
-        self.assertEqual(self.refresh()["added"], 2)
-        items = {item["source_id"]: item for item in feed.list_items(self.conn)["items"]}
-        self.assertEqual(items["commons"]["creator"], "Ada & Co")
-        self.assertEqual(items["commons"]["title"], "Poster")
-        self.assertEqual(items["met"]["page_url"], "https://met.example/obj/7")
-
-    def test_arena_uses_channels_from_saved_entries(self):
-        entry = self.tagged()
-        self.conn.execute("UPDATE entries SET source_url = 'https://www.are.na/me/chan' WHERE id = ?", (entry,))
-        self.enable("arena")
-        self.assertEqual(self.refresh()["added"], 1)
+        self.follow()
+        result = self.refresh()
+        self.assertEqual((result["added"], result["enabled"]), (1, ["arena"]))
         self.assertEqual(feed.list_items(self.conn)["items"][0]["thumb"], "https://arena.example/d.jpg")
 
+    def test_channels_only_in_saved_entries_are_not_pulled(self):
+        entry = self.tagged()
+        self.conn.execute("UPDATE entries SET source_url = 'https://www.are.na/me/saved' WHERE id = ?", (entry,))
+        self.assertEqual(self.refresh()["jobs"], 0)
+
     def test_repeat_refresh_and_saved_images_are_not_added_twice(self):
-        self.tagged()
-        self.enable("commons")
+        self.follow()
         self.refresh()
         self.assertEqual(self.refresh()["added"], 0)
         self.conn.execute("DELETE FROM feed_items")
-        capture.add_link(self.conn, "https://upload.example/poster.jpg")
+        capture.add_link(self.conn, "https://arena.example/o.jpg")
         self.assertEqual(self.refresh()["added"], 0)
 
-    def test_failing_source_is_counted_and_skipped(self):
-        self.tagged()
-        self.enable("commons")
+    def test_failing_channel_is_counted_and_skipped(self):
+        self.follow()
 
         def broken(url):
             raise OSError("down")
 
         result = feed.refresh(self.conn, broken, random.Random(1))
         self.assertEqual((result["added"], result["failed"]), (0, 1))
-
-
-class StarterTests(FeedCase):
-    def test_untagged_library_still_searches_with_starter_words(self):
-        self.add_entry(title="x")
-        self.enable("commons")
-        seen = []
-
-        def spy(url):
-            seen.append(url)
-            raise OSError("down")
-
-        result = feed.refresh(self.conn, spy, random.Random(1))
-        self.assertEqual(result["jobs"], feed.TERMS_PER_REFRESH)
-        self.assertTrue(set(result["terms"]) <= set(feed.STARTER_TERMS))
 
 
 class KeywordTests(FeedCase):
@@ -157,7 +126,7 @@ class KeywordTests(FeedCase):
 class ReviewTests(FeedCase):
     def seed(self):
         self.tagged()
-        self.enable("commons", "met")
+        arena.follow(self.conn, "https://www.are.na/me/chan", fake_fetcher)
         feed.refresh(self.conn, fake_fetcher, random.Random(1))
         return [item["id"] for item in feed.list_items(self.conn)["items"]]
 
@@ -177,9 +146,9 @@ class ReviewTests(FeedCase):
         ids = self.seed()
         self.conn.execute("INSERT INTO sets (name, created_at) VALUES ('Mine', '2026-01-01')")
         result = feed.accept(self.conn, ids, 1)
-        self.assertEqual((result["added"], result["placed"]), (2, 2))
+        self.assertEqual((result["added"], result["placed"]), (1, 1))
         sources = {row[0] for row in self.conn.execute("SELECT source_url FROM entries WHERE source_url != ''")}
-        self.assertIn("https://met.example/obj/7", sources)
+        self.assertIn("https://www.are.na/me/chan", sources)
         self.assertEqual(feed.list_items(self.conn)["total"], 0)
 
 

@@ -7,10 +7,6 @@ MAX_KEY = 200
 # access: "open" needs nothing, "key" needs the user's own API key, "none" cannot be pulled automatically.
 SOURCES = [
     {"id": "arena", "name": "Are.na", "access": "open", "description": "Public channels, read through the Are.na API."},
-    {"id": "met", "name": "The Met", "access": "open", "description": "Open-access public-domain artworks (CC0), no key."},
-    {"id": "commons", "name": "Wikimedia Commons", "access": "open", "description": "Freely licensed media, read through the MediaWiki API."},
-    {"id": "unsplash", "name": "Unsplash", "access": "key", "description": "Photographs. Needs your own API key; credit to the photographer is required."},
-    {"id": "pexels", "name": "Pexels", "access": "key", "description": "Photographs. Needs your own API key; credit to the photographer is required."},
     {"id": "cosmos", "name": "Cosmos", "access": "none", "description": "No public API, and its terms forbid automated access."},
     {"id": "savee", "name": "Savee", "access": "none", "description": "Its terms forbid scraping, storing its content and building indexes from it."},
     {"id": "pinterest", "name": "Pinterest", "access": "none", "description": "Boards load through scripts and a login, so they cannot be read automatically."},

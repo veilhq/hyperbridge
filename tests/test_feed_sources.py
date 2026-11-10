@@ -18,6 +18,9 @@ class FeedSourceTests(LibraryCase):
         self.assertFalse(any(item["enabled"] for item in feed_sources.list_sources()))
         self.assertEqual(feed_sources.enabled_sources(), [])
 
+    def test_only_are_na_is_pullable_for_now(self):
+        self.assertEqual([item["id"] for item in feed_sources.list_sources() if item["available"]], ["arena"])
+
     def test_switching_a_source_on_and_off(self):
         self.assertTrue(feed_sources.set_source("arena", True)["enabled"])
         self.assertEqual(feed_sources.enabled_sources(), ["arena"])
@@ -27,21 +30,6 @@ class FeedSourceTests(LibraryCase):
         for source_id in ("cosmos", "savee", "pinterest", "missing"):
             self.assertIsNone(feed_sources.set_source(source_id, True))
         self.assertFalse(self.source("cosmos")["enabled"])
-
-    def test_key_sources_need_a_key_before_they_count_as_enabled(self):
-        feed_sources.set_source("unsplash", True)
-        self.assertTrue(self.source("unsplash")["enabled"])
-        self.assertFalse(self.source("unsplash")["has_key"])
-        self.assertEqual(feed_sources.enabled_sources(), [])
-        feed_sources.set_source("unsplash", True, " abc123 ")
-        self.assertEqual(feed_sources.enabled_sources(), ["unsplash"])
-
-    def test_the_key_is_never_returned_and_survives_a_switch(self):
-        feed_sources.set_source("pexels", True, "secret")
-        self.assertNotIn("secret", str(feed_sources.list_sources()))
-        feed_sources.set_source("pexels", False)
-        feed_sources.set_source("pexels", True)
-        self.assertTrue(self.source("pexels")["has_key"])
 
 
 if __name__ == "__main__":

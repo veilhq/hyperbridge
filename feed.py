@@ -1,32 +1,19 @@
-"""The discovery feed: images pulled from the sources switched on in settings, steered by what is saved."""
+"""The discovery feed: images pulled from the followed Are.na channels and ranked by similarity to what is saved."""
 
-import html
-import json
 import random
 import re
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from urllib.parse import quote
 
 import arena
 import capture
-import discover
 import embed
-import feed_sources
 import sets
 
-MIN_EDGE = 150
-TERMS_PER_REFRESH = 3
-PER_QUERY = 10
 MAX_CHANNELS = 3
-FOLLOWED_WEIGHT = 3
 STALE_HOURS = 6
-# Search words used when the library has no tags, sets or creators to draw from yet.
-STARTER_TERMS = ["poster design", "typography", "architecture", "illustration", "photography", "pattern"]
 KEYWORD_SCAN = 500
 KEYWORD_TERMS = 10
-_TAG_PATTERN = re.compile(r"<[^>]+>")
 _WORD_PATTERN = re.compile(r"[a-z]+")
 _STOPWORDS = frozenset(
     "this that with from have your about into their there which would could should these those them they what when where "
@@ -37,10 +24,6 @@ _STOPWORDS = frozenset(
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
-
-
-def _json(fetcher, url) -> dict:
-    return json.loads(bytes(fetcher(url).body).decode("utf-8", "replace"))
 
 
 def keyword_counts(conn) -> Counter:
@@ -122,88 +105,23 @@ def pick_terms(conn, rng, count) -> list:
     return _weighted_pick(rng, term_weights(conn), count)
 
 
-def arena_channels(conn) -> list:
-    """Return Are.na channel links that saved entries came from."""
-    rows = conn.execute("SELECT DISTINCT source_url FROM entries WHERE source_url LIKE '%are.na/%'").fetchall()
-    return [row[0] for row in rows if discover._arena_slug(row[0])]
-
-
-def _commons(term, fetcher) -> list:
-    url = ("https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6"
-           f"&gsrsearch={quote(term)}%20filetype:bitmap&gsrlimit={PER_QUERY}&prop=imageinfo"
-           "&iiprop=url|size|extmetadata&iiurlwidth=400")
-    items = []
-    for page in (_json(fetcher, url).get("query", {}).get("pages") or {}).values():
-        info = (page.get("imageinfo") or [{}])[0]
-        if not info.get("url") or min(info.get("width", 0), info.get("height", 0)) < MIN_EDGE:
-            continue
-        artist = ((info.get("extmetadata") or {}).get("Artist") or {}).get("value", "")
-        items.append({
-            "source_id": "commons", "url": info["url"], "thumb": info.get("thumburl", ""),
-            "width": info["width"], "height": info["height"],
-            "title": re.sub(r"^File:|\.\w+$", "", page.get("title", "")),
-            "creator": html.unescape(_TAG_PATTERN.sub("", artist)).strip()[:200],
-            "page_url": info.get("descriptionurl", ""), "term": term,
-        })
-    return items
-
-
-def _met(term, fetcher, rng) -> list:
-    base = "https://collectionapi.metmuseum.org/public/collection/v1"
-    found = _json(fetcher, f"{base}.1/search?hasImages=true&isPublicDomain=true&q={quote(term)}")
-    ids = (found.get("objectIDs") or [])[:60]
-    ids = rng.sample(ids, min(PER_QUERY, len(ids)))
-
-    def one(object_id):
-        try:
-            return _json(fetcher, f"{base}/objects/{object_id}")
-        except Exception:  # noqa: BLE001 - one missing object is skipped
-            return {}
-
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        objects = list(pool.map(one, ids))
-    return [{
-        "source_id": "met", "url": obj["primaryImage"], "thumb": obj.get("primaryImageSmall") or obj["primaryImage"],
-        "width": 0, "height": 0, "title": obj.get("title", "")[:300],
-        "creator": obj.get("artistDisplayName", "")[:200],
-        "page_url": obj.get("objectURL", ""), "term": term,
-    } for obj in objects if obj.get("isPublicDomain") and obj.get("primaryImage")]
-
-
 def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
-    """Pull new images from every enabled source, rank them against the library, and store the ones not seen before."""
+    """Pull new images from the followed Are.na channels, rank them against the library, and store the unseen ones."""
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
-    enabled = set(feed_sources.enabled_sources())
+    followed = [item["url"] for item in arena.list_followed(conn)]
     try:
         arena.backfill_origins(conn, fetcher, rng)
-    except Exception:  # noqa: BLE001 - missing origins only leave the feed less targeted
+    except Exception:  # noqa: BLE001 - missing origins only leave the library less described
         pass
-    chosen = pick_terms(conn, rng, TERMS_PER_REFRESH) or rng.sample(STARTER_TERMS, TERMS_PER_REFRESH)
-    jobs = []
-    if "commons" in enabled:
-        jobs += [lambda term=term: _commons(term, fetcher) for term in chosen]
-    if "met" in enabled:
-        jobs += [lambda term=term: _met(term, fetcher, rng) for term in chosen]
-    if "arena" in enabled:
-        followed = [item["url"] for item in arena.list_followed(conn)]
-        pool = {url: FOLLOWED_WEIGHT for url in followed}
-        for url in arena_channels(conn):
-            pool.setdefault(url, 1)
-        picked = _weighted_pick(rng, pool, MAX_CHANNELS)
-        jobs += [lambda url=url: arena.pull(url, fetcher, rng) for url in picked]
-        if conn.execute("SELECT 1 FROM entry_origins WHERE block_id IS NOT NULL").fetchone():
-            jobs.append(lambda: arena.graph_items(conn, fetcher, rng))
-        elif pool:
-            seed = rng.choice([url for url in pool if arena.target(url) and arena.target(url)[0] == "channel"] or [""])
-            if seed:
-                jobs.append(lambda: arena.related_items(seed, fetcher, rng))
+    picked = _weighted_pick(rng, {url: 1 for url in followed}, MAX_CHANNELS)
+    jobs = [lambda url=url: arena.pull(url, fetcher, rng) for url in picked]
     failed = 0
     pulled, seen = [], set()
     for job in jobs:
         try:
             items = job()
-        except Exception:  # noqa: BLE001 - a source that is down is skipped
+        except Exception:  # noqa: BLE001 - a channel that is down is skipped
             failed += 1
             continue
         for item in items:
@@ -218,8 +136,9 @@ def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
     except Exception:  # noqa: BLE001 - without scores the feed keeps source order
         pass
     added = _store(conn, pulled)
-    return {"added": added, "failed": failed, "jobs": len(jobs), "enabled": sorted(enabled), "terms": chosen,
+    return {"added": added, "failed": failed, "jobs": len(jobs), "enabled": ["arena"] if followed else [],
             "ranked": ranked}
+
 
 
 def _store(conn, items) -> int:
