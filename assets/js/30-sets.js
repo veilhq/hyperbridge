@@ -5,7 +5,8 @@
   var sets = [];
   var selectedId = null;
   var renamingId = null;
-  var moreEl, formEl, nameEl, descEl, errorEl, allEl;
+  var moreEl, formEl, nameEl, descEl, errorEl, allEl, discoverEl;
+  var feedOpen = false;
 
   function api() { return window.pywebview && window.pywebview.api; }
 
@@ -24,7 +25,9 @@
 
   // Hides the name field and clears any rename or error state.
   function stopRename() {
+    var wasEditing = renamingId !== null;
     renamingId = null;
+    if (wasEditing && sets.length) render();
     formEl.hidden = true;
     nameEl.value = "";
     descEl.value = "";
@@ -43,7 +46,15 @@
     var current = selectedSet();
     if (selectedId !== null && !current) selectedId = null;
     moreEl.textContent = "";
+    var rail = $("#sets-rail");
+    var errorAnchor = $("#sets-error");
+    // The form sits where the edited row was; a new set's form sits below the list.
+    if (renamingId === null) rail.insertBefore(formEl, errorAnchor);
     sets.forEach(function (item) {
+      if (item.id === renamingId) {
+        moreEl.appendChild(formEl);
+        return;
+      }
       var row = document.createElement("button");
       row.type = "button";
       row.className = "sets-item";
@@ -68,8 +79,10 @@
       row.appendChild(count);
       moreEl.appendChild(row);
     });
-    if (selectedId === null) allEl.setAttribute("aria-current", "true");
+    if (selectedId === null && !feedOpen) allEl.setAttribute("aria-current", "true");
     else allEl.removeAttribute("aria-current");
+    if (feedOpen) discoverEl.setAttribute("aria-current", "true");
+    else discoverEl.removeAttribute("aria-current");
     renderHead(current);
   }
 
@@ -94,7 +107,8 @@
   }
 
   function select(id) {
-    var changed = id !== selectedId;
+    var changed = id !== selectedId || feedOpen;
+    feedOpen = false;
     selectedId = id;
     stopRename();
     render();
@@ -126,6 +140,7 @@
 
   function onRename(item) {
     renamingId = item.id;
+    render();
     openForm(item.name, item.description);
   }
 
@@ -196,8 +211,17 @@
     descEl = $("#sets-desc");
     errorEl = $("#sets-error");
     allEl = $("#sets-all");
+    discoverEl = $("#sets-discover");
 
     allEl.addEventListener("click", function () { select(null); });
+    discoverEl.addEventListener("click", function () {
+      if (feedOpen) return;
+      feedOpen = true;
+      selectedId = null;
+      stopRename();
+      render();
+      document.dispatchEvent(new CustomEvent("hyperbridge:feed"));
+    });
     moreEl.addEventListener("click", function (event) {
       var row = event.target.closest(".sets-item");
       if (row) select(Number(row.getAttribute("data-set")));

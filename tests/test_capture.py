@@ -293,6 +293,124 @@ class RunCaptureTests(LibraryCase):
         self.assertIn("blocked address", job["error"])
 
 
+class ScreenshotFallbackTests(RunCaptureTests):
+    NO_IMAGE_HTML = b"<html><head><title>Plain page</title></head><body></body></html>"
+
+    def run_page(self, screenshotter):
+        entry_id, job_id = self.queue()
+        fetcher = FakeFetcher({PAGE_URL: reply(PAGE_URL, self.NO_IMAGE_HTML, "text/html")})
+        capture.run_capture(self.conn, job_id, fetcher, screenshotter)
+        return entry_id
+
+    def test_page_without_image_uses_the_screenshot(self):
+        calls = []
+
+        def shoot(url):
+            calls.append(url)
+            return png_bytes(800, 1000)
+
+        entry_id = self.run_page(shoot)
+        self.assertEqual(calls, [PAGE_URL])
+        self.assertEqual(set(self.assets(entry_id)), {"original", "thumbnail"})
+        self.assertEqual(self.entry(entry_id)["state"], "captured")
+
+    def test_failed_screenshot_leaves_a_captured_entry_without_image(self):
+        def shoot(url):
+            raise RuntimeError("no browser")
+
+        entry_id = self.run_page(shoot)
+        self.assertEqual(self.assets(entry_id), {})
+        self.assertEqual(self.entry(entry_id)["state"], "captured")
+
+    def test_page_with_a_preview_image_is_not_screenshotted(self):
+        entry_id, job_id = self.queue()
+        fetcher = FakeFetcher({
+            PAGE_URL: reply(PAGE_URL, SAMPLE_HTML, "text/html"),
+            IMAGE_URL: reply(IMAGE_URL, png_bytes(), "image/png"),
+        })
+
+        def shoot(url):
+            raise AssertionError("should not be called")
+
+        capture.run_capture(self.conn, job_id, fetcher, shoot)
+        self.assertEqual(self.entry(entry_id)["state"], "captured")
+
+
+class AddImageTests(LibraryCase):
+    def test_pasted_bytes_become_a_captured_entry_with_assets(self):
+        result = capture.add_image(self.conn, png_bytes(300, 200), "")
+        entry = self.conn.execute("SELECT * FROM entries WHERE id = ?", (result["entry_id"],)).fetchone()
+        self.assertEqual((entry["state"], entry["title"], entry["source_key"]), ("captured", "", None))
+        kinds = {row[0] for row in self.conn.execute("SELECT kind FROM assets WHERE entry_id = ?", (entry["id"],))}
+        self.assertEqual(kinds, {"original", "thumbnail"})
+
+    def test_type_is_the_standard_mime_type(self):
+        for fmt, expected in (("PNG", "image/png"), ("JPEG", "image/jpeg"), ("GIF", "image/gif")):
+            result = capture.add_image(self.conn, png_bytes(fmt=fmt))
+            row = self.conn.execute("SELECT type FROM entries WHERE id = ?", (result["entry_id"],)).fetchone()
+            self.assertEqual(row[0], expected)
+
+    def test_exif_artist_copyright_and_year_fill_the_fields(self):
+        from PIL import Image
+
+        image = Image.new("RGB", (20, 20), "red")
+        exif = Image.Exif()
+        exif[0x013B] = "Ada Lovelace"
+        exif[0x8298] = "Analytical Press"
+        exif[0x0132] = "2019:06:01 10:00:00"
+        buffer = io.BytesIO()
+        image.save(buffer, "JPEG", exif=exif)
+        result = capture.add_image(self.conn, buffer.getvalue(), "photo.jpg")
+        row = self.conn.execute("SELECT * FROM entries WHERE id = ?", (result["entry_id"],)).fetchone()
+        self.assertEqual((row["creator"], row["publisher"], row["year"]), ("Ada Lovelace", "Analytical Press", "2019"))
+
+    def test_png_text_chunks_fill_the_fields(self):
+        from PIL import Image, PngImagePlugin
+
+        meta = PngImagePlugin.PngInfo()
+        meta.add_text("Author", "Grace")
+        meta.add_text("Title", "Compiler")
+        buffer = io.BytesIO()
+        Image.new("RGB", (20, 20)).save(buffer, "PNG", pnginfo=meta)
+        result = capture.add_image(self.conn, buffer.getvalue(), "x.png")
+        row = self.conn.execute("SELECT * FROM entries WHERE id = ?", (result["entry_id"],)).fetchone()
+        self.assertEqual((row["creator"], row["title"]), ("Grace", "Compiler"))
+
+    def test_earlier_img_prefix_is_rewritten(self):
+        self.conn.execute(
+            "INSERT INTO entries (uid, type, state, created_at, updated_at) VALUES ('u1', 'img/png', 'captured', 'x', 'x')"
+        )
+        capture.fix_image_types(self.conn)
+        self.assertEqual(self.conn.execute("SELECT type FROM entries").fetchone()[0], "image/png")
+
+    def test_file_name_becomes_the_title(self):
+        result = capture.add_image(self.conn, png_bytes(), "my_cool-shot.png")
+        title = self.conn.execute("SELECT title FROM entries WHERE id = ?", (result["entry_id"],)).fetchone()[0]
+        self.assertEqual(title, "my cool shot")
+
+    def test_non_image_bytes_are_rejected_and_nothing_is_created(self):
+        with self.assertRaises(capture.CaptureError):
+            capture.add_image(self.conn, b"not an image", "x.png")
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0], 0)
+
+    def test_dropped_file_is_read_from_disk(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "drop.png"
+            path.write_bytes(png_bytes())
+            self.assertTrue(capture.add_image_file(self.conn, path)["entry_id"])
+
+    def test_dropped_non_image_is_rejected_by_extension(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "notes.log"
+            path.write_bytes(png_bytes())
+            with self.assertRaises(capture.CaptureError):
+                capture.add_image_file(self.conn, path)
+
+
 class ClaimTests(LibraryCase):
     def test_claim_marks_running_and_counts_attempt(self):
         capture.add_link(self.conn, "https://example.com/a")

@@ -21,6 +21,7 @@ MAX_IMAGES = 20
 MAX_TITLE = 100
 _TRACKING_PARAMS = {"fbclid", "gclid", "ref"}
 _DEFAULT_PORTS = {"http": 80, "https": 443}
+_FORMAT_MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "GIF": "image/gif", "WEBP": "image/webp"}
 _FORMAT_SUFFIX = {"PNG": "png", "JPEG": "jpg", "GIF": "gif", "WEBP": "webp"}
 _FIELDS = ("title", "description", "creator", "publisher", "type", "year")
 
@@ -455,8 +456,8 @@ def _apply_metadata(conn, entry, values: dict, stamp: str) -> None:
     )
 
 
-def _capture_entry(conn, entry, fetcher) -> None:
-    """Fetch the entry's page (or image), store assets and update its fields."""
+def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
+    """Fetch the entry's page (or image), store assets and update its fields; screenshot when no image."""
     url = entry["source_key"] or entry["source_url"]
     response = fetcher(url)
     if _is_image(response):
@@ -491,11 +492,98 @@ def _capture_entry(conn, entry, fetcher) -> None:
             stored += 1
         except Exception:  # noqa: BLE001 - one bad image does not fail the entry
             continue
+    if not stored and screenshotter is not None:
+        try:
+            _store_image(conn, entry, screenshotter(base), 0)
+            stored = 1
+        except Exception:  # noqa: BLE001 - a missing screenshot leaves the entry without an image
+            pass
     if values["image_urls"] and not stored:
         raise CaptureError("No preview image could be fetched")
 
 
-def run_capture(conn, job_id, fetcher=None) -> None:
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+MAX_FILE_BYTES = 50_000_000
+
+
+def _text(value) -> str:
+    """Return a metadata value as clean text, decoding bytes and dropping control characters."""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "ignore")
+    return re.sub(r"[\x00-\x1f]+", " ", str(value or "")).strip()[:500]
+
+
+def image_info(body: bytes) -> dict:
+    """Read creator, publisher, year, title and description from EXIF and PNG text chunks."""
+    from PIL import Image
+
+    info = {}
+    try:
+        with Image.open(io.BytesIO(body)) as image:
+            exif = image.getexif()
+            tags = dict(exif)
+            try:
+                tags.update(exif.get_ifd(0x8769))
+            except Exception:  # noqa: BLE001 - a broken EXIF block only loses the dates
+                pass
+            text = {str(key).lower(): value for key, value in (image.info or {}).items()}
+    except Exception:  # noqa: BLE001 - metadata is optional
+        return info
+    info["creator"] = _text(tags.get(0x013B) or text.get("author") or text.get("artist"))
+    info["publisher"] = _text(tags.get(0x8298) or text.get("copyright") or text.get("source"))
+    info["title"] = _text(text.get("title"))
+    info["description"] = _text(tags.get(0x010E) or text.get("description") or text.get("comment"))
+    when = _text(tags.get(0x9003) or tags.get(0x0132) or text.get("creation time"))
+    match = re.search(r"\b(19|20)\d\d\b", when)
+    info["year"] = match.group(0) if match else ""
+    return {key: value for key, value in info.items() if value}
+
+
+def add_image(conn, body: bytes, name: str = "", now=None) -> dict:
+    """Create a captured entry from image bytes (a paste or a dropped file); raises CaptureError."""
+    image_format = _open_image(body)[0]
+    stamp = _timestamp(now)
+    found = image_info(body)
+    title = found.get("title") or (
+        shorten_title(re.sub(r"[_-]+", " ", str(name).rsplit(".", 1)[0]).strip()) if name else ""
+    )
+    cursor = conn.execute(
+        "INSERT INTO entries (uid, title, description, creator, publisher, type, year, state, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, 'captured', ?, ?)",
+        (
+            storage.new_uid(), shorten_title(title), found.get("description", ""), found.get("creator", ""),
+            found.get("publisher", ""), _FORMAT_MIME[image_format], found.get("year", ""), stamp, stamp,
+        ),
+    )
+    entry = conn.execute("SELECT * FROM entries WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    try:
+        _store_image(conn, entry, body, 0)
+    except Exception:
+        conn.execute("DELETE FROM entries WHERE id = ?", (entry["id"],))
+        raise
+    return {"entry_id": entry["id"]}
+
+
+def add_image_file(conn, path, now=None) -> dict:
+    """Create an entry from an image file on disk, rejecting other types and oversized files."""
+    from pathlib import Path
+
+    source = Path(path)
+    if source.suffix.lower() not in _IMAGE_SUFFIXES or not source.is_file():
+        raise CaptureError(f"Not an image file: {source.name}")
+    if source.stat().st_size > MAX_FILE_BYTES:
+        raise CaptureError(f"Image is too large: {source.name}")
+    return add_image(conn, source.read_bytes(), source.name, now)
+
+
+def fix_image_types(conn) -> None:
+    """Rewrite the earlier img/ type prefix on pasted and dropped entries to the MIME prefix."""
+    conn.execute(
+        "UPDATE entries SET type = 'image/' || substr(type, 5) WHERE source_key IS NULL AND type LIKE 'img/%'"
+    )
+
+
+def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
     """Run one capture job: fetch, extract, store assets, then mark entry and job."""
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if job is None:
@@ -510,7 +598,7 @@ def run_capture(conn, job_id, fetcher=None) -> None:
         entry = conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone()
         if entry is None:
             raise CaptureError("Entry no longer exists")
-        _capture_entry(conn, entry, fetcher or default_fetcher())
+        _capture_entry(conn, entry, fetcher or default_fetcher(), screenshotter)
     except Exception as exc:  # noqa: BLE001 - any failure is recorded on the job
         error = f"{type(exc).__name__}: {exc}"[:500]
     stamp = _timestamp()
@@ -551,9 +639,10 @@ def claim_next_job(conn):
 class Worker(threading.Thread):
     """Background thread that claims queued capture jobs and runs them on its own connection."""
 
-    def __init__(self, fetcher=None, on_change=None, poll_interval=0.5):
+    def __init__(self, fetcher=None, on_change=None, poll_interval=0.5, screenshotter=None):
         super().__init__(name="hyperbridge-capture", daemon=True)
         self._fetcher = fetcher
+        self._screenshotter = screenshotter
         self._on_change = on_change
         self._poll_interval = poll_interval
         self._halt = threading.Event()
@@ -587,7 +676,7 @@ class Worker(threading.Thread):
         """Run one claimed job and notify the change callback."""
         try:
             if job["kind"] == "capture":
-                run_capture(conn, job["id"], self._fetcher)
+                run_capture(conn, job["id"], self._fetcher, self._screenshotter)
             else:
                 conn.execute(
                     "UPDATE jobs SET state = 'failed', error = ?, updated_at = ? WHERE id = ?",

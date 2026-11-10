@@ -3,19 +3,26 @@
   "use strict";
 
   var PAGE_SIZE = 60;
+  var MAX_REFRESH = 200;
   var POLL_MS = 2000;
   var CASCADE_MAX = 12;
   var SEARCH_DEBOUNCE_MS = 250;
 
   var GROUPS = ["", "color", "year", "source"];
   var GROUP_LABELS = { "": "none", color: "color", year: "year", source: "source" };
-  var state = { query: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
+  var state = { query: "", tag: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
+  var tagsCache = [];
   var selected = new Set();
   var anchorId = null;
   var searchTimer = null;
   var pollTimer = null;
+var candidates = null;
+  var finding = false;
+  var feedObserver = null;
+  var findTicket = 0;
+  var SKELETON_RATIOS = ["4 / 5", "1 / 1", "3 / 4", "5 / 4", "2 / 3", "1 / 1", "4 / 3", "3 / 4"];
 
   function api() { return window.pywebview && window.pywebview.api; }
 
@@ -32,7 +39,7 @@
     var icon = makeEl("span", "library-pending-icon");
     icon.setAttribute("role", "img");
     icon.setAttribute("aria-label", "Capturing");
-    icon.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/></svg>';
+    icon.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
     panel.appendChild(icon);
     return panel;
   }
@@ -73,7 +80,9 @@
 
     var body = makeEl("span", "library-card-details");
     body.appendChild(makeEl("span", "library-card-title", entry.title || entry.domain || "Untitled"));
-    if (entry.domain) body.appendChild(makeEl("span", "library-card-domain", entry.domain));
+    var caption = (entry.caption || []).join(" / ");
+    if (caption) body.appendChild(makeEl("span", "library-card-caption", caption));
+    else if (entry.domain) body.appendChild(makeEl("span", "library-card-domain", entry.domain));
     card.appendChild(body);
 
     if (selected.has(entry.id)) card.setAttribute("data-selected", "true");
@@ -81,10 +90,374 @@
     return card;
   }
 
+  // Builds a candidate card for an image found on a pasted page; clicking always toggles its selection.
+  function buildCandidate(item, index) {
+    var card = makeEl("button", "library-card");
+    card.type = "button";
+    card.setAttribute("data-id", index);
+    card.setAttribute("aria-label", "Select image " + (index + 1));
+    var img = document.createElement("img");
+    img.className = "library-card-image";
+    img.src = item.thumb;
+    img.alt = "";
+    if (item.width && item.height) img.style.aspectRatio = item.width + " / " + item.height;
+    card.appendChild(img);
+    if (item.known_entry_id) card.appendChild(makeEl("span", "library-card-flag status-chip status-chip-outlined-accent", "Saved"));
+    var details = card.appendChild(makeEl("span", "library-card-details"));
+    if (item.feedId) {
+      if (item.title) details.appendChild(makeEl("span", "library-card-title", item.title));
+      details.appendChild(makeEl("span", "library-card-domain", item.creator || item.source));
+    } else {
+      details.appendChild(makeEl("span", "library-card-domain", item.width + " x " + item.height));
+    }
+    if (selected.has(index)) card.setAttribute("data-selected", "true");
+    card.addEventListener("click", function (event) {
+      if (event.shiftKey && anchorId !== null) selectRange(index);
+      else toggleSelected(index);
+    });
+    return card;
+  }
+
+  function hostOf(pageUrl) {
+    try { return new URL(pageUrl).hostname.replace(/^www\./, ""); } catch (err) { return pageUrl; }
+  }
+
+  // Opens the find view straight away with placeholder tiles while the page is read.
+  function showFinding(pageUrl) {
+    candidates = { page_url: pageUrl, candidates: [] };
+    clearSelection();
+    emptyEl.hidden = true;
+    $("#library-meta").hidden = true;
+    grid.textContent = "";
+    var fragment = document.createDocumentFragment();
+    for (var i = 0; i < 12; i++) {
+      var tile = makeEl("div", "library-card loading-skeleton");
+      tile.style.aspectRatio = SKELETON_RATIOS[i % SKELETON_RATIOS.length];
+      fragment.appendChild(tile);
+    }
+    grid.appendChild(fragment);
+    grid.setAttribute("aria-busy", "true");
+    $("#library").setAttribute("data-finding", "true");
+    $("#find-head").hidden = false;
+    $("#find-head-title").textContent = hostOf(pageUrl);
+    $("#find-head-desc").textContent = "Finding images...";
+  }
+
+  // Replaces the placeholder tiles with the images found on the page, for choosing which join the open set.
+  function showCandidates(result) {
+    candidates = result;
+    grid.removeAttribute("aria-busy");
+    clearSelection();
+    emptyEl.hidden = true;
+    grid.textContent = "";
+    var fragment = document.createDocumentFragment();
+    result.candidates.forEach(function (item, index) { fragment.appendChild(buildCandidate(item, index)); });
+    grid.appendChild(fragment);
+    cascadeIn();
+    var host = hostOf(result.page_url);
+    var count = result.candidates.length;
+    $("#find-head-title").textContent = result.title || host;
+    $("#find-head-desc").textContent = count + (count === 1 ? " image" : " images") + " found on " + host + ". Select the ones to add to this set.";
+    if (!result.candidates.length) {
+      emptyEl.textContent = "No usable images found. Pages that load images with scripts, such as Pinterest boards, are not readable yet.";
+      emptyEl.hidden = false;
+    }
+  }
+
+  var FEED_PRELOAD_MS = 10000;
+  var COLUMN_MIN_REM = 18;
+  var resizeTimer = null;
+
+  function columnCount() {
+    var gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+    var min = COLUMN_MIN_REM * parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return Math.max(1, Math.floor((grid.clientWidth + gap) / (min + gap)));
+  }
+
+  // Empties the grid and sets up fixed columns for the feed.
+  function resetColumns() {
+    grid.textContent = "";
+    grid.setAttribute("data-columns", "true");
+    for (var i = 0, count = columnCount(); i < count; i++) grid.appendChild(makeEl("div", "library-grid-column"));
+  }
+
+  // Adds an element to the shortest column.
+  function placeInColumn(el) {
+    var columns = grid.querySelectorAll(".library-grid-column");
+    var best = columns[0];
+    for (var i = 1; i < columns.length; i++) if (columns[i].offsetHeight < best.offsetHeight) best = columns[i];
+    best.appendChild(el);
+  }
+
+  // Re-deals the feed's cards into the right number of columns after the window changes width.
+  function relayoutColumns() {
+    if (!candidates || !candidates.feed || candidates.busy || !grid.hasAttribute("data-columns")) return;
+    if (grid.querySelector(".loading-skeleton") || columnCount() === grid.querySelectorAll(".library-grid-column").length) return;
+    var cards = Array.prototype.slice.call(grid.querySelectorAll(".library-card")).sort(function (a, b) {
+      return Number(a.getAttribute("data-id")) - Number(b.getAttribute("data-id"));
+    });
+    resetColumns();
+    cards.forEach(placeInColumn);
+  }
+  var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na" };
+
+  function feedCandidate(item) {
+    return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
+      title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, known_entry_id: null };
+  }
+
+  // Loads every thumbnail off-screen first so cards enter the grid at their final size; images that fail are dropped.
+  function preloadFeed(items) {
+    return Promise.all(items.map(function (item) {
+      return new Promise(function (resolve) {
+        var probe = new Image();
+        var timer = setTimeout(function () { resolve(null); }, FEED_PRELOAD_MS);
+        probe.onload = function () {
+          clearTimeout(timer);
+          item.width = probe.naturalWidth;
+          item.height = probe.naturalHeight;
+          resolve(item);
+        };
+        probe.onerror = function () { clearTimeout(timer); resolve(null); };
+        probe.src = item.thumb || item.url;
+      });
+    })).then(function (list) { return list.filter(Boolean); });
+  }
+
+  function feedCount() {
+    var count = candidates.total;
+    $("#find-head-desc").textContent = count + (count === 1 ? " new image" : " new images") + " from your sources. Select the ones to save or dismiss.";
+  }
+
+  // Adds the next page of feed images when the grid end nears; at the end of the stored list it pulls from the sources first.
+  function loadMoreFeed() {
+    var bridge = api();
+    if (!candidates || !candidates.feed || candidates.busy || candidates.finished || !candidates.candidates.length) return;
+    var ticket = findTicket;
+    var current = candidates;
+    current.busy = true;
+    var tail = [];
+    for (var i = 0; i < 8; i++) {
+      var tile = makeEl("div", "library-card loading-skeleton");
+      tile.style.aspectRatio = SKELETON_RATIOS[i % SKELETON_RATIOS.length];
+      tail.push(tile);
+      placeInColumn(tile);
+    }
+    var more = current.loaded < current.total
+      ? Promise.resolve(bridge.list_feed(current.loaded, PAGE_SIZE))
+      : Promise.resolve(bridge.refresh_feed()).then(function () { return bridge.list_feed(current.loaded, PAGE_SIZE); });
+    more.then(function (result) {
+      if (ticket !== findTicket || candidates !== current) return null;
+      if (!result.items.length) current.finished = true;
+      current.loaded += result.items.length;
+      current.total = result.total;
+      return preloadFeed(result.items);
+    }).then(function (items) {
+      if (!items || ticket !== findTicket || candidates !== current) return;
+      // Each new card takes the place of a skeleton tile so the columns do not reflow.
+      items.forEach(function (item, position) {
+        current.candidates.push(feedCandidate(item));
+        var card = buildCandidate(current.candidates[current.candidates.length - 1], current.candidates.length - 1);
+        card.style.setProperty("--cascade-index", Math.min(position, CASCADE_MAX));
+        card.classList.add("library-cascade");
+        var slot = tail.shift();
+        if (slot) slot.replaceWith(card);
+        else placeInColumn(card);
+      });
+    }).catch(function () { current.finished = true; }).then(function () {
+      tail.forEach(function (tile) { tile.remove(); });
+      current.busy = false;
+      if (candidates === current && !current.finished && feedObserver) { feedObserver.unobserve(sentinel); feedObserver.observe(sentinel); }
+    });
+  }
+
+  function feedMessage(text) {
+    emptyEl.textContent = text;
+    emptyEl.hidden = !text;
+  }
+
+  // Paints the feed's unseen images in the grid; choosing some saves or dismisses them.
+  function showFeed(result, note, quiet) {
+    candidates = { feed: true, page_url: "", total: result.total, loaded: result.loaded || result.items.length, busy: false, finished: false, candidates: result.items.map(feedCandidate) };
+    grid.removeAttribute("aria-busy");
+    clearSelection();
+    resetColumns();
+    candidates.candidates.forEach(function (item, index) { placeInColumn(buildCandidate(item, index)); });
+    if (!quiet) cascadeIn();
+    feedCount();
+    var count = result.total;
+    feedMessage(count ? "" : (note || "Nothing new yet. Tag or group some images to steer the feed, then refresh."));
+  }
+
+  function showFeedLoading() {
+    candidates = { feed: true, page_url: "", candidates: [] };
+    clearSelection();
+    feedMessage("");
+    $("#library-meta").hidden = true;
+    resetColumns();
+    for (var i = 0; i < 12; i++) {
+      var tile = makeEl("div", "library-card loading-skeleton");
+      tile.style.aspectRatio = SKELETON_RATIOS[i % SKELETON_RATIOS.length];
+      placeInColumn(tile);
+    }
+    grid.setAttribute("aria-busy", "true");
+    $("#find-head-desc").textContent = "Finding images...";
+  }
+
+  // Opens the Discover feed; it pulls from the sources first when it is empty or out of date.
+  function openFeed(forceRefresh) {
+    var bridge = api();
+    if (!bridge || !bridge.list_feed) return;
+    var ticket = ++findTicket;
+    if (!candidates || !candidates.feed) {
+      state.setId = null;
+      setFinding(false);
+      $("#dock-find").hidden = true;
+      renderFilter();
+      emptyEl.hidden = true;
+      $("#library").setAttribute("data-finding", "true");
+      $("#find-head").hidden = false;
+      $("#find-head-title").textContent = "Discover";
+      $("#find-exit").textContent = "Back to library";
+      $("#find-refresh").hidden = false;
+    }
+    showFeedLoading();
+    var sourcesOff = false;
+    Promise.resolve(bridge.list_feed(0, PAGE_SIZE)).then(function (first) {
+      if (ticket !== findTicket) return null;
+      if (!forceRefresh && first.total && !first.stale) return first;
+      return Promise.resolve(bridge.refresh_feed()).then(function (pulled) {
+        if (ticket !== findTicket) return null;
+        sourcesOff = !!pulled && pulled.ok && !pulled.enabled.length;
+        return bridge.list_feed(0, PAGE_SIZE);
+      });
+    }).then(function (result) {
+      if (!result || ticket !== findTicket) return null;
+      return preloadFeed(result.items).then(function (items) {
+        if (ticket !== findTicket) return;
+        showFeed({ items: items, total: result.total, loaded: result.items.length },
+          sourcesOff ? "No sources are switched on. Use the sliders icon to choose where the feed may pull from." : "");
+      });
+    }).catch(function () {
+      if (ticket !== findTicket) return;
+      showFeed({ items: [], total: 0 }, "Could not load the feed.");
+    });
+  }
+
+  function feedIdsOfSelection() {
+    return selectedIds().sort(function (a, b) { return a - b; }).map(function (index) { return candidates.candidates[index].feedId; });
+  }
+
+  // Saves the selected feed images to the library, placing them in a set when one is given.
+  function acceptFeed(setId) {
+    var bridge = api();
+    if (!candidates || !candidates.feed || !selected.size) return;
+    var ids = feedIdsOfSelection();
+    Promise.resolve(bridge.accept_feed(ids, setId || null)).then(function (result) {
+      if (!result || !result.ok) { toast("error", "Could not save those images."); return; }
+      toast("success", "Saved " + ids.length + (ids.length === 1 ? " image." : " images."));
+      refreshStats();
+      changed();
+      reloadFeed();
+    }).catch(function () { toast("error", "Could not save those images."); });
+  }
+
+  function dismissFeed() {
+    var bridge = api();
+    if (!candidates || !candidates.feed || !selected.size) return;
+    var ids = feedIdsOfSelection();
+    Promise.resolve(bridge.dismiss_feed(ids)).then(function () {
+      toast("success", "Dismissed " + ids.length + ".");
+      reloadFeed();
+    }).catch(function () { toast("error", "Could not dismiss."); });
+  }
+
+  // Redraws the feed after a save or dismiss without a skeleton pass, keeping the scroll position.
+  function reloadFeed() {
+    var bridge = api();
+    var ticket = ++findTicket;
+    var shown = candidates ? Math.max(candidates.loaded, PAGE_SIZE) : PAGE_SIZE;
+    var host = $("#library");
+    var top = host.scrollTop;
+    Promise.resolve(bridge.list_feed(0, shown)).then(function (result) {
+      if (ticket !== findTicket || !candidates || !candidates.feed) return null;
+      return preloadFeed(result.items).then(function (items) {
+        if (ticket !== findTicket || !candidates || !candidates.feed) return;
+        showFeed({ items: items, total: result.total, loaded: result.items.length }, "", true);
+        host.scrollTop = top;
+      });
+    }).catch(function () {});
+  }
+
+  function leaveCandidates() {
+    if (!candidates) return;
+    candidates = null;
+    findTicket++;
+    $("#find-refresh").hidden = true;
+    $("#find-exit").textContent = "Back to set";
+    grid.removeAttribute("data-columns");
+    grid.textContent = "";
+    grid.removeAttribute("aria-busy");
+    $("#library").removeAttribute("data-finding");
+    $("#find-head").hidden = true;
+    clearSelection();
+    state.signature = null;
+    state.signatureParts = [];
+    state.cascade = true;
+    renderFilter();
+    render();
+  }
+
+  function setFinding(on) {
+    finding = on;
+    $("#dock-find").setAttribute("aria-pressed", on ? "true" : "false");
+    $("#dock-find").toggleAttribute("data-active", on);
+    searchInput.placeholder = on ? "Paste a page link to browse its images" : "Paste a link or search";
+    $("#capture-form").setAttribute("data-mode", on ? "link" : "search");
+    if (on) searchInput.focus();
+  }
+
+  function discoverPage(url) {
+    var bridge = api();
+    submitBtn.disabled = true;
+    var ticket = ++findTicket;
+    urlInput.value = "";
+    setFinding(false);
+    showFinding(url);
+    function fail(message) {
+      if (ticket !== findTicket) return;
+      grid.removeAttribute("aria-busy");
+      grid.textContent = "";
+      $("#find-head-desc").textContent = "Nothing to show.";
+      emptyEl.textContent = message;
+      emptyEl.hidden = false;
+    }
+    Promise.resolve(bridge.discover_images(url)).then(function (result) {
+      if (ticket !== findTicket) return;
+      if (!result || !result.ok) fail(result && result.error ? result.error : "Could not read that page.");
+      else showCandidates(result);
+    }).catch(function () { fail("Could not read that page."); }).then(function () { submitBtn.disabled = false; });
+  }
+
+  function acceptCandidates() {
+    var bridge = api();
+    if (candidates && candidates.feed) { acceptFeed(state.setId); return; }
+    if (!candidates || !state.setId || !selected.size) return;
+    var urls = selectedIds().sort(function (a, b) { return a - b; }).map(function (index) { return candidates.candidates[index].url; });
+    Promise.resolve(bridge.add_discovered(urls, candidates.page_url, state.setId)).then(function (result) {
+      if (!result || !result.ok) { toast("error", "Could not add those images."); return; }
+      toast("success", "Added " + result.placed + (result.placed === 1 ? " image." : " images."));
+      leaveCandidates();
+      load(true);
+      refreshStats();
+      changed();
+    }).catch(function () { toast("error", "Could not add those images."); });
+  }
+
   function signatureOf(entries) {
     return entries.map(function (entry) {
-      return [entry.id, entry.state, entry.title, entry.domain, entry.group, entry.thumb ? 1 : 0].join("|");
-    }).join(";");
+      return [entry.id, entry.state, entry.title, entry.domain, entry.group, entry.thumb ? 1 : 0, (entry.caption || []).join("/")].join("|");
+    });
   }
 
   function renderEmpty() {
@@ -92,8 +465,25 @@
       emptyEl.hidden = true;
       return;
     }
-    emptyEl.textContent = state.query ? "No matches." : "No entries.";
+    emptyEl.textContent = state.query || state.tag ? "No matches." : "No entries.";
     emptyEl.hidden = false;
+  }
+
+  // Shows the active tag as a chip that clears the filter when clicked.
+  function renderFilter() {
+    var box = $("#library-filter");
+    var chip = $("#library-filter-chip");
+    if (!box || !chip) return;
+    box.hidden = !state.tag;
+    chip.textContent = state.tag ? "Tag: " + state.tag + " x" : "";
+  }
+
+  function setTag(tag) {
+    state.tag = tag || "";
+    state.cascade = true;
+    renderFilter();
+    clearSelection();
+    load(true);
   }
 
   // Right-aligned count and year range above the grid while a set is open.
@@ -125,7 +515,8 @@
 
   // Fades the rebuilt grid in as a cascade, ordered by on-screen position (rows, then columns).
   function cascadeIn() {
-    var items = Array.prototype.slice.call(grid.children).map(function (el) {
+    var nodes = grid.hasAttribute("data-columns") ? grid.querySelectorAll(".library-grid-column > *") : grid.children;
+    var items = Array.prototype.slice.call(nodes).map(function (el) {
       var rect = el.getBoundingClientRect();
       return { el: el, top: Math.round(rect.top), left: Math.round(rect.left) };
     });
@@ -137,9 +528,22 @@
   }
 
   function render() {
-    var signature = signatureOf(state.entries);
-    if (signature !== state.signature) {
+    if (candidates) return;
+    var parts = signatureOf(state.entries);
+    var signature = parts.join(";");
+    var previous = state.signatureParts || [];
+    // A page that only extends the list adds its cards without touching the ones already shown.
+    var appended = signature !== state.signature && !state.group && previous.length > 0 && parts.length > previous.length
+      && previous.every(function (part, index) { return part === parts[index]; });
+    if (appended) {
+      var extra = document.createDocumentFragment();
+      state.entries.slice(previous.length).forEach(function (entry) { extra.appendChild(buildCard(entry, false)); });
+      grid.appendChild(extra);
       state.signature = signature;
+      state.signatureParts = parts;
+    } else if (signature !== state.signature) {
+      state.signature = signature;
+      state.signatureParts = parts;
       var active = document.activeElement;
       var focusedId = active && active.getAttribute ? active.getAttribute("data-id") : null;
       var fragment = document.createDocumentFragment();
@@ -179,12 +583,12 @@
   // Fetches a page. reset replaces the list; otherwise the page is appended.
   function load(reset) {
     var bridge = api();
-    if (!bridge || !bridge.list_entries) return Promise.resolve();
+    if (!bridge || !bridge.list_entries || candidates) return Promise.resolve();
     if (state.loading && !reset) return Promise.resolve();
     var ticket = ++state.ticket;
     var offset = reset ? 0 : state.entries.length;
     state.loading = true;
-    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group).then(function (result) {
+    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
@@ -198,15 +602,18 @@
   // Re-reads everything loaded so far so pending entries pick up their new state.
   function refresh() {
     var bridge = api();
-    if (!bridge || !bridge.list_entries || state.loading) return;
+    if (!bridge || !bridge.list_entries || state.loading || candidates) return;
     var ticket = ++state.ticket;
-    var limit = Math.max(state.entries.length, PAGE_SIZE);
+    var limit = Math.min(Math.max(state.entries.length, PAGE_SIZE), MAX_REFRESH);
+    var tail = state.entries.slice(limit);
+    var knownTotal = state.total;
     state.loading = true;
-    bridge.list_entries(state.query, 0, limit, state.setId, state.group).then(function (result) {
+    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
-      state.entries = result.entries;
+      // Entries past the server page cap are kept as loaded unless the list changed size.
+      state.entries = tail.length && result.total === knownTotal ? result.entries.concat(tail) : result.entries;
       render();
     }).catch(function () {}).then(function () {
       if (ticket === state.ticket) state.loading = false;
@@ -254,6 +661,12 @@
 
   function changed() {
     document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+  }
+
+  function loadTags() {
+    var bridge = api();
+    if (!bridge || !bridge.list_tags) return;
+    Promise.resolve(bridge.list_tags()).then(function (list) { tagsCache = list || []; paintSelection(); }).catch(function () {});
   }
 
   function loadSets() {
@@ -339,8 +752,14 @@
     });
     $("#select-bar").hidden = !selected.size;
     $("#select-count").textContent = selected.size + " selected";
-    $("#sel-remove").hidden = !state.setId;
-    $("#sel-add").hidden = !setsCache.length;
+    var picking = !!candidates;
+    $("#sel-accept").hidden = !picking;
+    $("#sel-remove").hidden = picking || !state.setId;
+    var feedMode = picking && candidates.feed;
+    $("#sel-add").hidden = (picking && !feedMode) || !setsCache.length;
+    $("#sel-tag").hidden = picking || !tagsCache.length;
+    $("#sel-save").hidden = picking;
+    $("#sel-discard").hidden = picking && !feedMode;
   }
 
   function clearSelection() {
@@ -357,8 +776,13 @@
     paintSelection();
   }
 
+  function visibleIds() {
+    if (candidates) return candidates.candidates.map(function (item, index) { return index; });
+    return state.entries.map(function (entry) { return entry.id; });
+  }
+
   function selectRange(id) {
-    var ids = state.entries.map(function (entry) { return entry.id; });
+    var ids = visibleIds();
     var from = ids.indexOf(anchorId);
     var to = ids.indexOf(id);
     if (from < 0 || to < 0) {
@@ -395,6 +819,15 @@
     });
   }
 
+  function bulkTag(item) {
+    var bridge = api();
+    Promise.resolve(bridge.add_tags(selectedIds(), item.name)).then(function (count) {
+      toast(count ? "success" : "error", count ? "Tagged " + count + "." : "Could not tag.");
+      loadTags();
+      changed();
+    }).catch(function () { toast("error", "Could not tag."); });
+  }
+
   function bulkRemove() {
     var bridge = api();
     var setId = state.setId;
@@ -413,6 +846,7 @@
   }
 
   function bulkDiscard() {
+    if (candidates && candidates.feed) { dismissFeed(); return; }
     var bridge = api();
     var ids = selectedIds();
     bulk(function (id) { return bridge.discard_entry(id); }, function (ok, total) {
@@ -424,13 +858,23 @@
 
   function setMenuItems() {
     return setsCache.map(function (item) {
-      return { label: escapeHtml(item.name), action: function () { bulkPlace(item); } };
+      return { label: escapeHtml(item.name), action: function () {
+        if (candidates && candidates.feed) acceptFeed(item.id);
+        else bulkPlace(item);
+      } };
+    });
+  }
+
+  function tagMenuItems() {
+    return tagsCache.map(function (item) {
+      return { label: escapeHtml(item.name), action: function () { bulkTag(item); } };
     });
   }
 
   function bulkMenuItems() {
     var items = [];
     if (setsCache.length) items.push({ label: "Add to set", children: setMenuItems() });
+    if (tagsCache.length) items.push({ label: "Add tag", children: tagMenuItems() });
     if (state.setId) items.push({ label: "Remove from set", action: bulkRemove });
     items.push({ label: "Download", action: bulkSave });
     items.push({ separator: true });
@@ -446,21 +890,29 @@
   }
 
   function setupSelection() {
+    $("#sel-accept").addEventListener("click", acceptCandidates);
     $("#sel-add").addEventListener("click", openSetMenu);
+    $("#sel-tag").addEventListener("click", openSetMenu);
     $("#sel-remove").addEventListener("click", bulkRemove);
     $("#sel-save").addEventListener("click", bulkSave);
     $("#sel-discard").addEventListener("click", bulkDiscard);
     $("#sel-clear").addEventListener("click", clearSelection);
-    if (window.HvContextMenu) window.HvContextMenu.register("#sel-add", setMenuItems);
+    if (window.HvContextMenu) {
+      window.HvContextMenu.register("#sel-add", setMenuItems);
+      window.HvContextMenu.register("#sel-tag", tagMenuItems);
+    }
     document.addEventListener("keydown", function (event) {
       if ($("#app").inert) return;
       var tag = event.target && event.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (event.key === "Escape") {
-        clearSelection();
+        if (selected.size) clearSelection();
+        else if (candidates && candidates.feed) $("#sets-all").click();
+        else if (candidates) leaveCandidates();
+        else if (finding) setFinding(false);
       } else if ((event.ctrlKey || event.metaKey) && (event.key === "a" || event.key === "A")) {
         event.preventDefault();
-        state.entries.forEach(function (entry) { selected.add(entry.id); });
+        visibleIds().forEach(function (id) { selected.add(id); });
         paintSelection();
       }
     });
@@ -501,12 +953,49 @@
     });
   }
 
+  // Reads one pasted image file as base64 and creates an entry from it.
+  function addPastedImage(file) {
+    var bridge = api();
+    if (!bridge || !bridge.add_image_data) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      Promise.resolve(bridge.add_image_data(reader.result, file.name || "")).then(function (result) {
+        if (!result || !result.ok) {
+          toast("error", result && result.error ? result.error : "Could not add that image.");
+          return;
+        }
+        toast("success", "Added image.");
+        load(true);
+        refreshStats();
+      }).catch(function () { toast("error", "Could not add that image."); });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Pasting an image from the clipboard adds it to the library; pasted text is left alone.
+  function onPaste(event) {
+    var lightbox = $("#lightbox");
+    if (lightbox && lightbox.open) return;
+    var items = event.clipboardData ? Array.prototype.slice.call(event.clipboardData.items) : [];
+    var images = items.filter(function (item) { return item.kind === "file" && item.type.indexOf("image/") === 0; });
+    if (!images.length) return;
+    event.preventDefault();
+    images.forEach(function (item) {
+      var file = item.getAsFile();
+      if (file) addPastedImage(file);
+    });
+  }
+
   function onSubmit(event) {
     event.preventDefault();
     var bridge = api();
     var url = urlInput.value.trim();
     if (!bridge || !bridge.add_link || !isLink(url) || submitBtn.disabled) return;
     showError("");
+    if (finding && bridge.discover_images) {
+      discoverPage(url);
+      return;
+    }
     submitBtn.disabled = true;
     bridge.add_link(url).then(function (result) {
       if (!result || !result.ok) {
@@ -546,8 +1035,11 @@
   function watchSentinel() {
     if (!("IntersectionObserver" in window)) return;
     var observer = new IntersectionObserver(function (observed) {
-      if (observed[0].isIntersecting && state.entries.length < state.total) load(false);
+      if (!observed[0].isIntersecting) return;
+      if (candidates) loadMoreFeed();
+      else if (state.entries.length < state.total) load(false);
     }, { root: $("#library"), rootMargin: "400px" });
+    feedObserver = observer;
     observer.observe(sentinel);
   }
 
@@ -568,7 +1060,7 @@
     apply(GROUPS.indexOf(saved) >= 0 ? saved : "");
     button.addEventListener("click", function () {
       apply(GROUPS[(GROUPS.indexOf(state.group) + 1) % GROUPS.length]);
-      state.signature = "";
+      state.signature = ""; state.signatureParts = [];
       state.cascade = true;
       load(true);
     });
@@ -585,6 +1077,26 @@
     if (!grid) return;
 
     $("#capture-form").addEventListener("submit", onSubmit);
+    $("#library-filter-chip").addEventListener("click", function () { setTag(""); });
+    $("#find-exit").addEventListener("click", function () {
+      if (candidates && candidates.feed) $("#sets-all").click();
+      else leaveCandidates();
+    });
+    $("#find-refresh").addEventListener("click", function () { openFeed(true); });
+    document.addEventListener("hyperbridge:feed", function () { openFeed(false); });
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(relayoutColumns, 150);
+    });
+    $("#dock-find").addEventListener("click", function () { setFinding(!finding); });
+    document.addEventListener("hyperbridge:tag", function (event) { setTag(event.detail.tag); });
+    document.addEventListener("paste", onPaste);
+    document.addEventListener("hyperbridge:dropped", function (event) {
+      var result = event.detail || {};
+      if (result.added) toast("success", result.added > 1 ? "Added " + result.added + " images." : "Added image.");
+      if (result.skipped) toast("info", result.skipped + (result.skipped > 1 ? " files were" : " file was") + " not an image.");
+      if (result.added) { load(true); refreshStats(); }
+    });
     searchInput.addEventListener("input", onDockInput);
     searchInput.addEventListener("keydown", function (event) {
       if (event.key === "Escape" && searchInput.value) {
@@ -597,6 +1109,10 @@
     setupGroup();
     document.addEventListener("hyperbridge:filter", function (event) {
       state.setId = event.detail.setId || null;
+      leaveCandidates();
+      setFinding(false);
+      $("#dock-find").hidden = !state.setId;
+      renderFilter();
       state.cascade = true;
       clearSelection();
       load(true);
@@ -605,16 +1121,16 @@
     document.addEventListener("hyperbridge:changed", function () {
       refresh();
       refreshStats();
-      loadSets();
+      loadSets(); loadTags();
     });
     setupMenu();
 
     state.cascade = true;
     if (api()) {
       load(true);
-      loadSets();
+      loadSets(); loadTags();
     } else {
-      window.addEventListener("pywebviewready", function () { load(true); loadSets(); });
+      window.addEventListener("pywebviewready", function () { load(true); loadSets(); loadTags(); });
     }
   }
 

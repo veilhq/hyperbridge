@@ -40,14 +40,20 @@ from generated_html import HTML  # noqa: E402
 
 HTML = with_notice(HTML, _build_notice)
 
+import arena  # noqa: E402
 import capture  # noqa: E402
+import discover  # noqa: E402
+import feed  # noqa: E402
+import feed_sources  # noqa: E402
 import db  # noqa: E402
 import library  # noqa: E402
+import screenshot  # noqa: E402
 import sets  # noqa: E402
 import swatches  # noqa: E402
 
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 _MAX_PAGE = 200
+_MAX_BULK = 1000
 
 
 def _fts_query(text: str) -> str:
@@ -129,8 +135,8 @@ class HyperbridgeAPI:
         return {"entries": entries}
 
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
-                     group: str = "") -> dict:
-        """Return a page of entries, newest first, optionally filtered by text and set and grouped."""
+                     group: str = "", tag: str = "") -> dict:
+        """Return a page of entries, newest first, optionally filtered by text, set and tag, and grouped."""
         offset = max(0, int(offset or 0))
         limit = min(_MAX_PAGE, max(1, int(limit or 60)))
         group = group if group in _GROUPS else ""
@@ -142,11 +148,16 @@ class HyperbridgeAPI:
         if set_id:
             clauses.append("e.id IN (SELECT entry_id FROM set_entries WHERE set_id = ?)")
             params.append(int(set_id))
+        if tag:
+            clauses.append(
+                "e.id IN (SELECT et.entry_id FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE t.name = ?)"
+            )
+            params.append(str(tag))
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
         conn = db.connect()
         try:
             rows = conn.execute(
-                "SELECT e.id, e.title, e.domain, e.state, e.year, e.created_at, e.swatches,"
+                "SELECT e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type, e.created_at, e.swatches,"
                 " a.path AS thumb_path, a.width, a.height"
                 " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
                 f" {where} ORDER BY e.created_at DESC, e.id DESC",
@@ -165,6 +176,7 @@ class HyperbridgeAPI:
                 "id": rows[i]["id"], "title": rows[i]["title"], "domain": rows[i]["domain"],
                 "state": rows[i]["state"], "thumb": _thumb_uri(rows[i]["thumb_path"]),
                 "width": rows[i]["width"], "height": rows[i]["height"], "group": labels[i],
+                "caption": [rows[i][name] for name in ("creator", "publisher", "type", "year") if rows[i][name]],
             }
             for i in order[offset:offset + limit]
         ]
@@ -196,6 +208,111 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("discard_entry failed: %s", err)
             return False
+
+    def discover_images(self, url: str) -> dict:
+        """List the usable images on a pasted page for adding to a set."""
+        try:
+            conn = db.connect()
+            try:
+                result = discover.discover(conn, (url or "").strip())
+            finally:
+                conn.close()
+        except ValueError:
+            return {"ok": False, "error": "Not a web link."}
+        except Exception as err:
+            logger.warning("discover_images failed: %s", err)
+            return {"ok": False, "error": "Could not read that page."}
+        return {"ok": True, **result}
+
+    def add_discovered(self, urls: list, page_url: str, set_id: int | None = None) -> dict:
+        """Capture the chosen image URLs, crediting the page, and place them in a set."""
+        try:
+            conn = db.connect()
+            try:
+                result = discover.add_candidates(conn, list(urls or [])[:_MAX_BULK], str(page_url or ""), set_id)
+            finally:
+                conn.close()
+        except Exception as err:
+            logger.warning("add_discovered failed: %s", err)
+            return {"ok": False, "error": "Could not add those images."}
+        return {"ok": True, **result}
+
+    def list_feed_sources(self) -> list:
+        """Return the outside sources a discovery feed may use, with their switches."""
+        return feed_sources.list_sources()
+
+    def set_feed_source(self, source_id: str, enabled: bool, api_key: str | None = None) -> dict | None:
+        """Switch a feed source on or off and optionally store its API key."""
+        try:
+            return feed_sources.set_source(source_id, bool(enabled), api_key)
+        except Exception as err:
+            logger.warning("set_feed_source failed: %s", err)
+            return None
+
+    def _feed_call(self, name, action, fallback):
+        """Run a feed action on its own connection, returning the fallback on failure."""
+        try:
+            conn = db.connect()
+            try:
+                return action(conn)
+            finally:
+                conn.close()
+        except Exception as err:
+            logger.warning("%s failed: %s", name, err)
+            return fallback
+
+    def refresh_feed(self) -> dict:
+        """Pull new images from the enabled sources into the discovery feed."""
+        result = self._feed_call("refresh_feed", feed.refresh, None)
+        return {"ok": False, "error": "Could not refresh the feed."} if result is None else {"ok": True, **result}
+
+    def list_feed(self, offset: int = 0, limit: int = 60) -> dict:
+        """Return unseen discovery feed items and whether a refresh is due."""
+        return self._feed_call("list_feed", lambda conn: feed.list_items(conn, offset, limit),
+                               {"items": [], "total": 0, "stale": False})
+
+    def dismiss_feed(self, ids: list) -> int:
+        """Hide feed items the Operator does not want."""
+        return self._feed_call("dismiss_feed", lambda conn: feed.dismiss(conn, list(ids or [])[:_MAX_BULK]), 0)
+
+    def accept_feed(self, ids: list, set_id: int | None = None) -> dict:
+        """Save the chosen feed items to the library and optionally place them in a set."""
+        result = self._feed_call("accept_feed", lambda conn: feed.accept(conn, list(ids or [])[:_MAX_BULK], set_id), None)
+        return {"ok": False, "error": "Could not save those images."} if result is None else {"ok": True, **result}
+
+    def list_followed(self) -> list:
+        """Return the Are.na channels and users followed for the discovery feed."""
+        return self._feed_call("list_followed", arena.list_followed, [])
+
+    def follow_source(self, url: str) -> dict:
+        """Follow an Are.na channel or user link for the discovery feed."""
+        try:
+            conn = db.connect()
+            try:
+                return {"ok": True, "item": arena.follow(conn, str(url or ""), capture.default_fetcher())}
+            finally:
+                conn.close()
+        except ValueError as err:
+            return {"ok": False, "error": str(err)}
+        except Exception as err:
+            logger.warning("follow_source failed: %s", err)
+            return {"ok": False, "error": "Could not follow that link."}
+
+    def unfollow_source(self, source_id: int) -> bool:
+        """Stop following a source."""
+        return self._feed_call("unfollow_source", lambda conn: arena.unfollow(conn, source_id), False)
+
+    def list_tags(self) -> list:
+        """Return every tag with its entry count."""
+        return library.list_tags()
+
+    def add_tags(self, entry_ids: list, tags) -> int:
+        """Add tags to the given entries and return how many entries were tagged."""
+        try:
+            return library.add_tags(list(entry_ids or [])[:_MAX_BULK], tags)
+        except Exception as err:
+            logger.warning("add_tags failed: %s", err)
+            return 0
 
     def list_sets(self) -> list:
         """Return every set with its entry count."""
@@ -269,6 +386,43 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("save_entries_assets failed: %s", err)
             return {"status": "failed", "count": 0}
+
+    def add_image_data(self, data: str, name: str = "") -> dict:
+        """Create an entry from a pasted image sent as base64 text."""
+        try:
+            body = base64.b64decode(str(data or "").split(",", 1)[-1], validate=False)
+            return self._store_image_bytes(body, name)
+        except Exception as err:
+            logger.warning("add_image_data failed: %s", err)
+            return {"ok": False, "error": "Could not add that image."}
+
+    def _store_image_bytes(self, body: bytes, name: str) -> dict:
+        if len(body) > capture.MAX_FILE_BYTES:
+            return {"ok": False, "error": "That image is too large."}
+        conn = db.connect()
+        try:
+            result = capture.add_image(conn, body, name)
+        except capture.CaptureError:
+            return {"ok": False, "error": "That is not a usable image."}
+        finally:
+            conn.close()
+        return {"ok": True, "entry_id": result["entry_id"]}
+
+    def add_image_paths(self, paths: list) -> dict:
+        """Create an entry for each image file path; non-images are skipped and counted."""
+        added = skipped = 0
+        conn = db.connect()
+        try:
+            for path in paths or []:
+                try:
+                    capture.add_image_file(conn, path)
+                    added += 1
+                except Exception as err:  # noqa: BLE001 - one bad file does not stop the batch
+                    logger.info("image drop skipped: %s", err)
+                    skipped += 1
+        finally:
+            conn.close()
+        return {"ok": added > 0, "added": added, "skipped": skipped}
 
     def add_link(self, url: str) -> dict:
         """Capture a link: create a pending entry and queue its capture job."""
@@ -345,6 +499,7 @@ def _backfill_swatches():
     """Fill swatches for entries captured before palettes were stored."""
     conn = db.connect()
     try:
+        capture.fix_image_types(conn)
         swatches.backfill(conn)
     except Exception:  # noqa: BLE001 - a failed backfill only leaves entries ungrouped
         logger.exception("swatch backfill failed")
@@ -352,11 +507,29 @@ def _backfill_swatches():
         conn.close()
 
 
+def _watch_drops(window, api):
+    """Turn files dropped on the window into entries and tell the page how many landed."""
+    from webview.dom import DOMEventHandler
+
+    def on_drop(event):
+        files = (event.get("dataTransfer") or {}).get("files") or []
+        paths = [item.get("pywebviewFullPath") for item in files if item.get("pywebviewFullPath")]
+        if not paths:
+            return
+        result = api.add_image_paths(paths)
+        window.evaluate_js(
+            "document.dispatchEvent(new CustomEvent('hyperbridge:dropped', {detail: %s}))" % json.dumps(result)
+        )
+
+    window.dom.document.events.dragover += DOMEventHandler(lambda event: None, True, True)
+    window.dom.document.events.drop += DOMEventHandler(on_drop, True, True)
+
+
 def main():
     logger.info("hyperbridge starting")
     conn = db.init_library()
     conn.close()
-    capture.Worker().start()
+    capture.Worker(screenshotter=screenshot.capture_page).start()
     threading.Thread(target=_backfill_swatches, daemon=True).start()
 
     api = HyperbridgeAPI()
@@ -376,6 +549,10 @@ def main():
         time.sleep(0.5)
         _apply_window_chrome(WINDOW_TITLE)
         _start_theme_watcher(window, api)
+        try:
+            _watch_drops(window, api)
+        except Exception:  # noqa: BLE001 - paste and link capture still work without drop support
+            logger.exception("drop handler failed to register")
         logger.info("hyperbridge ready")
 
     webview.start(on_start, icon=icon_path, debug=False)

@@ -12,6 +12,8 @@ import swatches
 
 EDITABLE_FIELDS = ("creator", "publisher", "title", "type", "year")
 _MAX_FIELD = 500
+MAX_TAGS = 20
+MAX_TAG_LENGTH = 40
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 _DISPLAY_ORDER = {"original": 0, "screenshot": 1, "thumbnail": 2}
 
@@ -101,6 +103,63 @@ def get_asset_uri(asset_id: int) -> str | None:
     return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
 
 
+def parse_tags(raw) -> list[str]:
+    """Return clean, de-duplicated tag names from a list or a comma-separated string."""
+    items = raw.split(",") if isinstance(raw, str) else list(raw or [])
+    names, seen = [], set()
+    for item in items:
+        name = re.sub(r"\s+", " ", str(item)).strip().lstrip("#")[:MAX_TAG_LENGTH].strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            names.append(name)
+    return names[:MAX_TAGS]
+
+
+def _set_tags(conn, entry_id: int, names: list[str]) -> None:
+    """Replace an entry's tags with the given names and drop tags nothing uses."""
+    conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", (entry_id,))
+    for name in names:
+        conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
+        conn.execute(
+            "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
+            (entry_id, name),
+        )
+    conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM entry_tags)")
+
+
+def list_tags() -> list[dict]:
+    """Return every tag with the number of entries using it, most used first."""
+    conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT t.name, COUNT(et.entry_id) AS count FROM tags t LEFT JOIN entry_tags et ON et.tag_id = t.id"
+            " GROUP BY t.id ORDER BY count DESC, t.name COLLATE NOCASE"
+        ).fetchall()
+    finally:
+        conn.close()
+    return [{"name": row["name"], "count": row["count"]} for row in rows]
+
+
+def add_tags(entry_ids, raw_tags) -> int:
+    """Add tags to every listed entry without touching their other tags; returns how many entries exist."""
+    names = parse_tags(raw_tags)
+    conn = db.connect()
+    try:
+        ids = [row["id"] for row in conn.execute(
+            f"SELECT id FROM entries WHERE id IN ({','.join('?' * len(entry_ids))})", [int(i) for i in entry_ids]
+        )] if entry_ids else []
+        for name in names if ids else []:
+            conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
+            for entry_id in ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
+                    (entry_id, name),
+                )
+    finally:
+        conn.close()
+    return len(ids)
+
+
 def update_entry(entry_id: int, fields: dict) -> dict | None:
     """Save edited fields, mark changed ones manual, and lift a failed entry to captured."""
     conn = db.connect()
@@ -118,6 +177,8 @@ def update_entry(entry_id: int, fields: dict) -> dict | None:
                 changes[name] = value
                 if name not in manual:
                     manual.append(name)
+        if "tags" in fields:
+            _set_tags(conn, entry_id, parse_tags(fields["tags"]))
         state = "captured" if row["state"] == "failed" else row["state"]
         if changes or state != row["state"]:
             assignments = ", ".join(f"{name} = ?" for name in changes)

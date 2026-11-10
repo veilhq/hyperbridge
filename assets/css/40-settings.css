@@ -1,0 +1,22 @@
+/* === Hyperbridge: settings view === */
+.settings-view[hidden] { display: none; }
+#library[data-settings] > :not(.settings-view):not(.library-sentinel) { display: none; }
+.settings-list { display: flex; flex-direction: column; max-width: 40rem; margin: var(--space-4) auto var(--space-6); }
+.settings-source { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: var(--space-3); padding: var(--space-3) var(--space-1); border-bottom: var(--border-hair) solid var(--border); }
+.settings-source[data-unavailable] { color: var(--text-dim); }
+.settings-source-text { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.settings-source-name { font-family: var(--font-body); font-size: var(--fs-prose-ui); color: var(--text-bright); }
+.settings-source[data-unavailable] .settings-source-name { color: var(--text-muted); }
+.settings-source-desc { font-family: var(--font-body); font-size: var(--fs-prose-sm); line-height: var(--lh-ui); color: var(--text-muted); }
+.settings-source-key { grid-column: 2 / 4; }
+.settings-source-key[hidden] { display: none; }
+.settings-source-key .form-input { width: 100%; box-sizing: border-box; }
+#dock-settings[data-active] { color: var(--interactive); }
+.settings-follow { display: flex; flex-direction: column; gap: var(--space-2); max-width: 40rem; margin: var(--space-5) auto var(--space-6); }
+.settings-subhead { margin: 0; font-family: var(--font-body); font-size: var(--fs-prose-ui); font-weight: var(--fw-semibold); color: var(--text-bright); }
+.settings-follow-form { display: flex; gap: var(--space-2); }
+.settings-follow-form .form-input { flex: 1; min-width: 0; }
+.settings-follow-error { color: var(--error); font-size: var(--fs-mono); }
+.settings-follow-error[hidden] { display: none; }
+.settings-followed { display: flex; flex-direction: column; }
+.settings-followed .settings-source { grid-template-columns: 1fr auto auto; align-items: center; }

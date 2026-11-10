@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS followed_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);

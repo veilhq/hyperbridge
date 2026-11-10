@@ -55,13 +55,21 @@
     if (!count) box.appendChild(makeEl("span", "lightbox-none", "No fields."));
   }
 
-  function renderChips(box, names, className, emptyText) {
+  function renderChips(box, names, className, emptyText, clickable) {
     box.textContent = "";
     if (!names.length) {
       box.appendChild(makeEl("span", "lightbox-none", emptyText));
       return;
     }
-    names.forEach(function (name) { box.appendChild(makeEl("span", "status-chip " + className, name)); });
+    names.forEach(function (name) {
+      var chip = makeEl(clickable ? "button" : "span", "status-chip " + className + (clickable ? " lightbox-tag" : ""), name);
+      if (clickable) {
+        chip.type = "button";
+        chip.setAttribute("data-tag", name);
+        chip.setAttribute("data-tooltip", "Show entries tagged " + name);
+      }
+      box.appendChild(chip);
+    });
   }
 
   // Shows the entry's sets with a remove control, and a picker for the sets it is not in.
@@ -212,11 +220,12 @@
     renderStatus(entry);
     renderSwatches(entry);
     renderSource(entry);
-    renderChips(byId("lb-tags"), entry.tags, "status-chip-outlined-muted", "No tags.");
+    renderChips(byId("lb-tags"), entry.tags, "status-chip-outlined-muted", "No tags.", true);
     renderSets(entry);
     byId("act-save").hidden = !entry.assets.length;
     byId("act-save-all").hidden = entry.assets.length < 2;
-    var editLabel = entry.state === "failed" ? "Fill in" : "Edit";
+    var blank = !entry.source_url && !FIELDS.some(function (name) { return entry[name]; });
+    var editLabel = entry.state === "failed" || blank ? "Fill in" : "Edit";
     byId("act-edit").setAttribute("aria-label", editLabel);
     byId("act-edit").setAttribute("data-tooltip", editLabel);
     renderImage();
@@ -256,6 +265,7 @@
   function openForm() {
     if (!current) return;
     FIELDS.forEach(function (name) { byId("f-" + name).value = current[name] || ""; });
+    byId("f-tags").value = (current.tags || []).join(", ");
     byId("lb-view").hidden = true;
     byId("lb-form").hidden = false;
     byId("lb-actions").hidden = true;
@@ -311,6 +321,7 @@
     if (!bridge || !bridge.update_entry || !current) return;
     var values = {};
     FIELDS.forEach(function (name) { values[name] = byId("f-" + name).value; });
+    values.tags = byId("f-tags").value;
     Promise.resolve(bridge.update_entry(current.id, values)).then(function (entry) {
       if (!entry) {
         toast("error", "Could not save.");
@@ -480,6 +491,12 @@
       toast("info", "Cancelled.");
     });
     byId("lb-form").addEventListener("submit", onSubmit);
+    byId("lb-tags").addEventListener("click", function (event) {
+      var chip = event.target.closest("[data-tag]");
+      if (!chip) return;
+      document.dispatchEvent(new CustomEvent("hyperbridge:tag", { detail: { tag: chip.getAttribute("data-tag") } }));
+      closeDialog();
+    });
   }
 
   init();

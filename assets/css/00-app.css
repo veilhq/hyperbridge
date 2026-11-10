@@ -51,6 +51,18 @@ html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-r
 .sets-rail[data-hidden="true"] ~ .library .library-empty { left: 0; }
 .library-empty[hidden] { display: none; }
 
+/* Elements revealed by removing [hidden] ease in instead of popping. */
+@keyframes appEnter { from { opacity: 0; translate: 0 var(--space-2); } to { opacity: 1; translate: none; } }
+.select-bar:not([hidden]), .library-filter:not([hidden]), .library-meta:not([hidden]), .capture-error:not([hidden]),
+.set-head:not([hidden]), .sets-form:not([hidden]), .sets-error:not([hidden]), .library-empty:not([hidden]) {
+  animation: appEnter var(--motion-enter) var(--ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-bar, .library-filter, .library-meta, .capture-error, .set-head, .sets-form, .sets-error, .library-empty { animation: none !important; }
+}
+html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-filter, html.a11y-reduce-motion .library-meta,
+html.a11y-reduce-motion .capture-error, html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .sets-form,
+html.a11y-reduce-motion .sets-error, html.a11y-reduce-motion .library-empty { animation: none !important; }
 .workspace { flex: 1; min-height: 0; display: flex; }
 .context-menu .menu-item { cursor: var(--cursor-pointer); }
 .context-menu { z-index: calc(var(--z-modal) + 2); }

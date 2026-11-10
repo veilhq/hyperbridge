@@ -13,6 +13,7 @@
     <aside class="sets-rail" id="sets-rail" aria-label="Sets">
       <div class="sets-list" id="sets-list">
         <button class="sets-item" id="sets-all" type="button" data-set="" aria-current="true"><span class="sets-text"><span class="sets-name">All</span><span class="sets-desc">Everything captured</span></span><span class="sets-count" id="all-count"></span></button>
+        <button class="sets-item" id="sets-discover" type="button"><span class="sets-text"><span class="sets-name">Discover</span><span class="sets-desc">New images from your sources</span></span></button>
       </div>
       <div class="sets-more" id="sets-more"></div>
       <form class="sets-form" id="sets-form" novalidate hidden>
@@ -27,6 +28,31 @@
         <h1 class="set-head-title" id="set-head-title"></h1>
         <p class="set-head-desc" id="set-head-desc" hidden></p>
       </header>
+      <header class="set-head find-head" id="find-head" hidden>
+        <h1 class="set-head-title" id="find-head-title"></h1>
+        <p class="set-head-desc" id="find-head-desc"></p>
+        <button class="action-button action-button-ghost" id="find-refresh" type="button" hidden>Refresh</button>
+        <button class="action-button action-button-ghost" id="find-exit" type="button">Back to set</button>
+      </header>
+      <section class="settings-view" id="settings-view" aria-labelledby="settings-title" hidden>
+        <header class="set-head">
+          <h1 class="set-head-title" id="settings-title">Discovery sources</h1>
+          <p class="set-head-desc">Choose where the discovery feed may pull images from. Everything is off until you switch it on.</p>
+          <button class="action-button action-button-ghost" id="settings-close" type="button">Done</button>
+        </header>
+        <div class="settings-list" id="settings-list"></div>
+        <section class="settings-follow" aria-labelledby="follow-title">
+          <h2 class="settings-subhead" id="follow-title">Followed on Are.na</h2>
+          <p class="settings-source-desc">Paste a channel or user link. When Are.na is switched on, the feed pulls from these on every refresh.</p>
+          <form class="settings-follow-form" id="follow-form" novalidate>
+            <input class="form-input" id="follow-input" placeholder="https://www.are.na/..." maxlength="300" aria-label="Are.na channel or user link" autocomplete="off">
+            <button class="action-button action-button-ghost" id="follow-add" type="submit">Follow</button>
+          </form>
+          <span class="settings-follow-error" id="follow-error" role="alert" hidden></span>
+          <div class="settings-followed" id="follow-list"></div>
+        </section>
+      </section>
+      <p class="library-filter" id="library-filter" hidden><button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-chip" type="button" data-tooltip="Clear tag filter"></button></p>
       <p class="library-meta" id="library-meta" hidden></p>
       <p class="library-empty" id="library-empty" hidden></p>
       <div class="library-grid" id="library-grid"></div>
@@ -34,9 +60,11 @@
     </main>
   </div>
 </div>
-<div class="select-bar" id="select-bar" role="toolbar" aria-label="Selection" hidden>
+<div class="select-bar pill-card" id="select-bar" role="toolbar" aria-label="Selection" hidden>
   <span class="select-count" id="select-count" role="status"></span>
+  <button class="action-icon" id="sel-accept" type="button" aria-label="Add to this set" data-tooltip="Add to this set" hidden><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
   <button class="action-icon" id="sel-add" type="button" aria-label="Add to set" data-tooltip="Add to set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
+  <button class="action-icon" id="sel-tag" type="button" aria-label="Add tag" data-tooltip="Add tag"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>
   <button class="action-icon" id="sel-remove" type="button" aria-label="Remove from set" data-tooltip="Remove from set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
   <button class="action-icon" id="sel-save" type="button" aria-label="Download" data-tooltip="Download"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg></button>
   <button class="action-icon action-icon-danger" id="sel-discard" type="button" aria-label="Discard" data-tooltip="Discard"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
@@ -52,6 +80,8 @@
       <button class="action-icon capture-submit" id="capture-submit" type="submit" aria-label="Capture" data-tooltip="Capture"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       <span class="capture-error" id="capture-error" role="alert" hidden></span>
     </form>
+    <button class="action-icon" id="dock-settings" type="button" aria-label="Settings" data-tooltip="Settings" aria-pressed="false"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg></button>
+    <button class="action-icon" id="dock-find" type="button" aria-label="Find more images" data-tooltip="Find more images" aria-pressed="false" hidden><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></svg></button>
     <button class="action-icon" id="group-toggle" type="button" aria-label="Group: none" data-tooltip="Group: none" data-group=""><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></button>
   </div>
 </div>
@@ -92,6 +122,8 @@
         <input class="form-input" id="f-type" autocomplete="off">
         <label class="lightbox-label" for="f-year">Year</label>
         <input class="form-input" id="f-year" autocomplete="off" inputmode="numeric">
+        <label class="lightbox-label" for="f-tags">Tags</label>
+        <input class="form-input" id="f-tags" autocomplete="off" placeholder="Separate with commas">
         <div class="lightbox-actions">
           <button class="action-icon" type="submit" aria-label="Done" data-tooltip="Done"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
           <button class="action-icon" id="f-cancel" type="button" aria-label="Cancel" data-tooltip="Cancel"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>

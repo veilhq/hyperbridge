@@ -79,6 +79,52 @@ class AssetUriTests(LibraryOpsCase):
         self.assertIsNone(library.get_asset_uri(asset))
 
 
+class TagEditTests(LibraryOpsCase):
+    def test_parse_tags_cleans_dedupes_and_caps(self):
+        self.assertEqual(library.parse_tags(" #Poster, poster ,, Retro  Type "), ["Poster", "Retro Type"])
+        self.assertEqual(len(library.parse_tags([f"t{i}" for i in range(50)])), library.MAX_TAGS)
+
+    def test_update_replaces_tags_and_drops_unused_ones(self):
+        entry = self.add_entry(title="x")
+        self.assertEqual(library.update_entry(entry, {"tags": "a, b"})["tags"], ["a", "b"])
+        self.assertEqual(library.update_entry(entry, {"tags": "b, c"})["tags"], ["b", "c"])
+        names = [row[0] for row in self.conn.execute("SELECT name FROM tags ORDER BY name")]
+        self.assertEqual(names, ["b", "c"])
+
+    def test_tags_are_searchable_after_edit(self):
+        entry = self.add_entry(title="x")
+        library.update_entry(entry, {"tags": "brutalist"})
+        self.assertEqual(self.search("brutalist"), [entry])
+
+    def test_omitting_tags_keeps_them(self):
+        entry = self.add_entry(title="x")
+        library.update_entry(entry, {"tags": "keep"})
+        self.assertEqual(library.update_entry(entry, {"title": "y"})["tags"], ["keep"])
+
+    def test_add_tags_keeps_existing_tags_on_every_entry(self):
+        first = self.add_entry(title="a")
+        second = self.add_entry(title="b")
+        library.update_entry(first, {"tags": "keep"})
+        self.assertEqual(library.add_tags([first, second, 9999], "new, Keep"), 2)
+        self.assertEqual(library.get_entry(first)["tags"], ["keep", "new"])
+        self.assertEqual(library.get_entry(second)["tags"], ["keep", "new"])
+        self.assertEqual(sorted(self.search("new")), sorted([first, second]))
+
+    def test_add_tags_with_no_entries_or_names_changes_nothing(self):
+        entry = self.add_entry(title="a")
+        self.assertEqual(library.add_tags([], "x"), 0)
+        self.assertEqual(library.add_tags([9999], "x"), 0)
+        self.assertEqual(library.add_tags([entry], " , "), 1)
+        self.assertEqual(library.list_tags(), [])
+
+    def test_list_tags_counts_most_used_first(self):
+        first = self.add_entry(title="a")
+        second = self.add_entry(title="b")
+        library.add_tags([first, second], "common")
+        library.add_tags([first], "rare")
+        self.assertEqual(library.list_tags(), [{"name": "common", "count": 2}, {"name": "rare", "count": 1}])
+
+
 class UpdateEntryTests(LibraryOpsCase):
     def test_changed_fields_become_manual(self):
         entry = self.add_entry(title="Old", creator="Ada")
