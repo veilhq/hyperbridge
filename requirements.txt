@@ -4,6 +4,3 @@
 pywebview>=5.3
 Pillow>=10.0
 certifi
-# Optional: ranks the Discover feed by visual similarity (downloads a ~370 MB model on first use).
-# Set HYPERBRIDGE_EMBEDDINGS=0 to switch it off.
-fastembed>=0.9

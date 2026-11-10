@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
 import hyperbridge  # noqa: E402
 

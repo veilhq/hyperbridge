@@ -9,12 +9,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
 import arena  # noqa: E402
 import capture  # noqa: E402
 import feed  # noqa: E402
-import feed_sources  # noqa: E402
 import library  # noqa: E402
 from tests.test_db import LibraryCase  # noqa: E402
 
@@ -33,43 +31,10 @@ def fake_fetcher(url):
 
 
 class FeedCase(LibraryCase):
-    def enable(self, *ids):
-        for source_id in ids:
-            feed_sources.set_source(source_id, True)
-
     def tagged(self, tag="poster"):
         entry = self.add_entry(title="x")
         library.add_tags([entry], tag)
         return entry
-
-
-class TermTests(FeedCase):
-    def test_tags_first_then_set_names_without_duplicates(self):
-        first = self.tagged("poster")
-        library.add_tags([first], "type")
-        self.conn.execute("INSERT INTO sets (name, created_at) VALUES ('Poster', '2026-01-01')")
-        self.conn.execute("INSERT INTO sets (name, created_at) VALUES ('Moods', '2026-01-01')")
-        self.assertEqual(feed.search_terms(self.conn), ["poster", "type", "Moods"])
-
-
-class WeightTests(FeedCase):
-    def test_usage_raises_weight_and_choices_move_it(self):
-        first, second = self.tagged("poster"), self.add_entry(title="y")
-        library.add_tags([second], "poster, rare")
-        weights = feed.term_weights(self.conn)
-        self.assertEqual((weights["poster"], weights["rare"]), (2, 1))
-        for url, state in (("a", "saved"), ("b", "dismissed")):
-            self.conn.execute(
-                "INSERT INTO feed_items (source_id, url, term, state, created_at) VALUES ('met', ?, ?, ?, 'x')",
-                (url, "rare" if state == "saved" else "poster", state))
-        weights = feed.term_weights(self.conn)
-        self.assertEqual((weights["poster"], weights["rare"]), (1, 4))
-
-    def test_pick_terms_returns_distinct_words(self):
-        self.tagged("poster")
-        library.add_tags([self.add_entry(title="z")], "type")
-        picked = feed.pick_terms(self.conn, random.Random(3), 5)
-        self.assertEqual(sorted(picked), ["poster", "type"])
 
 
 class RefreshTests(FeedCase):
@@ -130,6 +95,15 @@ class RefreshTests(FeedCase):
         self.assertEqual(result["added"], 1)
         self.assertEqual(sorted(item["thumb"][-5:] for item in feed.list_items(self.conn)["items"]), ["a.jpg", "b.jpg"])
 
+    def test_old_dismissed_and_unseen_items_are_pruned(self):
+        for state, created in (("dismissed", "2020-01-01T00:00:00"), ("new", "2020-01-01T00:00:00"),
+                               ("dismissed", feed._now()), ("saved", "2020-01-01T00:00:00")):
+            self.conn.execute(
+                "INSERT INTO feed_items (source_id, url, term, state, created_at) VALUES ('arena', ?, '', ?, ?)",
+                (f"https://x.example/{state}{created}", state, created))
+        self.assertEqual(feed.prune(self.conn), 2)
+        self.assertEqual(sorted(row[0] for row in self.conn.execute("SELECT state FROM feed_items")), ["dismissed", "saved"])
+
     def test_failing_channel_is_counted_and_skipped(self):
         self.follow()
 
@@ -138,17 +112,6 @@ class RefreshTests(FeedCase):
 
         result = feed.refresh(self.conn, broken, random.Random(1))
         self.assertEqual((result["added"], result["failed"]), (0, 1))
-
-
-class KeywordTests(FeedCase):
-    def test_untagged_entries_contribute_title_and_description_words(self):
-        self.add_entry(title="Brutalist concrete tower")
-        self.add_entry(title="Concrete stairwell photo")
-        terms = feed.search_terms(self.conn)
-        self.assertEqual(terms[0], "concrete")
-        self.assertIn("brutalist", terms)
-        self.assertNotIn("photo", terms)
-        self.assertEqual(feed.term_weights(self.conn)["concrete"], 2)
 
 
 class ReviewTests(FeedCase):

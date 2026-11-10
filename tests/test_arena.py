@@ -10,11 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
 import arena  # noqa: E402
 import feed  # noqa: E402
-import feed_sources  # noqa: E402
 from tests.test_db import LibraryCase  # noqa: E402
 
 
@@ -72,11 +70,6 @@ class SamplingTests(unittest.TestCase):
         items = arena.user_items("https://www.are.na/ada", FakeArena(), random.Random(1))
         self.assertEqual([(item["url"], item["thumb"]) for item in items], [("https://arena.example/u9.jpg", "https://arena.example/u9l.jpg")])
         self.assertEqual(items[0]["page_url"], "https://www.are.na/block/9")
-
-    def test_related_items_come_from_a_public_sibling_channel(self):
-        items = arena.related_items("https://www.are.na/me/home", FakeArena(), random.Random(1))
-        self.assertTrue(items)
-        self.assertEqual(items[0]["page_url"], "https://www.are.na/other/sibling")
 
 
 class RetryTests(unittest.TestCase):
@@ -167,26 +160,6 @@ class OriginTests(LibraryCase):
         self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 2)
         self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1), max_channels=None), 1)
 
-    def test_feed_terms_use_channel_words_not_filenames(self):
-        self.saved(1, "original_ec6b292b2a779f6a73de4c15c3004904.jpg")
-        self.saved(2, "original_bdd0d1cbffec079cf41f8f4f3145d6b8.png")
-        arena.backfill_origins(self.conn, OriginFake(), random.Random(1))
-        terms = feed.search_terms(self.conn)
-        self.assertIn("Alkaline Graphics", terms)
-        self.assertIn("alkaline", terms)
-        self.assertNotIn("original", terms)
-        self.assertNotIn("datacore", terms)
-
-    def test_graph_items_pull_from_a_channel_that_shares_saved_blocks(self):
-        self.saved(1, "x")
-        self.saved(2, "y")
-        arena.backfill_origins(self.conn, OriginFake(), random.Random(1))
-        fake = OriginFake()
-        items = arena.graph_items(self.conn, fake, random.Random(1), seeds=2)
-        self.assertTrue(items)
-        self.assertEqual(items[0]["page_url"], "https://www.are.na/ann/shared")
-
-
 class FollowTests(LibraryCase):
     def test_follow_lists_dedupes_and_unfollows(self):
         item = arena.follow(self.conn, "https://www.are.na/me/chan", FakeArena())
@@ -209,7 +182,6 @@ class FollowTests(LibraryCase):
 
     def test_refresh_pulls_from_a_followed_channel_without_saved_entries(self):
         self.add_entry(title="x")
-        feed_sources.set_source("arena", True)
         arena.follow(self.conn, "https://www.are.na/me/chan", FakeArena())
         result = feed.refresh(self.conn, FakeArena(), random.Random(1))
         self.assertGreater(result["added"], 0)

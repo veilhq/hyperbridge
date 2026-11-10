@@ -44,7 +44,6 @@ HTML = with_notice(HTML, _build_notice)
 import arena  # noqa: E402
 import capture  # noqa: E402
 import discover  # noqa: E402
-import embed  # noqa: E402
 import feed  # noqa: E402
 import feed_sources  # noqa: E402
 import db  # noqa: E402
@@ -97,7 +96,7 @@ def _group_rank(labels: list, group: str) -> dict:
     return {label: index for index, label in enumerate(ranked)}
 
 
-GIF_GRID_BYTES = 3 * 1024 * 1024
+GIF_GRID_BYTES = 1024 * 1024
 
 
 def _thumb_uri(relative: str | None) -> str | None:
@@ -254,16 +253,8 @@ class HyperbridgeAPI:
         return {"ok": True, **result}
 
     def list_feed_sources(self) -> list:
-        """Return the outside sources a discovery feed may use, with their switches."""
+        """Return the outside services Hyperbridge can or cannot follow."""
         return feed_sources.list_sources()
-
-    def set_feed_source(self, source_id: str, enabled: bool, api_key: str | None = None) -> dict | None:
-        """Switch a feed source on or off and optionally store its API key."""
-        try:
-            return feed_sources.set_source(source_id, bool(enabled), api_key)
-        except Exception as err:
-            logger.warning("set_feed_source failed: %s", err)
-            return None
 
     def _feed_call(self, name, action, fallback):
         """Run a feed action on its own connection, returning the fallback on failure."""
@@ -549,22 +540,6 @@ def _backfill_origins():
         conn.close()
 
 
-def _index_embeddings():
-    """Embed library images in the background so the discovery feed can rank by visual similarity."""
-    if not embed.available():
-        logger.info("embeddings unavailable; install fastembed to rank the feed by image similarity")
-        return
-    time.sleep(10)
-    conn = db.connect()
-    try:
-        while embed.index_library(conn, limit=64):
-            pass
-    except Exception:  # noqa: BLE001 - a failed index only leaves the feed ranked by text
-        logger.exception("embedding index failed")
-    finally:
-        conn.close()
-
-
 def _watch_drops(window, api):
     """Turn files dropped on the window into entries and tell the page how many landed."""
     from webview.dom import DOMEventHandler
@@ -590,7 +565,6 @@ def main():
     capture.Worker(screenshotter=screenshot.capture_page).start()
     threading.Thread(target=_backfill_swatches, daemon=True).start()
     threading.Thread(target=_backfill_origins, daemon=True).start()
-    threading.Thread(target=_index_embeddings, daemon=True).start()
 
     api = HyperbridgeAPI()
     icon_path = str(ICON_FILE) if ICON_FILE.exists() else None

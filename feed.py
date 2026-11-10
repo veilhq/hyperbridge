@@ -1,14 +1,11 @@
-"""The discovery feed: images pulled from the followed Are.na channels and Tumblr blogs and ranked by similarity to what is saved."""
+"""The discovery feed: images pulled from the followed Are.na channels and Tumblr blogs."""
 
 import json
 import random
-import re
-from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import arena
 import capture
-import embed
 import library
 import sets
 import tumblr
@@ -17,81 +14,12 @@ MAX_CHANNELS = 3
 ROUNDS = 3
 FEED_SOURCES = ("arena", "tumblr")
 STALE_HOURS = 6
-KEYWORD_SCAN = 500
-KEYWORD_TERMS = 10
-_WORD_PATTERN = re.compile(r"[a-z]+")
-_STOPWORDS = frozenset(
-    "this that with from have your about into their there which would could should these those them they what when where "
-    "will more most some other than then also only over just like very much many such each both being been were "
-    "image images photo photos picture pictures screenshot untitled file page site www http https com jpg jpeg png "
-    "webp gif view free download stock official home".split())
+PRUNE_DISMISSED_DAYS = 180
+PRUNE_UNSEEN_DAYS = 30
 
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
-
-
-def keyword_counts(conn) -> Counter:
-    """Count the words, by entry, in recent titles and descriptions so untagged libraries still steer the feed."""
-    counts = Counter()
-    rows = conn.execute(
-        "SELECT e.title, e.description, COALESCE(o.channel_title, '') AS channel_title FROM entries e"
-        " LEFT JOIN entry_origins o ON o.entry_id = e.id ORDER BY e.id DESC LIMIT ?", (KEYWORD_SCAN,))
-    for title, description, channel_title in rows:
-        title = "" if arena.junk_title(title) else title
-        words = _WORD_PATTERN.findall(f"{title} {(description or '')[:300]} {channel_title}".lower())
-        counts.update({word for word in words if len(word) >= 4 and word not in _STOPWORDS})
-    return counts
-
-
-def phrase_counts(conn) -> Counter:
-    """Count saved images per source channel title, cleaned into a search phrase."""
-    counts = Counter()
-    for (title,) in conn.execute("SELECT channel_title FROM entry_origins WHERE channel_title != ''"):
-        phrase = " ".join(re.sub(r"[^\w ]+", " ", title).split())
-        if len(phrase) >= 4:
-            counts[phrase] += 1
-    return counts
-
-
-def channel_phrases(conn) -> list:
-    """Return the source channel titles saved images came from, most used first, as search phrases."""
-    return [phrase for phrase, _ in phrase_counts(conn).most_common(6)]
-
-
-def search_terms(conn) -> list:
-    """Return search words drawn from the library: the most used tags, set names, creators, then title keywords."""
-    tags = [row[0] for row in conn.execute(
-        "SELECT t.name FROM tags t JOIN entry_tags et ON et.tag_id = t.id"
-        " GROUP BY t.id ORDER BY COUNT(*) DESC, t.name LIMIT 12")]
-    names = [row[0] for row in conn.execute("SELECT name FROM sets ORDER BY name COLLATE NOCASE LIMIT 12")]
-    creators = [row[0] for row in conn.execute(
-        "SELECT creator FROM entries WHERE creator != '' GROUP BY creator ORDER BY COUNT(*) DESC LIMIT 8")]
-    keywords = [word for word, _ in sorted(keyword_counts(conn).items(), key=lambda pair: (-pair[1], pair[0]))[:KEYWORD_TERMS]]
-    seen, terms = set(), []
-    for term in [*tags, *names, *channel_phrases(conn), *creators, *keywords]:
-        key = term.lower()
-        if key not in seen:
-            seen.add(key)
-            terms.append(term)
-    return terms
-
-
-def term_weights(conn) -> dict:
-    """Score each search word by how much of the library uses it, nudged by what was saved or dismissed from it."""
-    weights = {}
-    keywords = keyword_counts(conn)
-    phrases = phrase_counts(conn)
-    for term in search_terms(conn):
-        used = conn.execute(
-            "SELECT (SELECT COUNT(*) FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE t.name = ? COLLATE NOCASE)"
-            " + (SELECT COUNT(*) FROM set_entries se JOIN sets s ON s.id = se.set_id WHERE s.name = ? COLLATE NOCASE)"
-            " + (SELECT COUNT(*) FROM entries WHERE creator = ? COLLATE NOCASE)", (term, term, term)).fetchone()[0]
-        saved, dismissed = conn.execute(
-            "SELECT COALESCE(SUM(state = 'saved'), 0), COALESCE(SUM(state = 'dismissed'), 0)"
-            " FROM feed_items WHERE term = ? COLLATE NOCASE", (term,)).fetchone()
-        weights[term] = max(1, used + keywords.get(term.lower(), 0) + phrases.get(term, 0) + 3 * saved - dismissed)
-    return weights
 
 
 def _weighted_pick(rng, weights, count) -> list:
@@ -105,18 +33,13 @@ def _weighted_pick(rng, weights, count) -> list:
     return chosen
 
 
-def pick_terms(conn, rng, count) -> list:
-    """Choose search words at random, favoring those the library and past choices point to."""
-    return _weighted_pick(rng, term_weights(conn), count)
-
-
 def pull(url, fetcher, rng) -> list:
     """Return feed items for one followed link, from Are.na or a Tumblr blog."""
     return arena.pull(url, fetcher, rng) if arena.target(url) else tumblr.items(url, fetcher, rng)
 
 
-def _round(conn, followed, fetcher, rng, embedder):
-    """Pull from a few followed sources once and rank what came back; returns (items, failed, jobs, ranked)."""
+def _round(followed, fetcher, rng):
+    """Pull from a few followed sources once; returns (items, failed, jobs)."""
     picked = _weighted_pick(rng, {url: 1 for url in followed}, MAX_CHANNELS)
     failed = 0
     pulled, seen = [], set()
@@ -130,40 +53,42 @@ def _round(conn, followed, fetcher, rng, embedder):
             if item["url"] not in seen:
                 seen.add(item["url"])
                 pulled.append(item)
-    ranked = False
-    try:
-        ordered = embed.rank(conn, pulled, lambda url: bytes(fetcher(url).body), embedder)
-        ranked = ordered is not pulled
-        pulled = ordered
-    except Exception:  # noqa: BLE001 - without scores the feed keeps source order
-        pass
-    return pulled, failed, len(picked), ranked
+    return pulled, failed, len(picked)
 
 
-def refresh(conn, fetcher=None, rng=None, embedder=None, replace=False) -> dict:
-    """Pull images from the followed Are.na and Tumblr sources and rank them against the library.
+def prune(conn) -> int:
+    """Delete dismissed items older than PRUNE_DISMISSED_DAYS and unseen ones older than PRUNE_UNSEEN_DAYS."""
+    now = datetime.now()
+    dismissed = (now - timedelta(days=PRUNE_DISMISSED_DAYS)).isoformat(timespec="seconds")
+    unseen = (now - timedelta(days=PRUNE_UNSEEN_DAYS)).isoformat(timespec="seconds")
+    return conn.execute(
+        "DELETE FROM feed_items WHERE (state = 'dismissed' AND created_at < ?) OR (state = 'new' AND created_at < ?)",
+        (dismissed, unseen)).rowcount
+
+
+def refresh(conn, fetcher=None, rng=None, replace=False) -> dict:
+    """Pull images from the followed Are.na and Tumblr sources.
 
     replace swaps the unseen feed for the new pull; otherwise the images are appended, retrying up to ROUNDS times until something new arrives.
     """
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
+    prune(conn)
     followed = [item["url"] for item in arena.list_followed(conn)]
     try:
         arena.backfill_origins(conn, fetcher, rng)
     except Exception:  # noqa: BLE001 - missing origins only leave the library less described
         pass
     added = failed = jobs = 0
-    ranked = False
     for attempt in range(1 if replace else ROUNDS):
-        pulled, round_failed, round_jobs, ranked = _round(conn, followed, fetcher, rng, embedder)
+        pulled, round_failed, round_jobs = _round(followed, fetcher, rng)
         failed, jobs = failed + round_failed, jobs + round_jobs
         if replace and (pulled or not followed):
             conn.execute("DELETE FROM feed_items WHERE state = 'new'")
         added += _store(conn, pulled)
         if added or not followed or round_failed == round_jobs:
             break
-    return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else [],
-            "ranked": ranked}
+    return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else []}
 
 
 def _store(conn, items) -> int:
@@ -178,10 +103,10 @@ def _store(conn, items) -> int:
             continue
         cursor = conn.execute(
             "INSERT OR IGNORE INTO feed_items"
-            " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at, score,"
-            " source_ref, collection, posted_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at,"
+            " source_ref, collection, posted_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["source_id"], item["url"], item["thumb"], item["width"], item["height"], item["title"],
-             item["creator"], item["page_url"], item["term"], _now(), item.get("score"),
+             item["creator"], item["page_url"], item["term"], _now(),
              item.get("source_ref", ""), item.get("collection", ""), item.get("posted_at", ""),
              json.dumps(item.get("tags") or [])),
         )

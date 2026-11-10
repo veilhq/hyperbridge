@@ -2,7 +2,7 @@
 (function () {
   "use strict";
 
-  var ACCESS_LABELS = { open: "Open", key: "Key needed", none: "Unavailable" };
+  var ACCESS_LABELS = { open: "Open", none: "Unavailable" };
   var sources = [];
   var view, list, library, opener, followList, followInput, followError;
   var followed = [];
@@ -20,50 +20,15 @@
     return el;
   }
 
-  // Saves a source's switch or key, then repaints that row from the stored state.
-  function save(source, enabled, key) {
-    var bridge = api();
-    if (!bridge) return;
-    Promise.resolve(bridge.set_feed_source(source.id, enabled, key)).then(function (updated) {
-      if (!updated) { toast("error", "Could not save."); return; }
-      sources = sources.map(function (item) { return item.id === updated.id ? updated : item; });
-      render();
-    }).catch(function () { toast("error", "Could not save."); });
-  }
-
   function buildRow(source) {
     var row = makeEl("div", "settings-source");
     if (!source.available) row.setAttribute("data-unavailable", "true");
-    var check = document.createElement("input");
-    check.type = "checkbox";
-    check.className = "form-check";
-    check.checked = source.enabled;
-    check.disabled = !source.available;
-    check.setAttribute("aria-label", "Use " + source.name);
-    check.addEventListener("change", function () { save(source, check.checked, null); });
     var text = makeEl("span", "settings-source-text");
     text.appendChild(makeEl("span", "settings-source-name", source.name));
     text.appendChild(makeEl("span", "settings-source-desc", source.description));
     var chip = makeEl("span", "status-chip status-chip-outlined-muted", ACCESS_LABELS[source.access] || "");
-    row.appendChild(check);
     row.appendChild(text);
     row.appendChild(chip);
-    if (source.access === "key") {
-      var keyBox = makeEl("div", "settings-source-key");
-      keyBox.hidden = !source.enabled;
-      var input = document.createElement("input");
-      input.type = "password";
-      input.className = "form-input";
-      input.maxLength = 200;
-      input.autocomplete = "off";
-      input.placeholder = source.has_key ? "Key saved - type to replace" : "API key";
-      input.setAttribute("aria-label", source.name + " API key");
-      input.addEventListener("change", function () {
-        if (input.value.trim()) save(source, source.enabled, input.value);
-      });
-      keyBox.appendChild(input);
-      row.appendChild(keyBox);
-    }
     return row;
   }
 

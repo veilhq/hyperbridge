@@ -91,11 +91,6 @@ def channel_items(channel_url, fetcher, rng) -> list:
     } for block in blocks]
 
 
-def _channel_link(channel) -> str:
-    owner = (channel.get("user") or {}).get("slug") or ""
-    return f"https://www.are.na/{owner}/{channel['slug']}" if owner and channel.get("slug") else ""
-
-
 def user_items(user_url, fetcher, rng) -> list:
     """Return feed items from a random page of the images a followed user has saved (the v3 API, which needs no login)."""
     found = target(user_url)
@@ -114,22 +109,6 @@ def user_items(user_url, fetcher, rng) -> list:
         **_block_fields(block), "title": (block.get("title") or "")[:300], "creator": "",
         "page_url": f"https://www.are.na/block/{block.get('id')}", "term": found[1], "collection": found[1],
     } for block in blocks]
-
-
-def related_items(channel_url, fetcher, rng) -> list:
-    """Return feed items from a channel that shares a block with the given one."""
-    found = target(channel_url)
-    if not found or found[0] != "channel":
-        return []
-    _, blocks = channel_blocks(found[1], fetcher, rng)
-    ids = [block["id"] for block in blocks if block.get("id") and _usable(block)]
-    if not ids:
-        return []
-    channels = _json(fetcher, f"{API}/blocks/{rng.choice(ids)}/channels?per=20").get("channels") or []
-    links = [_channel_link(c) for c in channels
-             if c.get("slug") != found[1] and c.get("status") != "private" and int(c.get("length") or 0) > 0]
-    links = [link for link in links if link]
-    return channel_items(rng.choice(links), fetcher, rng) if links else []
 
 
 _JUNK_TITLE = re.compile(r"^(original_)?[0-9a-f-]{12,}|^(img|dsc|image|untitled|screen[ _-]?shot|tumblr)\b", re.I)
@@ -242,26 +221,6 @@ def _fill_entry(conn, row, block) -> None:
     if updates:
         sets = ", ".join(f"{column} = ?" for column in updates)
         conn.execute(f"UPDATE entries SET {sets} WHERE id = ?", (*updates.values(), row["id"]))
-
-
-def graph_items(conn, fetcher, rng, seeds=3) -> list:
-    """Pull from channels that hold the same blocks as saved images, favoring channels that hold several of them."""
-    block_ids = [row[0] for row in conn.execute("SELECT DISTINCT block_id FROM entry_origins WHERE block_id IS NOT NULL")]
-    own = {row[0] for row in conn.execute("SELECT DISTINCT channel_slug FROM entry_origins")}
-    scores = {}
-    for block_id in rng.sample(block_ids, min(seeds, len(block_ids))):
-        try:
-            channels = _json(fetcher, f"{API}/blocks/{block_id}/channels?per=20").get("channels") or []
-        except Exception:  # noqa: BLE001 - one unreadable block is skipped
-            continue
-        for item in channels:
-            link = _channel_link(item)
-            if link and item.get("slug") not in own and item.get("status") != "private" and int(item.get("length") or 0) > 0:
-                scores[link] = scores.get(link, 0) + 1
-    if not scores:
-        return []
-    pick = rng.choices(list(scores), weights=list(scores.values()))[0]
-    return channel_items(pick, fetcher, rng)
 
 
 def pull(url, fetcher, rng) -> list:

@@ -890,11 +890,11 @@ var candidates = null;
     return items;
   }
 
-  // Opens the menu at the top of the bar's button; it flips upward when there is no room below.
+  // Opens the menu just above the selection bar; it flips upward when there is no room below.
   function openSetMenu(event) {
     event.stopPropagation();
     var rect = event.currentTarget.getBoundingClientRect();
-    event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.top }));
+    event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: rect.left, clientY: $("#select-bar").getBoundingClientRect().top - 8 }));
   }
 
   function setupSelection() {

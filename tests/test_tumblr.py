@@ -9,7 +9,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
 import feed  # noqa: E402
 import library  # noqa: E402
