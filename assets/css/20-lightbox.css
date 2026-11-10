@@ -80,7 +80,8 @@ html.a11y-reduce-motion .lightbox-nav { animation: none !important; transition: 
   display: flex; flex-direction: column; width: var(--space-4); overflow: hidden;
   border-radius: 0 var(--radius) var(--radius) 0;
 }
-.lightbox-swatch { flex: none; height: var(--space-5); }
+.lightbox-swatch { flex: none; height: var(--space-5); padding: 0; border: 0; cursor: pointer; }
+.lightbox-service { margin-left: var(--space-2); }
 .hk-tooltip { z-index: calc(var(--z-modal) + 2); }
 @media (max-width: 52rem) { .lightbox-swatches { display: none; } }
 

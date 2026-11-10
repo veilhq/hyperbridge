@@ -58,6 +58,23 @@ class SwatchTests(LibraryOpsCase):
         self.assertEqual(api.list_entries()["years"], ["2020", "2024"])
         self.assertEqual(api.list_entries()["entries"][0]["group"], "")
 
+    def test_near_matches_similar_shades_only(self):
+        self.assertTrue(swatches.near(json.dumps(["#ff0000", "#00ff00"]), "#f81010"))
+        self.assertFalse(swatches.near(json.dumps(["#0000ff"]), "#ff0000"))
+        self.assertFalse(swatches.near("[]", "#ff0000"))
+        self.assertFalse(swatches.near("bad", "#ff0000"))
+
+    def test_list_filters_by_similar_color(self):
+        red, blue = self.add_entry("Red"), self.add_entry("Blue")
+        self.conn.execute("UPDATE entries SET swatches = ? WHERE id = ?", (json.dumps(["#ee1111", "#ffffff"]), red))
+        self.conn.execute("UPDATE entries SET swatches = ? WHERE id = ?", (json.dumps(["#0000ff"]), blue))
+        self.conn.commit()
+        api = hyperbridge.HyperbridgeAPI()
+        result = api.list_entries(color="#ff0000")
+        self.assertEqual([e["id"] for e in result["entries"]], [red])
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(api.list_entries(color="nope")["total"], 2)
+
 
 def library_swatches(conn, entry_id):
     return json.loads(conn.execute("SELECT swatches FROM entries WHERE id = ?", (entry_id,)).fetchone()[0])

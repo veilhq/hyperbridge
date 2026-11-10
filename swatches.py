@@ -45,6 +45,36 @@ def family(hex_color: str) -> str:
     return "Red"
 
 
+def _lab(hex_color: str) -> tuple[float, float, float]:
+    """Convert a hex color to OKLab."""
+    channels = []
+    for i in (1, 3, 5):
+        value = int(hex_color[i:i + 2], 16) / 255
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    red, green, blue = channels
+    long = (0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue) ** (1 / 3)
+    mid = (0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue) ** (1 / 3)
+    short = (0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue) ** (1 / 3)
+    return (
+        0.2104542553 * long + 0.7936177850 * mid - 0.0040720468 * short,
+        1.9779984951 * long - 2.4285922050 * mid + 0.4505937099 * short,
+        0.0259040371 * long + 0.7827717662 * mid - 0.8086757660 * short,
+    )
+
+
+NEAR_DISTANCE = 0.12
+
+
+def near(raw: str, hex_color: str, limit: float = NEAR_DISTANCE) -> bool:
+    """Return whether any stored swatch is a similar shade to hex_color (OKLab distance within limit)."""
+    try:
+        target = _lab(hex_color)
+        values = [_lab(value) for value in parse(raw)]
+    except (ValueError, IndexError, TypeError):
+        return False
+    return any(sum((a - b) ** 2 for a, b in zip(target, value)) ** 0.5 <= limit for value in values)
+
+
 def entry_family(raw: str) -> str:
     """Return the hue family of the first stored swatch, or NO_COLOR when there is none."""
     try:

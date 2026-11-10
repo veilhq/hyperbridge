@@ -10,7 +10,7 @@
 
   var GROUPS = ["", "color", "year", "source"];
   var GROUP_LABELS = { "": "none", color: "color", year: "year", source: "source" };
-  var state = { query: "", tag: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
+  var state = { query: "", tag: "", color: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
   var tagsCache = [];
@@ -473,17 +473,29 @@ var candidates = null;
       emptyEl.hidden = true;
       return;
     }
-    emptyEl.textContent = state.query || state.tag ? "No matches." : "No entries.";
+    emptyEl.textContent = state.query || state.tag || state.color ? "No matches." : "No entries.";
     emptyEl.hidden = false;
   }
 
-  // Shows the active tag as a chip that clears the filter when clicked.
+  // Shows the active tag and color as chips that clear their filter when clicked.
   function renderFilter() {
     var box = $("#library-filter");
     var chip = $("#library-filter-chip");
-    if (!box || !chip) return;
-    box.hidden = !state.tag;
+    var colorChip = $("#library-filter-color");
+    if (!box || !chip || !colorChip) return;
+    box.hidden = !state.tag && !state.color;
+    chip.hidden = !state.tag;
     chip.textContent = state.tag ? "Tag: " + state.tag + " x" : "";
+    colorChip.hidden = !state.color;
+    colorChip.textContent = state.color ? "Color: " + state.color + " x" : "";
+  }
+
+  function setColor(color) {
+    state.color = color || "";
+    state.cascade = true;
+    renderFilter();
+    clearSelection();
+    load(true);
   }
 
   function setTag(tag) {
@@ -596,7 +608,7 @@ var candidates = null;
     var ticket = ++state.ticket;
     var offset = reset ? 0 : state.entries.length;
     state.loading = true;
-    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag).then(function (result) {
+    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag, state.color).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
@@ -616,7 +628,7 @@ var candidates = null;
     var tail = state.entries.slice(limit);
     var knownTotal = state.total;
     state.loading = true;
-    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag).then(function (result) {
+    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
@@ -1086,6 +1098,8 @@ var candidates = null;
 
     $("#capture-form").addEventListener("submit", onSubmit);
     $("#library-filter-chip").addEventListener("click", function () { setTag(""); });
+    $("#library-filter-color").addEventListener("click", function () { setColor(""); });
+    document.addEventListener("hyperbridge:color", function (event) { setColor(event.detail.color); });
     $("#find-exit").addEventListener("click", function () {
       if (candidates && candidates.feed) $("#sets-all").click();
       else leaveCandidates();

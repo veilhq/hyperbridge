@@ -149,8 +149,8 @@ class HyperbridgeAPI:
         return {"entries": entries}
 
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
-                     group: str = "", tag: str = "") -> dict:
-        """Return a page of entries, newest first, optionally filtered by text, set and tag, and grouped."""
+                     group: str = "", tag: str = "", color: str = "") -> dict:
+        """Return a page of entries, newest first, optionally filtered by text, set, tag and color, and grouped."""
         offset = max(0, int(offset or 0))
         limit = min(_MAX_PAGE, max(1, int(limit or 60)))
         group = group if group in _GROUPS else ""
@@ -180,6 +180,8 @@ class HyperbridgeAPI:
             ).fetchall()
         finally:
             conn.close()
+        if re.fullmatch(r"#[0-9a-fA-F]{6}", color or ""):
+            rows = [row for row in rows if swatches.near(row["swatches"], color)]
         labels = [_group_label(row, group) for row in rows] if group else [""] * len(rows)
         order = list(range(len(rows)))
         if group:

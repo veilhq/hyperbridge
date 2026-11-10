@@ -52,7 +52,7 @@
           <div class="settings-followed" id="follow-list"></div>
         </section>
       </section>
-      <p class="library-filter" id="library-filter" hidden><button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-chip" type="button" data-tooltip="Clear tag filter"></button></p>
+      <p class="library-filter" id="library-filter" hidden><button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-chip" type="button" data-tooltip="Clear tag filter"></button> <button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-color" type="button" data-tooltip="Clear color filter" hidden></button></p>
       <p class="library-meta" id="library-meta" hidden></p>
       <p class="library-empty" id="library-empty" hidden></p>
       <div class="library-grid" id="library-grid"></div>
@@ -105,6 +105,10 @@
       <section class="lightbox-field" id="lb-view">
         <div class="lightbox-label">Source</div>
         <div class="lightbox-value" id="lb-source"></div>
+        <div class="lightbox-label" id="lb-collection-label" hidden>Collection</div>
+        <div class="lightbox-value" id="lb-collection" hidden></div>
+        <div class="lightbox-label" id="lb-posted-label" hidden>Posted</div>
+        <div class="lightbox-value" id="lb-posted" hidden></div>
         <div class="lightbox-label">Tags</div>
         <div class="lightbox-chips" id="lb-tags"></div>
         <div class="lightbox-label">Sets</div>

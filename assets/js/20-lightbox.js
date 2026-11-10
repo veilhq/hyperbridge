@@ -100,18 +100,31 @@
     box.appendChild(add);
   }
 
+  // Shows the source link with its service chip, plus the collection and posted date when known.
   function renderSource(entry) {
     var box = byId("lb-source");
+    var origin = entry.source || {};
     box.textContent = "";
     if (!entry.source_url) {
       box.appendChild(makeEl("span", "lightbox-none", "No source."));
-      return;
+    } else {
+      var link = makeEl("a", "", entry.source_url.replace(/^https?:\/\//, ""));
+      link.href = entry.source_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      box.appendChild(link);
     }
-    var link = makeEl("a", "", entry.source_url.replace(/^https?:\/\//, ""));
-    link.href = entry.source_url;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    box.appendChild(link);
+    if (origin.source_service) {
+      var service = origin.source_service;
+      box.appendChild(makeEl("span", "status-chip status-chip-outlined-muted lightbox-service", service.charAt(0).toUpperCase() + service.slice(1)));
+    }
+    var extras = { collection: origin.collection, posted: (origin.posted_at || "").slice(0, 10) };
+    Object.keys(extras).forEach(function (name) {
+      var value = byId("lb-" + name);
+      value.textContent = extras[name] || "";
+      value.hidden = !extras[name];
+      byId("lb-" + name + "-label").hidden = !extras[name];
+    });
   }
 
   // The image's dominant swatches, shown as a thin color bar under the title.
@@ -122,9 +135,12 @@
     box.hidden = empty;
     if (!empty) replay(box);
     (entry.swatches || []).forEach(function (hex) {
-      var chip = makeEl("span", "lightbox-swatch");
+      var chip = makeEl("button", "lightbox-swatch");
+      chip.type = "button";
       chip.style.backgroundColor = hex;
-      chip.setAttribute("data-tooltip", hex);
+      chip.setAttribute("data-color", hex);
+      chip.setAttribute("aria-label", "Show entries with a color like " + hex);
+      chip.setAttribute("data-tooltip", hex + " - show similar");
       box.appendChild(chip);
     });
   }
@@ -491,6 +507,12 @@
       toast("info", "Cancelled.");
     });
     byId("lb-form").addEventListener("submit", onSubmit);
+    byId("lb-swatches").addEventListener("click", function (event) {
+      var chip = event.target.closest("[data-color]");
+      if (!chip) return;
+      document.dispatchEvent(new CustomEvent("hyperbridge:color", { detail: { color: chip.getAttribute("data-color") } }));
+      closeDialog();
+    });
     byId("lb-tags").addEventListener("click", function (event) {
       var chip = event.target.closest("[data-tag]");
       if (!chip) return;
