@@ -101,6 +101,23 @@
     }).catch(function () {});
   }
 
+  // Runs a library export or import through the bridge, disabling both buttons while it works.
+  function transfer(method, working, done) {
+    var bridge = api();
+    if (!bridge || !bridge[method]) return;
+    var buttons = [$("#library-export"), $("#library-import")];
+    buttons.forEach(function (button) { button.disabled = true; });
+    Promise.resolve(bridge[method]()).then(function (result) {
+      if (!result || result.status === "failed") toast("error", (result && result.error) || "Something went wrong.");
+      else if (result.status !== "cancelled") done(result);
+    }).catch(function () { toast("error", "Something went wrong."); }).then(function () {
+      buttons.forEach(function (button) { button.disabled = false; });
+    });
+    toast("info", working);
+  }
+
+  function entries(count) { return count + (count === 1 ? " entry" : " entries"); }
+
   function isOpen() { return library.hasAttribute("data-settings"); }
 
   function setOpen(open) {
@@ -122,6 +139,17 @@
     followError = $("#follow-error");
     $("#follow-form").addEventListener("submit", follow);
     followInput.addEventListener("input", function () { showFollowError(""); });
+    $("#library-export").addEventListener("click", function () {
+      transfer("export_library", "Choose where to save the library.", function (result) {
+        toast("success", "Exported " + entries(result.entries) + ".");
+      });
+    });
+    $("#library-import").addEventListener("click", function () {
+      transfer("import_library", "Choose a library file to import.", function (result) {
+        toast("success", "Imported " + entries(result.added) + (result.skipped ? ", skipped " + result.skipped + " already here." : "."));
+        document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+      });
+    });
     library = $("#library");
     opener = $("#dock-settings");
     opener.addEventListener("click", function () { setOpen(!isOpen()); });

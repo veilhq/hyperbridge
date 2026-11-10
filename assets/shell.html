@@ -51,6 +51,14 @@
           <span class="settings-follow-error" id="follow-error" role="alert" hidden></span>
           <div class="settings-followed" id="follow-list"></div>
         </section>
+        <section class="settings-follow" aria-labelledby="transfer-title">
+          <h2 class="settings-subhead" id="transfer-title">Library</h2>
+          <p class="settings-source-desc">Export everything (images, tags, sets, followed sources) to one zip, or import a zip from another machine. Importing adds to this library and skips entries it already has.</p>
+          <div class="settings-follow-form">
+            <button class="action-button action-button-ghost" id="library-export" type="button">Export library</button>
+            <button class="action-button action-button-ghost" id="library-import" type="button">Import library</button>
+          </div>
+        </section>
       </section>
       <p class="library-filter" id="library-filter" hidden><button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-chip" type="button" data-tooltip="Clear tag filter"></button> <button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-color" type="button" data-tooltip="Clear color filter" hidden></button></p>
       <p class="library-meta" id="library-meta" hidden></p>

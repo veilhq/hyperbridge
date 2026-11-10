@@ -52,6 +52,7 @@ import screenshot  # noqa: E402
 import sets  # noqa: E402
 import social  # noqa: E402
 import swatches  # noqa: E402
+import transfer  # noqa: E402
 import tumblr  # noqa: E402
 
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
@@ -404,6 +405,45 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("save_entries_assets failed: %s", err)
             return {"status": "failed", "count": 0}
+
+    def export_library(self) -> dict:
+        """Ask where to save and write the whole library as one zip; returns status and counts."""
+        try:
+            name = f"hyperbridge-library-{time.strftime('%Y%m%d')}.zip"
+            chosen = webview.windows[0].create_file_dialog(
+                webview.SAVE_DIALOG, save_filename=name, file_types=("Hyperbridge library (*.zip)",)
+            )
+            if not chosen:
+                return {"status": "cancelled"}
+            dest = chosen if isinstance(chosen, str) else chosen[0]
+            conn = db.connect()
+            try:
+                return {"status": "saved", **transfer.export_library(conn, dest)}
+            finally:
+                conn.close()
+        except Exception as err:
+            logger.warning("export_library failed: %s", err)
+            return {"status": "failed", "error": "Could not export the library."}
+
+    def import_library(self) -> dict:
+        """Ask for a library zip and merge it in; entries already present are skipped."""
+        try:
+            chosen = webview.windows[0].create_file_dialog(
+                webview.OPEN_DIALOG, file_types=("Hyperbridge library (*.zip)",)
+            )
+            if not chosen:
+                return {"status": "cancelled"}
+            source = chosen if isinstance(chosen, str) else chosen[0]
+            conn = db.connect()
+            try:
+                return {"status": "imported", **transfer.import_library(conn, source)}
+            finally:
+                conn.close()
+        except transfer.TransferError as err:
+            return {"status": "failed", "error": str(err)}
+        except Exception as err:
+            logger.warning("import_library failed: %s", err)
+            return {"status": "failed", "error": "Could not import that library."}
 
     def add_image_data(self, data: str, name: str = "") -> dict:
         """Create an entry from a pasted image sent as base64 text."""
