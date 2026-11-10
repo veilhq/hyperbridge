@@ -4,6 +4,7 @@ import html
 import json
 import random
 import re
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import quote
@@ -20,7 +21,17 @@ PER_QUERY = 10
 MAX_CHANNELS = 3
 FOLLOWED_WEIGHT = 3
 STALE_HOURS = 6
+# Search words used when the library has no tags, sets or creators to draw from yet.
+STARTER_TERMS = ["poster design", "typography", "architecture", "illustration", "photography", "pattern"]
+KEYWORD_SCAN = 500
+KEYWORD_TERMS = 10
 _TAG_PATTERN = re.compile(r"<[^>]+>")
+_WORD_PATTERN = re.compile(r"[a-z]+")
+_STOPWORDS = frozenset(
+    "this that with from have your about into their there which would could should these those them they what when where "
+    "will more most some other than then also only over just like very much many such each both being been were "
+    "image images photo photos picture pictures screenshot untitled file page site www http https com jpg jpeg png "
+    "webp gif view free download stock official home".split())
 
 
 def _now() -> str:
@@ -31,16 +42,27 @@ def _json(fetcher, url) -> dict:
     return json.loads(bytes(fetcher(url).body).decode("utf-8", "replace"))
 
 
+def keyword_counts(conn) -> Counter:
+    """Count the words, by entry, in recent titles and descriptions so untagged libraries still steer the feed."""
+    counts = Counter()
+    rows = conn.execute("SELECT title, description FROM entries ORDER BY id DESC LIMIT ?", (KEYWORD_SCAN,))
+    for title, description in rows:
+        words = _WORD_PATTERN.findall(f"{title} {(description or '')[:300]}".lower())
+        counts.update({word for word in words if len(word) >= 4 and word not in _STOPWORDS})
+    return counts
+
+
 def search_terms(conn) -> list:
-    """Return search words drawn from the library: the most used tags, then set names."""
+    """Return search words drawn from the library: the most used tags, set names, creators, then title keywords."""
     tags = [row[0] for row in conn.execute(
         "SELECT t.name FROM tags t JOIN entry_tags et ON et.tag_id = t.id"
         " GROUP BY t.id ORDER BY COUNT(*) DESC, t.name LIMIT 12")]
     names = [row[0] for row in conn.execute("SELECT name FROM sets ORDER BY name COLLATE NOCASE LIMIT 12")]
     creators = [row[0] for row in conn.execute(
         "SELECT creator FROM entries WHERE creator != '' GROUP BY creator ORDER BY COUNT(*) DESC LIMIT 8")]
+    keywords = [word for word, _ in sorted(keyword_counts(conn).items(), key=lambda pair: (-pair[1], pair[0]))[:KEYWORD_TERMS]]
     seen, terms = set(), []
-    for term in [*tags, *names, *creators]:
+    for term in [*tags, *names, *creators, *keywords]:
         key = term.lower()
         if key not in seen:
             seen.add(key)
@@ -51,6 +73,7 @@ def search_terms(conn) -> list:
 def term_weights(conn) -> dict:
     """Score each search word by how much of the library uses it, nudged by what was saved or dismissed from it."""
     weights = {}
+    keywords = keyword_counts(conn)
     for term in search_terms(conn):
         used = conn.execute(
             "SELECT (SELECT COUNT(*) FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE t.name = ? COLLATE NOCASE)"
@@ -59,7 +82,7 @@ def term_weights(conn) -> dict:
         saved, dismissed = conn.execute(
             "SELECT COALESCE(SUM(state = 'saved'), 0), COALESCE(SUM(state = 'dismissed'), 0)"
             " FROM feed_items WHERE term = ? COLLATE NOCASE", (term,)).fetchone()
-        weights[term] = max(1, used + 3 * saved - dismissed)
+        weights[term] = max(1, used + keywords.get(term.lower(), 0) + 3 * saved - dismissed)
     return weights
 
 
@@ -132,7 +155,7 @@ def refresh(conn, fetcher=None, rng=None) -> dict:
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
     enabled = set(feed_sources.enabled_sources())
-    chosen = pick_terms(conn, rng, TERMS_PER_REFRESH)
+    chosen = pick_terms(conn, rng, TERMS_PER_REFRESH) or rng.sample(STARTER_TERMS, TERMS_PER_REFRESH)
     jobs = []
     if "commons" in enabled:
         jobs += [lambda term=term: _commons(term, fetcher) for term in chosen]
@@ -157,7 +180,7 @@ def refresh(conn, fetcher=None, rng=None) -> dict:
             failed += 1
             continue
         added += _store(conn, items)
-    return {"added": added, "failed": failed, "enabled": sorted(enabled), "terms": chosen}
+    return {"added": added, "failed": failed, "jobs": len(jobs), "enabled": sorted(enabled), "terms": chosen}
 
 
 def _store(conn, items) -> int:

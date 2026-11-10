@@ -126,6 +126,32 @@ class RefreshTests(FeedCase):
         self.assertEqual((result["added"], result["failed"]), (0, 1))
 
 
+class StarterTests(FeedCase):
+    def test_untagged_library_still_searches_with_starter_words(self):
+        self.add_entry(title="x")
+        self.enable("commons")
+        seen = []
+
+        def spy(url):
+            seen.append(url)
+            raise OSError("down")
+
+        result = feed.refresh(self.conn, spy, random.Random(1))
+        self.assertEqual(result["jobs"], feed.TERMS_PER_REFRESH)
+        self.assertTrue(set(result["terms"]) <= set(feed.STARTER_TERMS))
+
+
+class KeywordTests(FeedCase):
+    def test_untagged_entries_contribute_title_and_description_words(self):
+        self.add_entry(title="Brutalist concrete tower")
+        self.add_entry(title="Concrete stairwell photo")
+        terms = feed.search_terms(self.conn)
+        self.assertEqual(terms[0], "concrete")
+        self.assertIn("brutalist", terms)
+        self.assertNotIn("photo", terms)
+        self.assertEqual(feed.term_weights(self.conn)["concrete"], 2)
+
+
 class ReviewTests(FeedCase):
     def seed(self):
         self.tagged()

@@ -289,6 +289,15 @@ var candidates = null;
     feedMessage(count ? "" : (note || "Nothing new yet. Tag or group some images to steer the feed, then refresh."));
   }
 
+  // Names why a refresh brought nothing: no sources, nothing to pull from, or sources unreachable.
+  function refreshNote(pulled) {
+    if (!pulled || !pulled.ok) return "Could not refresh the feed.";
+    if (!pulled.enabled.length) return "No sources are switched on. Use the sliders icon to choose where the feed may pull from.";
+    if (!pulled.jobs) return "Nothing to pull from yet. Follow an Are.na channel in the sources view, or switch on Wikimedia Commons or The Met.";
+    if (pulled.failed >= pulled.jobs) return "Could not reach the sources. Check the internet connection and refresh.";
+    return "";
+  }
+
   function showFeedLoading() {
     candidates = { feed: true, page_url: "", candidates: [] };
     clearSelection();
@@ -322,13 +331,13 @@ var candidates = null;
       $("#find-refresh").hidden = false;
     }
     showFeedLoading();
-    var sourcesOff = false;
+    var sourcesOff = "";
     Promise.resolve(bridge.list_feed(0, PAGE_SIZE)).then(function (first) {
       if (ticket !== findTicket) return null;
       if (!forceRefresh && first.total && !first.stale) return first;
       return Promise.resolve(bridge.refresh_feed()).then(function (pulled) {
         if (ticket !== findTicket) return null;
-        sourcesOff = !!pulled && pulled.ok && !pulled.enabled.length;
+        sourcesOff = refreshNote(pulled);
         return bridge.list_feed(0, PAGE_SIZE);
       });
     }).then(function (result) {
@@ -336,7 +345,7 @@ var candidates = null;
       return preloadFeed(result.items).then(function (items) {
         if (ticket !== findTicket) return;
         showFeed({ items: items, total: result.total, loaded: result.items.length },
-          sourcesOff ? "No sources are switched on. Use the sliders icon to choose where the feed may pull from." : "");
+          sourcesOff);
       });
     }).catch(function () {
       if (ticket !== findTicket) return;
