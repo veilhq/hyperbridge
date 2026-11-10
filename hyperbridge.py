@@ -97,6 +97,9 @@ def _group_rank(labels: list, group: str) -> dict:
     return {label: index for index, label in enumerate(ranked)}
 
 
+GIF_GRID_BYTES = 3 * 1024 * 1024
+
+
 def _thumb_uri(relative: str | None) -> str | None:
     """Return a data URI for a stored thumbnail, or None when it is missing."""
     if not relative:
@@ -108,6 +111,14 @@ def _thumb_uri(relative: str | None) -> str | None:
         return None
     mime = _MIME.get(path.suffix.lower(), "application/octet-stream")
     return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+def _grid_path(row) -> str | None:
+    """Pick the file a grid card shows: a small GIF keeps its original so it animates, else the thumbnail."""
+    original = row["original_path"]
+    if original and original.lower().endswith(".gif") and (row["original_bytes"] or 0) <= GIF_GRID_BYTES:
+        return original
+    return row["thumb_path"]
 
 
 class HyperbridgeAPI:
@@ -162,8 +173,9 @@ class HyperbridgeAPI:
         try:
             rows = conn.execute(
                 "SELECT e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type, e.created_at, e.swatches,"
-                " a.path AS thumb_path, a.width, a.height"
+                " a.path AS thumb_path, a.width, a.height, o.path AS original_path, o.bytes AS original_bytes"
                 " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
+                " LEFT JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
                 f" {where} ORDER BY e.created_at DESC, e.id DESC",
                 params,
             ).fetchall()
@@ -178,7 +190,7 @@ class HyperbridgeAPI:
         entries = [
             {
                 "id": rows[i]["id"], "title": rows[i]["title"], "domain": rows[i]["domain"],
-                "state": rows[i]["state"], "thumb": _thumb_uri(rows[i]["thumb_path"]),
+                "state": rows[i]["state"], "thumb": _thumb_uri(_grid_path(rows[i])),
                 "width": rows[i]["width"], "height": rows[i]["height"], "group": labels[i],
                 "caption": [rows[i][name] for name in ("creator", "publisher", "type", "year") if rows[i][name]],
             }
