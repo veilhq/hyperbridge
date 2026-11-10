@@ -96,12 +96,13 @@ class FeedRankingTests(EmbedCase):
 
         self.seed_library()
         blue, warm = "https://img.example/blue", "https://img.example/warm"
-        blocks = [{"title": name, "image": {"original": {"url": url}, "display": {"url": url}}}
+        blocks = [{"title": name, "image": {"src": url, "large": {"src": url}}}
                   for name, url in (("a", blue), ("b", warm))]
 
         def fetcher(url):
             if "api.are.na" in url:
-                return SimpleNamespace(body=json.dumps({"title": "Chan", "length": 2, "contents": blocks}).encode(),
+                data = {"data": blocks} if "/contents" in url else {"title": "Chan", "counts": {"contents": 2}}
+                return SimpleNamespace(body=json.dumps(data).encode(),
                                        final_url="", status=200, content_type="application/json")
             return SimpleNamespace(body=url.encode(), final_url="", status=200, content_type="image/jpeg")
 

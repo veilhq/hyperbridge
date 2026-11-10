@@ -5,6 +5,7 @@ import os
 import random
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,7 +20,7 @@ from tests.test_db import LibraryCase  # noqa: E402
 
 def block(number):
     return {"id": number, "title": f"b{number}", "image": {
-        "original": {"url": f"https://arena.example/{number}.jpg"}, "display": {"url": f"https://arena.example/d{number}.jpg"}}}
+        "src": f"https://arena.example/{number}.jpg", "large": {"src": f"https://arena.example/d{number}.jpg"}}}
 
 
 def channel(slug, owner="me", length=3, status="public"):
@@ -36,15 +37,17 @@ class FakeArena:
         self.requests.append(url)
         if "/blocks/" in url:
             data = {"channels": [channel("home"), channel("sibling", "other"), channel("private-one", "x", status="private")]}
-        elif "/users/" in url and url.endswith("/channels?per=100"):
-            data = {"channels": [channel("first", "ada"), channel("empty", "ada", length=0)]}
+        elif "/v3/users/" in url:
+            data = {"meta": {"total_pages": 1}, "data": [
+                {"id": 9, "type": "Image", "title": "Mine", "image": {"src": "https://arena.example/u9.jpg", "large": {"src": "https://arena.example/u9l.jpg"}}},
+                {"id": 10, "type": "Link", "title": "No image"}]}
         elif "/users/" in url:
             data = {"username": "ada"}
-        elif "page=2" in url:
-            data = {"title": "Big", "length": 150, "contents": [block(n) for n in range(200, 210)]}
+        elif "/v3/channels/" in url and "/contents" in url:
+            data = {"data": [block(n) for n in (range(200, 210) if "page=2" in url else (1, 2, 3))]}
         else:
-            length = 150 if "/big?" in url else 3
-            data = {"title": "Big" if length == 150 else "Chan", "length": length, "contents": [block(n) for n in (1, 2, 3)]}
+            big = url.endswith("/big")
+            data = {"title": "Big" if big else "Chan", "counts": {"contents": 150 if big else 3}}
         return SimpleNamespace(body=json.dumps(data).encode(), final_url="", status=200, content_type="application/json")
 
 
@@ -65,15 +68,32 @@ class SamplingTests(unittest.TestCase):
             urls |= {item["url"] for item in arena.channel_items("https://www.are.na/me/big", fetcher, random.Random(seed))}
         self.assertTrue(any("/2" in url and "arena.example/2" in url for url in urls))
 
-    def test_user_items_come_from_a_non_empty_channel(self):
+    def test_user_items_are_the_images_the_user_saved(self):
         items = arena.user_items("https://www.are.na/ada", FakeArena(), random.Random(1))
-        self.assertTrue(items)
-        self.assertEqual(items[0]["page_url"], "https://www.are.na/ada/first")
+        self.assertEqual([(item["url"], item["thumb"]) for item in items], [("https://arena.example/u9.jpg", "https://arena.example/u9l.jpg")])
+        self.assertEqual(items[0]["page_url"], "https://www.are.na/block/9")
 
     def test_related_items_come_from_a_public_sibling_channel(self):
         items = arena.related_items("https://www.are.na/me/home", FakeArena(), random.Random(1))
         self.assertTrue(items)
         self.assertEqual(items[0]["page_url"], "https://www.are.na/other/sibling")
+
+
+class RetryTests(unittest.TestCase):
+    def test_a_rate_limited_read_is_retried_then_succeeds(self):
+        calls = []
+
+        def flaky(url):
+            calls.append(url)
+            if len(calls) < 3:
+                raise OSError("HTTP 429")
+            return SimpleNamespace(body=b'{"ok": 1}')
+
+        with unittest.mock.patch.object(arena.time, "sleep") as sleep:
+            self.assertEqual(arena._json(flaky, "u", retries=3), {"ok": 1})
+        self.assertEqual((len(calls), sleep.call_count), (3, 2))
+        with self.assertRaises(OSError):
+            arena._json(lambda url: (_ for _ in ()).throw(OSError("HTTP 500")), "u", retries=3)
 
 
 class OriginFake(FakeArena):
@@ -85,12 +105,17 @@ class OriginFake(FakeArena):
             data = {"channels": [channel("home", "me"), channel("shared", "ann", length=9), channel("lone", "bob", length=9)]}
         elif "/blocks/2/channels" in url:
             data = {"channels": [channel("shared", "ann", length=9)]}
-        elif "/channels/home" in url:
+        elif "/v3/blocks/77" in url:
+            data = {"id": 77, "title": "Poster Wall", "description": {"plain": "grid study"},
+                    "source": {"provider": {"name": "site.example"}}}
+        elif "/v3/channels/home/contents" in url:
             blocks = [block(1), block(2)]
-            blocks[0].update(title="Glass Tower", description="curtain wall", user={"username": "Ada"},
+            blocks[0].update(title="Glass Tower", description={"plain": "curtain wall"}, user={"username": "Ada"},
                              source={"provider": {"name": "https://site.example"}})
-            data = {"title": "❊ Alkaline Graphics", "length": 2, "contents": blocks,
-                    "metadata": {"description": "datacore and nostalgia"}}
+            data = {"data": blocks}
+        elif "/v3/channels/home" in url:
+            data = {"title": "❊ Alkaline Graphics", "counts": {"contents": 2},
+                    "description": {"plain": "datacore and nostalgia"}}
         else:
             return super().__call__(url)
         return SimpleNamespace(body=json.dumps(data).encode(), final_url="", status=200, content_type="application/json")
@@ -116,6 +141,29 @@ class OriginTests(LibraryCase):
         origin = self.conn.execute("SELECT block_id, channel_title, channel_text FROM entry_origins").fetchone()
         self.assertEqual(tuple(origin), (1, "Alkaline Graphics", "datacore and nostalgia"))
         self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 0)
+
+    def test_saved_urls_with_a_different_query_still_match_and_unmatched_rows_retry(self):
+        entry = self.saved(1, "original_ec6b292b2a779f6a73de4c15c3004904.jpg")
+        self.conn.execute("UPDATE entries SET source_key = ? WHERE id = ?", ("https://arena.example/1.jpg?15%3Fbc=0", entry))
+        self.conn.execute("INSERT INTO entry_origins (entry_id, block_id, channel_slug, channel_title, channel_text, checked_at)"
+                          " VALUES (?, NULL, 'home', '', '', 'then')", (entry,))
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 1)
+        self.assertEqual(self.conn.execute("SELECT block_id FROM entry_origins").fetchone()[0], 1)
+
+    def test_entries_saved_from_a_block_page_are_read_directly(self):
+        entry = self.saved(5, "original_ec6b292b2a779f6a73de4c15c3004904.jpg")
+        self.conn.execute("UPDATE entries SET source_url = 'https://www.are.na/block/77' WHERE id = ?", (entry,))
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1), max_channels=None), 1)
+        row = self.conn.execute("SELECT title, description, publisher FROM entries WHERE id = ?", (entry,)).fetchone()
+        self.assertEqual(tuple(row), ("Poster Wall", "grid study", "site.example"))
+        self.assertEqual(self.conn.execute("SELECT block_id FROM entry_origins").fetchone()[0], 77)
+
+    def test_all_channels_are_read_when_no_limit_is_given(self):
+        for number, slug in ((1, "home"), (2, "other"), (3, "third")):
+            entry = self.saved(number, "x")
+            self.conn.execute("UPDATE entries SET source_url = ? WHERE id = ?", (f"https://www.are.na/me/{slug}", entry))
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 2)
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1), max_channels=None), 1)
 
     def test_feed_terms_use_channel_words_not_filenames(self):
         self.saved(1, "original_ec6b292b2a779f6a73de4c15c3004904.jpg")

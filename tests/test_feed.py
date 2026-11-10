@@ -24,9 +24,11 @@ def reply(data):
 
 
 def fake_fetcher(url):
+    if "/contents" in url:
+        return reply({"data": [{"title": "b", "image": {"src": "https://arena.example/o.jpg",
+                                                       "large": {"src": "https://arena.example/d.jpg"}}}]})
     if "api.are.na" in url:
-        return reply({"title": "Chan", "contents": [{"title": "b", "image": {
-            "original": {"url": "https://arena.example/o.jpg"}, "display": {"url": "https://arena.example/d.jpg"}}}]})
+        return reply({"title": "Chan", "counts": {"contents": 1}})
     raise AssertionError(url)
 
 
@@ -94,10 +96,19 @@ class RefreshTests(FeedCase):
         self.conn.execute("UPDATE entries SET source_url = 'https://www.are.na/me/saved' WHERE id = ?", (entry,))
         self.assertEqual(self.refresh()["jobs"], 0)
 
+    def test_refresh_replaces_unseen_items_from_other_sources_and_old_pulls(self):
+        self.follow()
+        self.conn.execute("INSERT INTO feed_items (source_id, url, thumb, width, height, title, creator, page_url, term, created_at)"
+                          " VALUES ('met', 'https://old.example/a.jpg', 'x', 1, 1, '', '', '', '', 'now')")
+        self.refresh()
+        self.assertEqual([item["source_id"] for item in feed.list_items(self.conn)["items"]], ["arena"])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM feed_items").fetchone()[0], 1)
+
     def test_repeat_refresh_and_saved_images_are_not_added_twice(self):
         self.follow()
         self.refresh()
-        self.assertEqual(self.refresh()["added"], 0)
+        self.refresh()
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM feed_items").fetchone()[0], 1)
         self.conn.execute("DELETE FROM feed_items")
         capture.add_link(self.conn, "https://arena.example/o.jpg")
         self.assertEqual(self.refresh()["added"], 0)

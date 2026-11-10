@@ -10,6 +10,7 @@ Usage:
 
 import base64
 import json
+import random
 import re
 import shutil
 import sys
@@ -51,6 +52,7 @@ import library  # noqa: E402
 import screenshot  # noqa: E402
 import sets  # noqa: E402
 import swatches  # noqa: E402
+import tumblr  # noqa: E402
 
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 _MAX_PAGE = 200
@@ -286,11 +288,11 @@ class HyperbridgeAPI:
         return self._feed_call("list_followed", arena.list_followed, [])
 
     def follow_source(self, url: str) -> dict:
-        """Follow an Are.na channel or user link for the discovery feed."""
+        """Follow an Are.na channel or user link, or a Tumblr blog, for the discovery feed."""
         try:
             conn = db.connect()
             try:
-                return {"ok": True, "item": arena.follow(conn, str(url or ""), capture.default_fetcher())}
+                return {"ok": True, "item": (arena.follow if arena.target(str(url or "").strip()) else tumblr.follow)(conn, str(url or ""), capture.default_fetcher())}
             finally:
                 conn.close()
         except ValueError as err:
@@ -517,6 +519,18 @@ def _backfill_swatches():
         conn.close()
 
 
+def _backfill_origins():
+    """Read the Are.na block and channel details for every saved image that has none yet."""
+    time.sleep(5)
+    conn = db.connect()
+    try:
+        arena.backfill_origins(conn, capture.default_fetcher(), random.Random(), max_channels=None, retries=arena.RETRIES)
+    except Exception:  # noqa: BLE001 - a failed backfill is retried at the next start
+        logger.exception("origin backfill failed")
+    finally:
+        conn.close()
+
+
 def _index_embeddings():
     """Embed library images in the background so the discovery feed can rank by visual similarity."""
     if not embed.available():
@@ -557,6 +571,7 @@ def main():
     conn.close()
     capture.Worker(screenshotter=screenshot.capture_page).start()
     threading.Thread(target=_backfill_swatches, daemon=True).start()
+    threading.Thread(target=_backfill_origins, daemon=True).start()
     threading.Thread(target=_index_embeddings, daemon=True).start()
 
     api = HyperbridgeAPI()

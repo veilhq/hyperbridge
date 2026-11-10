@@ -199,7 +199,7 @@ var candidates = null;
     resetColumns();
     cards.forEach(placeInColumn);
   }
-  var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na" };
+  var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr" };
 
   function feedCandidate(item) {
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
@@ -292,7 +292,7 @@ var candidates = null;
   // Names why a refresh brought nothing: no sources, nothing to pull from, or sources unreachable.
   function refreshNote(pulled) {
     if (!pulled || !pulled.ok) return "Could not refresh the feed.";
-    if (!pulled.enabled.length || !pulled.jobs) return "Discover pulls from the Are.na channels on your followed list. Add one with the sliders icon.";
+    if (!pulled.enabled.length || !pulled.jobs) return "Discover pulls from the Are.na channels and Tumblr blogs on your followed list. Add one with the sliders icon.";
     if (pulled.failed >= pulled.jobs) return "Could not reach the sources. Check the internet connection and refresh.";
     return "";
   }

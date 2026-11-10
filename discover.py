@@ -85,17 +85,16 @@ def _arena_slug(page_url):
 
 def _arena_images(slug, fetcher):
     """Return (title, image URLs) for an Are.na channel through its public API."""
-    urls, title, page = [], "", 1
+    def read(url):
+        return json.loads(bytes(fetcher(url).body).decode("utf-8", "replace"))
+
+    base = f"https://api.are.na/v3/channels/{slug}"
+    title = read(base).get("title") or ""
+    urls, page = [], 1
     while len(urls) < MAX_CANDIDATES * 2:
-        response = fetcher(f"https://api.are.na/v2/channels/{slug}?per=100&page={page}")
-        data = json.loads(bytes(response.body).decode("utf-8", "replace"))
-        title = data.get("title") or title
-        blocks = data.get("contents") or []
-        for block in blocks:
-            image = (block.get("image") or {}).get("original") or {}
-            if image.get("url"):
-                urls.append(image["url"])
-        if len(blocks) < 100:
+        data = read(f"{base}/contents?per=100&page={page}")
+        urls += [block["image"]["src"] for block in data.get("data") or [] if (block.get("image") or {}).get("src")]
+        if not (data.get("meta") or {}).get("has_more_pages"):
             break
         page += 1
     return title, urls[: MAX_CANDIDATES * 2]

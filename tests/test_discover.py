@@ -50,22 +50,23 @@ class PageImagesTests(unittest.TestCase):
 class ArenaTests(LibraryCase):
     def test_channel_link_lists_the_images_from_its_api(self):
         seen = []
-        channel = {"title": "Scans", "contents": [
-            {"class": "Image", "image": {"original": {"url": "https://cdn.example.com/a.png"}}},
-            {"class": "Text", "image": None},
-            {"class": "Link", "image": {"original": {"url": "https://cdn.example.com/b.png"}}},
+        channel = {"data": [
+            {"type": "Image", "image": {"src": "https://cdn.example.com/a.png"}},
+            {"type": "Text", "image": None},
+            {"type": "Link", "image": {"src": "https://cdn.example.com/b.png"}},
         ]}
 
         def fetch(url):
             seen.append(url)
             if "api.are.na" in url:
-                return SimpleNamespace(body=json.dumps(channel).encode(), content_type="application/json", final_url=url)
+                data = channel if "/contents" in url else {"title": "Scans"}
+                return SimpleNamespace(body=json.dumps(data).encode(), content_type="application/json", final_url=url)
             return SimpleNamespace(body=png_bytes(400, 300), content_type="image/png", final_url=url)
 
         result = discover.discover(self.conn, "https://www.are.na/someone/scans", fetch)
         self.assertEqual(result["title"], "Scans")
         self.assertEqual([item["url"] for item in result["candidates"]], ["https://cdn.example.com/a.png", "https://cdn.example.com/b.png"])
-        self.assertIn("https://api.are.na/v2/channels/scans?per=100&page=1", seen)
+        self.assertIn("https://api.are.na/v3/channels/scans/contents?per=100&page=1", seen)
 
     def test_only_channel_links_use_the_api(self):
         self.assertEqual(discover._arena_slug("https://www.are.na/someone/scans"), "scans")

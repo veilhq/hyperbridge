@@ -1,4 +1,4 @@
-"""The discovery feed: images pulled from the followed Are.na channels and ranked by similarity to what is saved."""
+"""The discovery feed: images pulled from the followed Are.na channels and Tumblr blogs and ranked by similarity to what is saved."""
 
 import random
 import re
@@ -9,8 +9,10 @@ import arena
 import capture
 import embed
 import sets
+import tumblr
 
 MAX_CHANNELS = 3
+FEED_SOURCES = ("arena", "tumblr")
 STALE_HOURS = 6
 KEYWORD_SCAN = 500
 KEYWORD_TERMS = 10
@@ -105,8 +107,13 @@ def pick_terms(conn, rng, count) -> list:
     return _weighted_pick(rng, term_weights(conn), count)
 
 
+def pull(url, fetcher, rng) -> list:
+    """Return feed items for one followed link, from Are.na or a Tumblr blog."""
+    return arena.pull(url, fetcher, rng) if arena.target(url) else tumblr.items(url, fetcher, rng)
+
+
 def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
-    """Pull new images from the followed Are.na channels, rank them against the library, and store the unseen ones."""
+    """Pull images from the followed Are.na and Tumblr sources, rank them against the library, and replace the unseen feed with them."""
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
     followed = [item["url"] for item in arena.list_followed(conn)]
@@ -115,7 +122,7 @@ def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
     except Exception:  # noqa: BLE001 - missing origins only leave the library less described
         pass
     picked = _weighted_pick(rng, {url: 1 for url in followed}, MAX_CHANNELS)
-    jobs = [lambda url=url: arena.pull(url, fetcher, rng) for url in picked]
+    jobs = [lambda url=url: pull(url, fetcher, rng) for url in picked]
     failed = 0
     pulled, seen = [], set()
     for job in jobs:
@@ -135,6 +142,8 @@ def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
         pulled = ordered
     except Exception:  # noqa: BLE001 - without scores the feed keeps source order
         pass
+    if pulled or not followed:
+        conn.execute("DELETE FROM feed_items WHERE state = 'new'")
     added = _store(conn, pulled)
     return {"added": added, "failed": failed, "jobs": len(jobs), "enabled": ["arena"] if followed else [],
             "ranked": ranked}
@@ -164,10 +173,10 @@ def _store(conn, items) -> int:
 
 def list_items(conn, offset=0, limit=60) -> dict:
     """Return unseen feed items, oldest first so later pulls append, with whether the feed is due a refresh."""
-    total = conn.execute("SELECT COUNT(*) FROM feed_items WHERE state = 'new'").fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) FROM feed_items WHERE state = 'new' AND source_id IN ('arena', 'tumblr')").fetchone()[0]
     rows = conn.execute(
         "SELECT id, source_id, url, thumb, width, height, title, creator, page_url FROM feed_items"
-        " WHERE state = 'new' ORDER BY id LIMIT ? OFFSET ?",
+        " WHERE state = 'new' AND source_id IN ('arena', 'tumblr') ORDER BY id LIMIT ? OFFSET ?",
         (max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
     newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > STALE_HOURS * 3600

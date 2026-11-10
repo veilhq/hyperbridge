@@ -18,8 +18,8 @@ class FeedSourceTests(LibraryCase):
         self.assertFalse(any(item["enabled"] for item in feed_sources.list_sources()))
         self.assertEqual(feed_sources.enabled_sources(), [])
 
-    def test_only_are_na_is_pullable_for_now(self):
-        self.assertEqual([item["id"] for item in feed_sources.list_sources() if item["available"]], ["arena"])
+    def test_only_are_na_and_tumblr_are_pullable(self):
+        self.assertEqual([item["id"] for item in feed_sources.list_sources() if item["available"]], ["arena", "tumblr"])
 
     def test_switching_a_source_on_and_off(self):
         self.assertTrue(feed_sources.set_source("arena", True)["enabled"])

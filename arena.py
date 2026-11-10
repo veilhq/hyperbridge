@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -9,14 +10,24 @@ import capture
 import discover
 
 API = "https://api.are.na/v2"
+API_V3 = "https://api.are.na/v3"
 PAGE_SIZE = 100
 MAX_PAGES = 20
 PER_CHANNEL = 12
+RETRIES = 4
+RETRY_WAIT = 5
 _RESERVED = {"explore", "search", "block", "blocks", "about", "pricing", "tools", "log-in", "sign-up", "feed", "notifications"}
 
 
-def _json(fetcher, url) -> dict:
-    return json.loads(bytes(fetcher(url).body).decode("utf-8", "replace"))
+def _json(fetcher, url, retries=0) -> dict:
+    """Read a JSON reply; with retries, wait and try again when Are.na answers that it is being asked too often."""
+    for attempt in range(retries + 1):
+        try:
+            return json.loads(bytes(fetcher(url).body).decode("utf-8", "replace"))
+        except Exception as err:  # noqa: BLE001 - only a rate limit is retried
+            if "429" not in str(err) or attempt == retries:
+                raise
+            time.sleep(RETRY_WAIT * (attempt + 1))
 
 
 def target(url):
@@ -33,22 +44,28 @@ def target(url):
     return None
 
 
-def _page_url(slug, page) -> str:
-    return f"{API}/channels/{slug}?per={PAGE_SIZE}&page={page}"
+def _contents_url(slug, page) -> str:
+    return f"{API_V3}/channels/{slug}/contents?per={PAGE_SIZE}&page={page}"
+
+
+def _text(value) -> str:
+    """Return the plain text of an Are.na description, which the v3 API gives as an object."""
+    if isinstance(value, dict):
+        return value.get("plain") or value.get("markdown") or ""
+    return value or ""
 
 
 def channel_blocks(slug, fetcher, rng):
     """Return (title, blocks) from a random page of a channel, so large channels are reached beyond their first page."""
-    first = _json(fetcher, _page_url(slug, 1))
-    length = int(first.get("length") or 0)
+    info = _json(fetcher, f"{API_V3}/channels/{slug}")
+    length = int((info.get("counts") or {}).get("contents") or 0)
     pages = min(MAX_PAGES, max(1, -(-length // PAGE_SIZE)))
-    page = rng.randint(1, pages)
-    data = first if page == 1 else _json(fetcher, _page_url(slug, page))
-    return first.get("title") or "", data.get("contents") or []
+    data = _json(fetcher, _contents_url(slug, rng.randint(1, pages)))
+    return info.get("title") or "", data.get("data") or []
 
 
 def _usable(block) -> bool:
-    return bool(((block.get("image") or {}).get("original") or {}).get("url"))
+    return bool((block.get("image") or {}).get("src"))
 
 
 def channel_items(channel_url, fetcher, rng) -> list:
@@ -60,8 +77,8 @@ def channel_items(channel_url, fetcher, rng) -> list:
     blocks = [block for block in blocks if _usable(block)]
     blocks = rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
     return [{
-        "source_id": "arena", "url": block["image"]["original"]["url"],
-        "thumb": (block["image"].get("display") or {}).get("url") or block["image"]["original"]["url"],
+        "source_id": "arena", "url": block["image"]["src"],
+        "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
         "width": 0, "height": 0, "title": (block.get("title") or "")[:300], "creator": "",
         "page_url": channel_url, "term": title[:100],
     } for block in blocks]
@@ -73,14 +90,23 @@ def _channel_link(channel) -> str:
 
 
 def user_items(user_url, fetcher, rng) -> list:
-    """Return feed items from a random public channel of a followed user."""
+    """Return feed items from a random page of the images a followed user has saved (the v3 API, which needs no login)."""
     found = target(user_url)
     if not found or found[0] != "user":
         return []
-    channels = _json(fetcher, f"{API}/users/{found[1]}/channels?per={PAGE_SIZE}").get("channels") or []
-    links = [_channel_link(c) for c in channels if c.get("status") != "private" and int(c.get("length") or 0) > 0]
-    links = [link for link in links if link]
-    return channel_items(rng.choice(links), fetcher, rng) if links else []
+    url = f"{API_V3}/users/{found[1]}/contents?per={PAGE_SIZE}&page="
+    first = _json(fetcher, url + "1")
+    pages = min(MAX_PAGES, max(1, int((first.get("meta") or {}).get("total_pages") or 1)))
+    page = rng.randint(1, pages)
+    data = first if page == 1 else _json(fetcher, url + str(page))
+    blocks = [block for block in data.get("data") or [] if (block.get("image") or {}).get("src")]
+    blocks = rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
+    return [{
+        "source_id": "arena", "url": block["image"]["src"],
+        "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
+        "width": 0, "height": 0, "title": (block.get("title") or "")[:300], "creator": "",
+        "page_url": f"https://www.are.na/block/{block.get('id')}", "term": found[1],
+    } for block in blocks]
 
 
 def related_items(channel_url, fetcher, rng) -> list:
@@ -113,53 +139,74 @@ def _clean(text, limit) -> str:
     return re.sub(r"\s+", " ", re.sub(r"^\W+", "", text or "")).strip()[:limit]
 
 
-def backfill_origins(conn, fetcher, rng, max_channels=2) -> int:
-    """Match saved Are.na images to their blocks, recording the block and channel words and filling empty fields."""
+def backfill_origins(conn, fetcher, rng, max_channels=2, retries=0) -> int:
+    """Match saved Are.na images to their blocks, recording the block and channel words and filling empty fields.
+
+    Handles up to max_channels channels per call (all of them when None), waiting out rate limits retries times; entries saved from a block page are read directly.
+    """
     now = datetime.now().isoformat(timespec="seconds")
     rows = conn.execute(
         "SELECT e.id, e.source_key, e.source_url, e.title, e.creator, e.description, e.publisher FROM entries e"
         " WHERE e.source_url LIKE '%are.na/%' AND e.source_key IS NOT NULL"
-        " AND NOT EXISTS (SELECT 1 FROM entry_origins o WHERE o.entry_id = e.id)").fetchall()
-    by_channel = {}
+        " AND NOT EXISTS (SELECT 1 FROM entry_origins o WHERE o.entry_id = e.id AND o.block_id IS NOT NULL)").fetchall()
+    by_channel, done = {}, 0
     for row in rows:
+        block = _BLOCK_LINK.search(row["source_url"])
+        if block:
+            try:
+                done += _match_block(conn, int(block.group(1)), row, fetcher, now, retries)
+            except Exception:  # noqa: BLE001 - an unreadable block is retried on a later refresh
+                pass
+            continue
         slug = discover._arena_slug(row["source_url"])
         if slug:
             by_channel.setdefault(slug, []).append(row)
-    done = 0
     slugs = list(by_channel)
     rng.shuffle(slugs)
     for slug in slugs[:max_channels]:
         try:
-            done += _match_channel(conn, slug, by_channel[slug], fetcher, now)
+            done += _match_channel(conn, slug, by_channel[slug], fetcher, now, retries)
         except Exception:  # noqa: BLE001 - an unreadable channel is retried on a later refresh
             continue
     return done
 
 
-def _match_channel(conn, slug, entries, fetcher, now) -> int:
-    first = _json(fetcher, _page_url(slug, 1))
-    pages = min(MAX_PAGES, max(1, -(-int(first.get("length") or 0) // PAGE_SIZE)))
-    blocks = list(first.get("contents") or [])
-    wanted = {row["source_key"]: row for row in entries}
+_BLOCK_LINK = re.compile(r"are\.na/block/(\d+)")
+
+
+def _match_block(conn, block_id, row, fetcher, now, retries=0) -> int:
+    block = _json(fetcher, f"{API_V3}/blocks/{block_id}", retries)
+    conn.execute(
+        "INSERT OR REPLACE INTO entry_origins (entry_id, block_id, channel_slug, channel_title, channel_text, checked_at)"
+        " VALUES (?, ?, '', '', '', ?)", (row["id"], block.get("id") or block_id, now))
+    _fill_entry(conn, row, block)
+    return 1
+
+
+def _image_path(url) -> str:
+    """Host and path of an image URL without its query, so API versions that tack on different suffixes still match."""
+    parts = urlsplit(url or "")
+    return f"{parts.netloc}{parts.path}".lower()
+
+
+def _match_channel(conn, slug, entries, fetcher, now, retries=0) -> int:
+    info = _json(fetcher, f"{API_V3}/channels/{slug}", retries)
+    pages = min(MAX_PAGES, max(1, -(-int((info.get("counts") or {}).get("contents") or 0) // PAGE_SIZE)))
+    wanted = {_image_path(row["source_key"]): row for row in entries}
     found = {}
 
     def scan(contents):
         for block in contents:
-            url = ((block.get("image") or {}).get("original") or {}).get("url")
-            try:
-                key = capture.normalize_url(url) if url else None
-            except ValueError:
-                key = None
+            key = _image_path((block.get("image") or {}).get("src"))
             if key in wanted and key not in found:
                 found[key] = block
 
-    scan(blocks)
-    for page in range(2, pages + 1):
+    for page in range(1, pages + 1):
         if len(found) == len(wanted):
             break
-        scan(_json(fetcher, _page_url(slug, page)).get("contents") or [])
-    title = _clean(first.get("title"), 120)
-    text = _clean((first.get("metadata") or {}).get("description"), 400)
+        scan(_json(fetcher, _contents_url(slug, page), retries).get("data") or [])
+    title = _clean(info.get("title"), 120)
+    text = _clean(_text(info.get("description")), 400)
     for key, row in wanted.items():
         block = found.get(key)
         conn.execute(
@@ -174,7 +221,7 @@ def _fill_entry(conn, row, block) -> None:
     """Fill a saved image's empty or filename-only fields from its block."""
     provider = ((block.get("source") or {}).get("provider") or {}).get("name") or ""
     block_title = _clean(block.get("title"), 300)
-    description = _clean(block.get("description"), 1000)
+    description = _clean(_text(block.get("description")), 1000)
     updates = {}
     if junk_title(row["title"]) and block_title and not junk_title(block_title):
         updates["title"] = block_title
@@ -231,7 +278,7 @@ def follow(conn, url, fetcher) -> dict:
     canonical = "https://www.are.na/" + "/".join(segments)
     try:
         if kind == "channel":
-            label = _json(fetcher, f"{API}/channels/{slug}?per=1&page=1").get("title") or slug
+            label = _json(fetcher, f"{API_V3}/channels/{slug}").get("title") or slug
         else:
             data = _json(fetcher, f"{API}/users/{slug}")
             label = data.get("username") or data.get("full_name") or slug
