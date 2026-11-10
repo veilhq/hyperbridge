@@ -36,14 +36,22 @@
       </header>
       <section class="settings-view" id="settings-view" aria-labelledby="settings-title" hidden>
         <header class="set-head">
-          <h1 class="set-head-title" id="settings-title">Discovery sources</h1>
-          <p class="set-head-desc">Choose where the discovery feed may pull images from. Everything is off until you switch it on.</p>
+          <h1 class="set-head-title" id="settings-title">Settings</h1>
+          <p class="set-head-desc">Where discovery pulls from, which sources you follow, and how your library moves between machines.</p>
           <button class="action-button action-button-ghost" id="settings-close" type="button">Done</button>
         </header>
-        <div class="settings-list" id="settings-list"></div>
-        <section class="settings-follow" aria-labelledby="follow-title">
-          <h2 class="settings-subhead" id="follow-title">Followed sources</h2>
-          <p class="settings-source-desc">Paste an Are.na channel or user link, or a Tumblr blog such as searchsystem.co. The feed pulls from these on every refresh.</p>
+        <section class="settings-panel" aria-labelledby="sources-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="sources-title">Discovery sources</h2>
+            <p class="settings-source-desc">Choose where the discovery feed may pull images from. Everything is off until you switch it on.</p>
+          </header>
+          <div class="settings-list" id="settings-list"></div>
+        </section>
+        <section class="settings-panel" aria-labelledby="follow-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="follow-title">Followed sources</h2>
+            <p class="settings-source-desc">Paste an Are.na channel or user link, or a Tumblr blog such as searchsystem.co. The feed pulls from these on every refresh.</p>
+          </header>
           <form class="settings-follow-form" id="follow-form" novalidate>
             <input class="form-input" id="follow-input" placeholder="https://www.are.na/... or https://searchsystem.co" maxlength="300" aria-label="Are.na or Tumblr link" autocomplete="off">
             <button class="action-button action-button-ghost" id="follow-add" type="submit">Follow</button>
@@ -51,24 +59,45 @@
           <span class="settings-follow-error" id="follow-error" role="alert" hidden></span>
           <div class="settings-followed" id="follow-list"></div>
         </section>
-        <section class="settings-follow" aria-labelledby="transfer-title">
-          <h2 class="settings-subhead" id="transfer-title">Library</h2>
-          <p class="settings-source-desc">Export everything (images, tags, sets, followed sources) to one zip, or import a zip from another machine. Importing adds to this library and skips entries it already has.</p>
-          <div class="settings-follow-form">
-            <button class="action-button action-button-ghost" id="library-export" type="button">Export library</button>
-            <button class="action-button action-button-ghost" id="library-import" type="button">Import library</button>
+        <section class="settings-panel" aria-labelledby="transfer-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="transfer-title">Library</h2>
+            <p class="settings-source-desc">Move your library to another machine. Importing and fetching only add: entries you already have are skipped.</p>
+          </header>
+          <div class="settings-source">
+            <span class="settings-source-text">
+              <span class="settings-source-name">Export to a file</span>
+              <span class="settings-source-desc">Images, tags, sets and followed sources in one zip.</span>
+            </span>
+            <button class="action-button action-button-ghost" id="library-export" type="button">Export</button>
           </div>
-          <p class="settings-source-desc">Or move new entries over your local network: share on one machine, fetch on the other. Only entries the other library lacks are sent. Traffic is not encrypted, so use a network you trust.</p>
-          <div class="settings-follow-form">
-            <button class="action-button action-button-ghost" id="share-start" type="button">Share this library</button>
-            <button class="action-button action-button-ghost" id="share-stop" type="button" hidden>Stop sharing</button>
+          <div class="settings-source">
+            <span class="settings-source-text">
+              <span class="settings-source-name">Import from a file</span>
+              <span class="settings-source-desc">Merge a zip exported from another machine.</span>
+            </span>
+            <button class="action-button action-button-ghost" id="library-import" type="button">Import</button>
           </div>
-          <p class="settings-source-desc" id="share-info" role="status" hidden></p>
-          <form class="settings-follow-form" id="fetch-form" autocomplete="off">
-            <input class="form-input" id="fetch-address" type="text" placeholder="Address, like 192.168.1.20:51234" aria-label="Address of the sharing machine">
-            <input class="form-input" id="fetch-code" type="text" inputmode="numeric" maxlength="6" placeholder="Code" aria-label="Six-digit code">
-            <button class="action-button action-button-ghost" id="fetch-go" type="submit">Fetch new entries</button>
-          </form>
+          <div class="settings-source">
+            <span class="settings-source-text">
+              <span class="settings-source-name">Share on your network</span>
+              <span class="settings-source-desc">Open a five-minute share so another machine can fetch your new entries. Traffic is not encrypted, so use a network you trust.</span>
+              <span class="settings-share-info" id="share-info" role="status" hidden></span>
+            </span>
+            <button class="action-button action-button-ghost" id="share-start" type="button">Share</button>
+            <button class="action-button action-button-ghost" id="share-stop" type="button" hidden>Stop</button>
+          </div>
+          <div class="settings-source settings-source-stack">
+            <span class="settings-source-text">
+              <span class="settings-source-name">Fetch from another machine</span>
+              <span class="settings-source-desc">Enter the address and code shown there.</span>
+            </span>
+            <form class="settings-follow-form" id="fetch-form" autocomplete="off">
+              <input class="form-input" id="fetch-address" type="text" placeholder="192.168.1.20:51234" aria-label="Address of the sharing machine">
+              <input class="form-input settings-code" id="fetch-code" type="text" inputmode="numeric" maxlength="6" placeholder="Code" aria-label="Six-digit code">
+              <button class="action-button action-button-ghost" id="fetch-go" type="submit">Fetch</button>
+            </form>
+          </div>
         </section>
       </section>
       <p class="library-filter" id="library-filter" hidden><button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-chip" type="button" data-tooltip="Clear tag filter"></button> <button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-color" type="button" data-tooltip="Clear color filter" hidden></button></p>

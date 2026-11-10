@@ -25,6 +25,7 @@ APP_DIR = Path(__file__).parent.resolve()
 HYPERSPACE_ROOT = APP_DIR.parent
 HYPERVISOR_DIR = HYPERSPACE_ROOT / ".hypervisor"
 ICON_FILE = APP_DIR / "assets" / "hyperbridge.ico"
+APP_USER_MODEL_ID = "Hyper.Hyperbridge"
 WINDOW_TITLE = "Hyperbridge"
 
 sys.path.insert(0, str(HYPERSPACE_ROOT / ".hyperkit" / "python"))
@@ -638,6 +639,13 @@ def _watch_drops(window, api):
 
 def main():
     logger.info("hyperbridge starting")
+    try:
+        import ctypes
+
+        # A distinct taskbar identity so the pinned shortcut and the running window share one icon.
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:  # noqa: BLE001 - cosmetic; the app runs without it
+        logger.warning("could not set the taskbar identity")
     conn = db.init_library()
     conn.close()
     capture.Worker(screenshotter=screenshot.capture_page).start()
