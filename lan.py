@@ -41,6 +41,24 @@ def local_address() -> str:
     return "127.0.0.1"
 
 
+def local_addresses() -> list[str]:
+    """Return every private IPv4 address of this machine, the default-route one first, so either network can be used."""
+    found = [local_address()]
+    candidates = []
+    try:
+        candidates += [info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)]
+        import psutil  # optional: lists every adapter, which the hostname lookup can miss
+
+        candidates += [item.address for items in psutil.net_if_addrs().values() for item in items if item.family == socket.AF_INET]
+    except (OSError, ImportError):
+        pass
+    for ip in candidates:
+        address = ipaddress.ip_address(ip)
+        if ip not in found and address.is_private and not (address.is_loopback or address.is_link_local):
+            found.append(ip)
+    return found
+
+
 class Share:
     """A short-lived read-only server: it hands out a manifest and requested entry bundles to whoever has the code."""
 
@@ -49,7 +67,8 @@ class Share:
         self.failures = 0
         self.server = ThreadingHTTPServer(("0.0.0.0", 0), _handler_for(self))
         self.port = self.server.server_address[1]
-        self.address = f"{local_address()}:{self.port}"
+        self.addresses = [f"{ip}:{self.port}" for ip in local_addresses()]
+        self.address = self.addresses[0]
         self._stopped = threading.Event()
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self._timer = threading.Timer(SHARE_SECONDS, self.stop)
@@ -169,7 +188,10 @@ def _request(opener, url: str, code: str, body: bytes | None = None):
     except urllib.error.HTTPError as err:
         raise LanError("Wrong code." if err.code == 403 else "The other machine refused the request.") from err
     except OSError as err:
-        raise LanError("Could not reach that machine. Is Share running there?") from err
+        raise LanError(
+            "Could not reach that machine. Check that Share is still open, that both machines are on the same "
+            "network (try the other address if two are listed), and that the firewall allows Python."
+        ) from err
 
 
 def fetch(conn, address: str, code: str) -> dict:

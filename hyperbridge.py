@@ -454,7 +454,8 @@ class HyperbridgeAPI:
             if current is not None:
                 current.stop()
             self._share = lan.Share()
-            return {"status": "sharing", "address": self._share.address, "code": self._share.code,
+            return {"status": "sharing", "address": self._share.address, "addresses": self._share.addresses,
+                    "code": self._share.code,
                     "seconds": lan.SHARE_SECONDS}
         except Exception as err:
             logger.warning("start_share failed: %s", err)

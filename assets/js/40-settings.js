@@ -138,7 +138,7 @@
         var left = result.seconds;
         function paint() {
           var minutes = Math.floor(left / 60), seconds = left % 60;
-          show(true, "Sharing at " + result.address + " with code " + result.code + ". Closes in " + minutes + ":" + (seconds < 10 ? "0" : "") + seconds + ".");
+          show(true, "Address " + (result.addresses || [result.address]).join(" or ") + ", code " + result.code + ". Closes in " + minutes + ":" + (seconds < 10 ? "0" : "") + seconds + ".");
         }
         clear();
         paint();
