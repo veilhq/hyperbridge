@@ -264,9 +264,9 @@ class HyperbridgeAPI:
             logger.warning("%s failed: %s", name, err)
             return fallback
 
-    def refresh_feed(self) -> dict:
-        """Pull new images from the enabled sources into the discovery feed."""
-        result = self._feed_call("refresh_feed", feed.refresh, None)
+    def refresh_feed(self, replace: bool = False) -> dict:
+        """Pull new images from the followed sources into the discovery feed, replacing the unseen ones when asked."""
+        result = self._feed_call("refresh_feed", lambda conn: feed.refresh(conn, replace=bool(replace)), None)
         return {"ok": False, "error": "Could not refresh the feed."} if result is None else {"ok": True, **result}
 
     def list_feed(self, offset: int = 0, limit: int = 60) -> dict:
@@ -520,14 +520,17 @@ def _backfill_swatches():
 
 
 def _backfill_origins():
-    """Read the Are.na block and channel details for every saved image that has none yet."""
+    """Fill source details (Are.na blocks, Tumblr post tags and dates) for saved images that lack them."""
     time.sleep(5)
     conn = db.connect()
     try:
-        arena.backfill_origins(conn, capture.default_fetcher(), random.Random(), max_channels=None, retries=arena.RETRIES)
-        tumblr.backfill(conn, capture.default_fetcher())
-    except Exception:  # noqa: BLE001 - a failed backfill is retried at the next start
-        logger.exception("origin backfill failed")
+        for name, step in (("arena", lambda: arena.backfill_origins(
+                conn, capture.default_fetcher(), random.Random(), max_channels=None, retries=arena.RETRIES)),
+                           ("tumblr", lambda: tumblr.backfill(conn, capture.default_fetcher()))):
+            try:
+                step()
+            except Exception:  # noqa: BLE001 - a failed backfill is retried at the next start
+                logger.exception("%s backfill failed", name)
     finally:
         conn.close()
 

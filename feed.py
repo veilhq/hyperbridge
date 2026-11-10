@@ -14,6 +14,7 @@ import sets
 import tumblr
 
 MAX_CHANNELS = 3
+ROUNDS = 3
 FEED_SOURCES = ("arena", "tumblr")
 STALE_HOURS = 6
 KEYWORD_SCAN = 500
@@ -114,22 +115,14 @@ def pull(url, fetcher, rng) -> list:
     return arena.pull(url, fetcher, rng) if arena.target(url) else tumblr.items(url, fetcher, rng)
 
 
-def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
-    """Pull images from the followed Are.na and Tumblr sources, rank them against the library, and replace the unseen feed with them."""
-    fetcher = fetcher or capture.default_fetcher()
-    rng = rng or random.Random()
-    followed = [item["url"] for item in arena.list_followed(conn)]
-    try:
-        arena.backfill_origins(conn, fetcher, rng)
-    except Exception:  # noqa: BLE001 - missing origins only leave the library less described
-        pass
+def _round(conn, followed, fetcher, rng, embedder):
+    """Pull from a few followed sources once and rank what came back; returns (items, failed, jobs, ranked)."""
     picked = _weighted_pick(rng, {url: 1 for url in followed}, MAX_CHANNELS)
-    jobs = [lambda url=url: pull(url, fetcher, rng) for url in picked]
     failed = 0
     pulled, seen = [], set()
-    for job in jobs:
+    for url in picked:
         try:
-            items = job()
+            items = pull(url, fetcher, rng)
         except Exception:  # noqa: BLE001 - a channel that is down is skipped
             failed += 1
             continue
@@ -144,12 +137,33 @@ def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
         pulled = ordered
     except Exception:  # noqa: BLE001 - without scores the feed keeps source order
         pass
-    if pulled or not followed:
-        conn.execute("DELETE FROM feed_items WHERE state = 'new'")
-    added = _store(conn, pulled)
-    return {"added": added, "failed": failed, "jobs": len(jobs), "enabled": ["arena"] if followed else [],
-            "ranked": ranked}
+    return pulled, failed, len(picked), ranked
 
+
+def refresh(conn, fetcher=None, rng=None, embedder=None, replace=False) -> dict:
+    """Pull images from the followed Are.na and Tumblr sources and rank them against the library.
+
+    replace swaps the unseen feed for the new pull; otherwise the images are appended, retrying up to ROUNDS times until something new arrives.
+    """
+    fetcher = fetcher or capture.default_fetcher()
+    rng = rng or random.Random()
+    followed = [item["url"] for item in arena.list_followed(conn)]
+    try:
+        arena.backfill_origins(conn, fetcher, rng)
+    except Exception:  # noqa: BLE001 - missing origins only leave the library less described
+        pass
+    added = failed = jobs = 0
+    ranked = False
+    for attempt in range(1 if replace else ROUNDS):
+        pulled, round_failed, round_jobs, ranked = _round(conn, followed, fetcher, rng, embedder)
+        failed, jobs = failed + round_failed, jobs + round_jobs
+        if replace and (pulled or not followed):
+            conn.execute("DELETE FROM feed_items WHERE state = 'new'")
+        added += _store(conn, pulled)
+        if added or not followed or round_failed == round_jobs:
+            break
+    return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else [],
+            "ranked": ranked}
 
 
 def _store(conn, items) -> int:

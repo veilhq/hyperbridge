@@ -334,7 +334,7 @@ var candidates = null;
     Promise.resolve(bridge.list_feed(0, PAGE_SIZE)).then(function (first) {
       if (ticket !== findTicket) return null;
       if (!forceRefresh && first.total && !first.stale) return first;
-      return Promise.resolve(bridge.refresh_feed()).then(function (pulled) {
+      return Promise.resolve(bridge.refresh_feed(true)).then(function (pulled) {
         if (ticket !== findTicket) return null;
         sourcesOff = refreshNote(pulled);
         return bridge.list_feed(0, PAGE_SIZE);

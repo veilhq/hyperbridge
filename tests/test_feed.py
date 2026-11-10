@@ -76,8 +76,8 @@ class RefreshTests(FeedCase):
     def follow(self, url="https://www.are.na/me/chan"):
         arena.follow(self.conn, url, fake_fetcher)
 
-    def refresh(self):
-        return feed.refresh(self.conn, fake_fetcher, random.Random(1))
+    def refresh(self, replace=False):
+        return feed.refresh(self.conn, fake_fetcher, random.Random(1), replace=replace)
 
     def test_nothing_followed_pulls_nothing(self):
         self.tagged()
@@ -100,7 +100,7 @@ class RefreshTests(FeedCase):
         self.follow()
         self.conn.execute("INSERT INTO feed_items (source_id, url, thumb, width, height, title, creator, page_url, term, created_at)"
                           " VALUES ('met', 'https://old.example/a.jpg', 'x', 1, 1, '', '', '', '', 'now')")
-        self.refresh()
+        self.refresh(replace=True)
         self.assertEqual([item["source_id"] for item in feed.list_items(self.conn)["items"]], ["arena"])
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM feed_items").fetchone()[0], 1)
 
@@ -112,6 +112,23 @@ class RefreshTests(FeedCase):
         self.conn.execute("DELETE FROM feed_items")
         capture.add_link(self.conn, "https://arena.example/o.jpg")
         self.assertEqual(self.refresh()["added"], 0)
+
+    def test_appending_refresh_keeps_shown_items_and_retries_past_repeats(self):
+        self.follow()
+        calls = []
+
+        def drifting(url):
+            if "/contents" not in url:
+                return fake_fetcher(url)
+            calls.append(url)
+            name = "a" if len(calls) <= 2 else "b"
+            return reply({"data": [{"title": name, "image": {"src": f"https://arena.example/{name}.jpg",
+                                                           "large": {"src": f"https://arena.example/{name}.jpg"}}}]})
+
+        feed.refresh(self.conn, drifting, random.Random(1))
+        result = feed.refresh(self.conn, drifting, random.Random(1))
+        self.assertEqual(result["added"], 1)
+        self.assertEqual(sorted(item["thumb"][-5:] for item in feed.list_items(self.conn)["items"]), ["a.jpg", "b.jpg"])
 
     def test_failing_channel_is_counted_and_skipped(self):
         self.follow()
