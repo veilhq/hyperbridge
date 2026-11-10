@@ -1,6 +1,7 @@
 """Tests for Are.na sampling and followed sources."""
 
 import json
+import os
 import random
 import sys
 import unittest
@@ -8,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
 import arena  # noqa: E402
 import feed  # noqa: E402
@@ -72,6 +74,67 @@ class SamplingTests(unittest.TestCase):
         items = arena.related_items("https://www.are.na/me/home", FakeArena(), random.Random(1))
         self.assertTrue(items)
         self.assertEqual(items[0]["page_url"], "https://www.are.na/other/sibling")
+
+
+class OriginFake(FakeArena):
+    """A channel whose block 1 has real metadata and a co-occurrence graph around it."""
+
+    def __call__(self, url):
+        self.requests.append(url)
+        if "/blocks/1/channels" in url:
+            data = {"channels": [channel("home", "me"), channel("shared", "ann", length=9), channel("lone", "bob", length=9)]}
+        elif "/blocks/2/channels" in url:
+            data = {"channels": [channel("shared", "ann", length=9)]}
+        elif "/channels/home" in url:
+            blocks = [block(1), block(2)]
+            blocks[0].update(title="Glass Tower", description="curtain wall", user={"username": "Ada"},
+                             source={"provider": {"name": "https://site.example"}})
+            data = {"title": "❊ Alkaline Graphics", "length": 2, "contents": blocks,
+                    "metadata": {"description": "datacore and nostalgia"}}
+        else:
+            return super().__call__(url)
+        return SimpleNamespace(body=json.dumps(data).encode(), final_url="", status=200, content_type="application/json")
+
+
+class OriginTests(LibraryCase):
+    def saved(self, number, title):
+        entry = self.add_entry(title=title)
+        self.conn.execute("UPDATE entries SET source_url = ?, source_key = ? WHERE id = ?",
+                          ("https://www.are.na/me/home", f"https://arena.example/{number}.jpg", entry))
+        return entry
+
+    def test_junk_titles_are_recognized(self):
+        for title in ("original_ec6b292b2a779f6a73de4c15c3004904.jpg", "IMG_2034.jpg", "f666d7ed-71d7-4aaa-a6c3-24f36e89ea3c.jpg", ""):
+            self.assertTrue(arena.junk_title(title), title)
+        self.assertFalse(arena.junk_title("Glass Tower"))
+
+    def test_backfill_records_the_block_and_fills_empty_fields(self):
+        first = self.saved(1, "original_ec6b292b2a779f6a73de4c15c3004904.jpg")
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 1)
+        entry = self.conn.execute("SELECT title, creator, description, publisher FROM entries WHERE id = ?", (first,)).fetchone()
+        self.assertEqual(tuple(entry), ("Glass Tower", "", "curtain wall", "site.example"))
+        origin = self.conn.execute("SELECT block_id, channel_title, channel_text FROM entry_origins").fetchone()
+        self.assertEqual(tuple(origin), (1, "Alkaline Graphics", "datacore and nostalgia"))
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 0)
+
+    def test_feed_terms_use_channel_words_not_filenames(self):
+        self.saved(1, "original_ec6b292b2a779f6a73de4c15c3004904.jpg")
+        self.saved(2, "original_bdd0d1cbffec079cf41f8f4f3145d6b8.png")
+        arena.backfill_origins(self.conn, OriginFake(), random.Random(1))
+        terms = feed.search_terms(self.conn)
+        self.assertIn("Alkaline Graphics", terms)
+        self.assertIn("alkaline", terms)
+        self.assertNotIn("original", terms)
+        self.assertNotIn("datacore", terms)
+
+    def test_graph_items_pull_from_a_channel_that_shares_saved_blocks(self):
+        self.saved(1, "x")
+        self.saved(2, "y")
+        arena.backfill_origins(self.conn, OriginFake(), random.Random(1))
+        fake = OriginFake()
+        items = arena.graph_items(self.conn, fake, random.Random(1), seeds=2)
+        self.assertTrue(items)
+        self.assertEqual(items[0]["page_url"], "https://www.are.na/ann/shared")
 
 
 class FollowTests(LibraryCase):

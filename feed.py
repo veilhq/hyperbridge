@@ -12,6 +12,7 @@ from urllib.parse import quote
 import arena
 import capture
 import discover
+import embed
 import feed_sources
 import sets
 
@@ -45,11 +46,29 @@ def _json(fetcher, url) -> dict:
 def keyword_counts(conn) -> Counter:
     """Count the words, by entry, in recent titles and descriptions so untagged libraries still steer the feed."""
     counts = Counter()
-    rows = conn.execute("SELECT title, description FROM entries ORDER BY id DESC LIMIT ?", (KEYWORD_SCAN,))
-    for title, description in rows:
-        words = _WORD_PATTERN.findall(f"{title} {(description or '')[:300]}".lower())
+    rows = conn.execute(
+        "SELECT e.title, e.description, COALESCE(o.channel_title, '') AS channel_title FROM entries e"
+        " LEFT JOIN entry_origins o ON o.entry_id = e.id ORDER BY e.id DESC LIMIT ?", (KEYWORD_SCAN,))
+    for title, description, channel_title in rows:
+        title = "" if arena.junk_title(title) else title
+        words = _WORD_PATTERN.findall(f"{title} {(description or '')[:300]} {channel_title}".lower())
         counts.update({word for word in words if len(word) >= 4 and word not in _STOPWORDS})
     return counts
+
+
+def phrase_counts(conn) -> Counter:
+    """Count saved images per source channel title, cleaned into a search phrase."""
+    counts = Counter()
+    for (title,) in conn.execute("SELECT channel_title FROM entry_origins WHERE channel_title != ''"):
+        phrase = " ".join(re.sub(r"[^\w ]+", " ", title).split())
+        if len(phrase) >= 4:
+            counts[phrase] += 1
+    return counts
+
+
+def channel_phrases(conn) -> list:
+    """Return the source channel titles saved images came from, most used first, as search phrases."""
+    return [phrase for phrase, _ in phrase_counts(conn).most_common(6)]
 
 
 def search_terms(conn) -> list:
@@ -62,7 +81,7 @@ def search_terms(conn) -> list:
         "SELECT creator FROM entries WHERE creator != '' GROUP BY creator ORDER BY COUNT(*) DESC LIMIT 8")]
     keywords = [word for word, _ in sorted(keyword_counts(conn).items(), key=lambda pair: (-pair[1], pair[0]))[:KEYWORD_TERMS]]
     seen, terms = set(), []
-    for term in [*tags, *names, *creators, *keywords]:
+    for term in [*tags, *names, *channel_phrases(conn), *creators, *keywords]:
         key = term.lower()
         if key not in seen:
             seen.add(key)
@@ -74,6 +93,7 @@ def term_weights(conn) -> dict:
     """Score each search word by how much of the library uses it, nudged by what was saved or dismissed from it."""
     weights = {}
     keywords = keyword_counts(conn)
+    phrases = phrase_counts(conn)
     for term in search_terms(conn):
         used = conn.execute(
             "SELECT (SELECT COUNT(*) FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE t.name = ? COLLATE NOCASE)"
@@ -82,7 +102,7 @@ def term_weights(conn) -> dict:
         saved, dismissed = conn.execute(
             "SELECT COALESCE(SUM(state = 'saved'), 0), COALESCE(SUM(state = 'dismissed'), 0)"
             " FROM feed_items WHERE term = ? COLLATE NOCASE", (term,)).fetchone()
-        weights[term] = max(1, used + keywords.get(term.lower(), 0) + 3 * saved - dismissed)
+        weights[term] = max(1, used + keywords.get(term.lower(), 0) + phrases.get(term, 0) + 3 * saved - dismissed)
     return weights
 
 
@@ -150,11 +170,15 @@ def _met(term, fetcher, rng) -> list:
     } for obj in objects if obj.get("isPublicDomain") and obj.get("primaryImage")]
 
 
-def refresh(conn, fetcher=None, rng=None) -> dict:
-    """Pull new images from every enabled source and store the ones not seen before."""
+def refresh(conn, fetcher=None, rng=None, embedder=None) -> dict:
+    """Pull new images from every enabled source, rank them against the library, and store the ones not seen before."""
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
     enabled = set(feed_sources.enabled_sources())
+    try:
+        arena.backfill_origins(conn, fetcher, rng)
+    except Exception:  # noqa: BLE001 - missing origins only leave the feed less targeted
+        pass
     chosen = pick_terms(conn, rng, TERMS_PER_REFRESH) or rng.sample(STARTER_TERMS, TERMS_PER_REFRESH)
     jobs = []
     if "commons" in enabled:
@@ -168,19 +192,34 @@ def refresh(conn, fetcher=None, rng=None) -> dict:
             pool.setdefault(url, 1)
         picked = _weighted_pick(rng, pool, MAX_CHANNELS)
         jobs += [lambda url=url: arena.pull(url, fetcher, rng) for url in picked]
-        if pool:
+        if conn.execute("SELECT 1 FROM entry_origins WHERE block_id IS NOT NULL").fetchone():
+            jobs.append(lambda: arena.graph_items(conn, fetcher, rng))
+        elif pool:
             seed = rng.choice([url for url in pool if arena.target(url) and arena.target(url)[0] == "channel"] or [""])
             if seed:
                 jobs.append(lambda: arena.related_items(seed, fetcher, rng))
-    added = failed = 0
+    failed = 0
+    pulled, seen = [], set()
     for job in jobs:
         try:
             items = job()
         except Exception:  # noqa: BLE001 - a source that is down is skipped
             failed += 1
             continue
-        added += _store(conn, items)
-    return {"added": added, "failed": failed, "jobs": len(jobs), "enabled": sorted(enabled), "terms": chosen}
+        for item in items:
+            if item["url"] not in seen:
+                seen.add(item["url"])
+                pulled.append(item)
+    ranked = False
+    try:
+        ordered = embed.rank(conn, pulled, lambda url: bytes(fetcher(url).body), embedder)
+        ranked = ordered is not pulled
+        pulled = ordered
+    except Exception:  # noqa: BLE001 - without scores the feed keeps source order
+        pass
+    added = _store(conn, pulled)
+    return {"added": added, "failed": failed, "jobs": len(jobs), "enabled": sorted(enabled), "terms": chosen,
+            "ranked": ranked}
 
 
 def _store(conn, items) -> int:
@@ -194,10 +233,11 @@ def _store(conn, items) -> int:
         if conn.execute("SELECT 1 FROM entries WHERE source_key = ?", (key,)).fetchone():
             continue
         cursor = conn.execute(
-            "INSERT OR IGNORE INTO feed_items (source_id, url, thumb, width, height, title, creator, page_url, term, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO feed_items"
+            " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at, score)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["source_id"], item["url"], item["thumb"], item["width"], item["height"], item["title"],
-             item["creator"], item["page_url"], item["term"], _now()),
+             item["creator"], item["page_url"], item["term"], _now(), item.get("score")),
         )
         added += cursor.rowcount
     return added

@@ -1,6 +1,7 @@
 """Tests for the discovery feed."""
 
 import json
+import os
 import random
 import sys
 import unittest
@@ -8,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+os.environ["HYPERBRIDGE_EMBEDDINGS"] = "0"
 
 import capture  # noqa: E402
 import feed  # noqa: E402

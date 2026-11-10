@@ -1,9 +1,11 @@
 """Are.na sampling for the discovery feed: channels, followed channels and users, and channels related through shared blocks."""
 
 import json
+import re
 from datetime import datetime
 from urllib.parse import urlsplit
 
+import capture
 import discover
 
 API = "https://api.are.na/v2"
@@ -95,6 +97,114 @@ def related_items(channel_url, fetcher, rng) -> list:
              if c.get("slug") != found[1] and c.get("status") != "private" and int(c.get("length") or 0) > 0]
     links = [link for link in links if link]
     return channel_items(rng.choice(links), fetcher, rng) if links else []
+
+
+_JUNK_TITLE = re.compile(r"^(original_)?[0-9a-f-]{12,}|^(img|dsc|image|untitled|screen[ _-]?shot|tumblr)\b", re.I)
+
+
+def junk_title(title) -> bool:
+    """Whether a title is a filename or camera-style label that says nothing about the image."""
+    stem = re.sub(r"\.\w{2,4}$", "", (title or "").strip())
+    digits = sum(char.isdigit() for char in stem)
+    return not stem or bool(_JUNK_TITLE.search(stem)) or digits * 5 > len(stem) * 2
+
+
+def _clean(text, limit) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"^\W+", "", text or "")).strip()[:limit]
+
+
+def backfill_origins(conn, fetcher, rng, max_channels=2) -> int:
+    """Match saved Are.na images to their blocks, recording the block and channel words and filling empty fields."""
+    now = datetime.now().isoformat(timespec="seconds")
+    rows = conn.execute(
+        "SELECT e.id, e.source_key, e.source_url, e.title, e.creator, e.description, e.publisher FROM entries e"
+        " WHERE e.source_url LIKE '%are.na/%' AND e.source_key IS NOT NULL"
+        " AND NOT EXISTS (SELECT 1 FROM entry_origins o WHERE o.entry_id = e.id)").fetchall()
+    by_channel = {}
+    for row in rows:
+        slug = discover._arena_slug(row["source_url"])
+        if slug:
+            by_channel.setdefault(slug, []).append(row)
+    done = 0
+    slugs = list(by_channel)
+    rng.shuffle(slugs)
+    for slug in slugs[:max_channels]:
+        try:
+            done += _match_channel(conn, slug, by_channel[slug], fetcher, now)
+        except Exception:  # noqa: BLE001 - an unreadable channel is retried on a later refresh
+            continue
+    return done
+
+
+def _match_channel(conn, slug, entries, fetcher, now) -> int:
+    first = _json(fetcher, _page_url(slug, 1))
+    pages = min(MAX_PAGES, max(1, -(-int(first.get("length") or 0) // PAGE_SIZE)))
+    blocks = list(first.get("contents") or [])
+    wanted = {row["source_key"]: row for row in entries}
+    found = {}
+
+    def scan(contents):
+        for block in contents:
+            url = ((block.get("image") or {}).get("original") or {}).get("url")
+            try:
+                key = capture.normalize_url(url) if url else None
+            except ValueError:
+                key = None
+            if key in wanted and key not in found:
+                found[key] = block
+
+    scan(blocks)
+    for page in range(2, pages + 1):
+        if len(found) == len(wanted):
+            break
+        scan(_json(fetcher, _page_url(slug, page)).get("contents") or [])
+    title = _clean(first.get("title"), 120)
+    text = _clean((first.get("metadata") or {}).get("description"), 400)
+    for key, row in wanted.items():
+        block = found.get(key)
+        conn.execute(
+            "INSERT OR REPLACE INTO entry_origins (entry_id, block_id, channel_slug, channel_title, channel_text, checked_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)", (row["id"], block.get("id") if block else None, slug, title, text, now))
+        if block:
+            _fill_entry(conn, row, block)
+    return len(wanted)
+
+
+def _fill_entry(conn, row, block) -> None:
+    """Fill a saved image's empty or filename-only fields from its block."""
+    provider = ((block.get("source") or {}).get("provider") or {}).get("name") or ""
+    block_title = _clean(block.get("title"), 300)
+    description = _clean(block.get("description"), 1000)
+    updates = {}
+    if junk_title(row["title"]) and block_title and not junk_title(block_title):
+        updates["title"] = block_title
+    if not row["description"] and description and not description.lower().startswith("source pattern"):
+        updates["description"] = description
+    if not row["publisher"] and provider:
+        updates["publisher"] = re.sub(r"^https?://", "", provider)[:200]
+    if updates:
+        sets = ", ".join(f"{column} = ?" for column in updates)
+        conn.execute(f"UPDATE entries SET {sets} WHERE id = ?", (*updates.values(), row["id"]))
+
+
+def graph_items(conn, fetcher, rng, seeds=3) -> list:
+    """Pull from channels that hold the same blocks as saved images, favoring channels that hold several of them."""
+    block_ids = [row[0] for row in conn.execute("SELECT DISTINCT block_id FROM entry_origins WHERE block_id IS NOT NULL")]
+    own = {row[0] for row in conn.execute("SELECT DISTINCT channel_slug FROM entry_origins")}
+    scores = {}
+    for block_id in rng.sample(block_ids, min(seeds, len(block_ids))):
+        try:
+            channels = _json(fetcher, f"{API}/blocks/{block_id}/channels?per=20").get("channels") or []
+        except Exception:  # noqa: BLE001 - one unreadable block is skipped
+            continue
+        for item in channels:
+            link = _channel_link(item)
+            if link and item.get("slug") not in own and item.get("status") != "private" and int(item.get("length") or 0) > 0:
+                scores[link] = scores.get(link, 0) + 1
+    if not scores:
+        return []
+    pick = rng.choices(list(scores), weights=list(scores.values()))[0]
+    return channel_items(pick, fetcher, rng)
 
 
 def pull(url, fetcher, rng) -> list:

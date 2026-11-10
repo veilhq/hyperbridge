@@ -43,6 +43,7 @@ HTML = with_notice(HTML, _build_notice)
 import arena  # noqa: E402
 import capture  # noqa: E402
 import discover  # noqa: E402
+import embed  # noqa: E402
 import feed  # noqa: E402
 import feed_sources  # noqa: E402
 import db  # noqa: E402
@@ -516,6 +517,22 @@ def _backfill_swatches():
         conn.close()
 
 
+def _index_embeddings():
+    """Embed library images in the background so the discovery feed can rank by visual similarity."""
+    if not embed.available():
+        logger.info("embeddings unavailable; install fastembed to rank the feed by image similarity")
+        return
+    time.sleep(10)
+    conn = db.connect()
+    try:
+        while embed.index_library(conn, limit=64):
+            pass
+    except Exception:  # noqa: BLE001 - a failed index only leaves the feed ranked by text
+        logger.exception("embedding index failed")
+    finally:
+        conn.close()
+
+
 def _watch_drops(window, api):
     """Turn files dropped on the window into entries and tell the page how many landed."""
     from webview.dom import DOMEventHandler
@@ -540,6 +557,7 @@ def main():
     conn.close()
     capture.Worker(screenshotter=screenshot.capture_page).start()
     threading.Thread(target=_backfill_swatches, daemon=True).start()
+    threading.Thread(target=_index_embeddings, daemon=True).start()
 
     api = HyperbridgeAPI()
     icon_path = str(ICON_FILE) if ICON_FILE.exists() else None
