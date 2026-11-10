@@ -51,6 +51,7 @@ import db  # noqa: E402
 import library  # noqa: E402
 import screenshot  # noqa: E402
 import sets  # noqa: E402
+import social  # noqa: E402
 import swatches  # noqa: E402
 import tumblr  # noqa: E402
 
@@ -526,7 +527,8 @@ def _backfill_origins():
     try:
         for name, step in (("arena", lambda: arena.backfill_origins(
                 conn, capture.default_fetcher(), random.Random(), max_channels=None, retries=arena.RETRIES)),
-                           ("tumblr", lambda: tumblr.backfill(conn, capture.default_fetcher()))):
+                           ("tumblr", lambda: tumblr.backfill(conn, capture.default_fetcher())),
+                           ("social", lambda: social.backfill(conn, capture.default_fetcher()))):
             try:
                 step()
             except Exception:  # noqa: BLE001 - a failed backfill is retried at the next start
