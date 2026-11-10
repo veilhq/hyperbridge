@@ -18,36 +18,56 @@
 .library-card:hover, .library-card:focus-visible { border-color: var(--interactive); }
 .library-card:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: var(--space-1); }
 .library-card-image { display: block; width: 100%; height: auto; }
+.library-card-grow { transition: border-color var(--motion-base) var(--ease), height var(--motion-linger) var(--ease); }
+.library-card-reveal { opacity: 0; transition: opacity var(--motion-linger) var(--ease); }
+.library-card-reveal.is-loaded { opacity: 1; }
+/* Discard: the card fills with the error color around a dark x, then collapses away. */
+.library-card-discarding { pointer-events: none; }
+.library-discard-mark {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--error); color: var(--bg);
+  animation: libraryDiscard var(--motion-reveal) var(--ease) forwards;
+}
+.library-discard-mark .icon-glyph { width: var(--icon-lg); height: var(--icon-lg); }
+@keyframes libraryDiscard { from { opacity: 0; } to { opacity: 1; } }
+.library-card-collapse {
+  opacity: 0; margin-bottom: 0;
+  transition: height var(--motion-linger) var(--ease), opacity var(--motion-linger) var(--ease), margin-bottom var(--motion-linger) var(--ease);
+}
 .library-thumb-empty { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--bg-surface); }
-/* Pending capture: slow-drifting accent, cool and warm washes over the surface placeholder. */
+/* Pending capture: a square inner glow from the card edges, in the accent and cool colors, that slowly breathes. */
 .library-pending {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2);
-  width: 100%; aspect-ratio: 4 / 3; box-sizing: border-box; padding: var(--space-4);
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 100%; aspect-ratio: 4 / 3; box-sizing: border-box; padding: var(--space-4); overflow: hidden;
   --tone-live: var(--live);
   --tone-cool: var(--cool);
-  --tone-warm: var(--warm);
-  --tone-comp: var(--comp);
   background-color: var(--bg-surface);
-  background-image:
-    radial-gradient(circle at center, color-mix(in srgb, var(--tone-live) 45%, transparent), transparent 65%),
-    radial-gradient(circle at center, color-mix(in srgb, var(--tone-cool) 40%, transparent), transparent 65%),
-    radial-gradient(circle at center, color-mix(in srgb, var(--tone-warm) 35%, transparent), transparent 65%),
-    radial-gradient(circle at center, color-mix(in srgb, var(--tone-comp) 30%, transparent), transparent 65%);
-  background-size: 160% 160%, 140% 140%, 180% 180%, 150% 150%;
-  background-repeat: no-repeat;
-  background-position: 0% 0%, 100% 100%, 100% 0%, 0% 100%;
-  animation: libraryMorph calc(var(--period-ambient) * 1.5) ease-in-out infinite alternate;
   text-align: center;
 }
-@keyframes libraryMorph {
-  0%   { background-position: 0% 0%, 100% 100%, 100% 0%, 0% 100%; }
-  50%  { background-position: 100% 30%, 20% 80%, 30% 100%, 70% 20%; }
-  100% { background-position: 60% 100%, 80% 0%, 0% 60%, 100% 80%; }
+.library-pending::before {
+  content: ""; position: absolute; inset: 0;
+  --glow: color-mix(in srgb, var(--tone-live) 55%, var(--tone-cool));
+  --glow-fade: var(--glow), color-mix(in srgb, var(--glow) 45%, transparent) 25%, color-mix(in srgb, var(--glow) 15%, transparent) 55%, color-mix(in srgb, var(--glow) 4%, transparent) 80%, transparent;
+  background:
+    linear-gradient(to bottom, var(--glow-fade)),
+    linear-gradient(to top, var(--glow-fade)),
+    linear-gradient(to right, var(--glow-fade)),
+    linear-gradient(to left, var(--glow-fade));
+  background-repeat: no-repeat;
+  background-size: 100% var(--space-6), 100% var(--space-6), var(--space-6) 100%, var(--space-6) 100%;
+  background-position: top, bottom, left, right;
+  animation: libraryBreathe calc(var(--period-pulse) * 4) ease-in-out infinite;
 }
-.library-pending-label { font-family: var(--font-body); font-size: var(--fs-prose-ui); font-weight: var(--fw-semibold); color: var(--text-bright); }
+@keyframes libraryBreathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+.library-pending-icon { position: relative; display: flex; color: var(--tone-live); }
+.library-pending-icon .icon-glyph { width: var(--icon-lg); height: var(--icon-lg); }
 .library-card[data-pending="true"] .library-card-details { display: none; }
-@media (prefers-reduced-motion: reduce) { .library-pending { animation: none; } }
-html.a11y-reduce-motion .library-pending { animation: none; }
+@media (prefers-reduced-motion: reduce) { .library-discard-mark { animation: none; } .library-card-collapse { transition: none; } .library-pending::before { animation: none; } .library-card-reveal { opacity: 1; transition: none; } }
+html.a11y-reduce-motion .library-pending::before { animation: none; }
+html.a11y-reduce-motion .library-discard-mark { animation: none; }
+html.a11y-reduce-motion .library-card-collapse { transition: none; }
+html.a11y-reduce-motion .library-card-reveal { opacity: 1; transition: none; }
+html.a11y-reduce-motion .library-card-grow { transition: none; }
 .library-card-details {
   position: absolute; left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3);
@@ -64,7 +84,7 @@ html.a11y-reduce-motion .library-pending { animation: none; }
 .library-card-flag { position: absolute; top: var(--space-2); right: var(--space-2); }
 .library-card-flag.library-failed { color: var(--error); border-color: var(--error); }
 @media (prefers-reduced-motion: reduce) {
-  .library-card, .library-card-details { transition: none; }
+  .library-card, .library-card-details, .library-card-grow { transition: none; }
 }
 html.a11y-reduce-motion .library-card,
 html.a11y-reduce-motion .library-card-details { transition: none; }
@@ -81,3 +101,10 @@ html.a11y-reduce-motion .library-card-details { transition: none; }
 }
 .select-bar[hidden], .select-bar [hidden] { display: none; }
 .select-count { margin-right: var(--space-2); font-size: var(--fs-mono); color: var(--selected); white-space: nowrap; }
+
+/* Group sections span every column; the meta strip sits right-aligned above the first row. */
+.library-group { column-span: all; margin: var(--space-4) 0 var(--space-3); font-family: var(--font-body); font-size: var(--fs-prose-ui); font-weight: var(--fw-semibold); color: var(--text-muted); letter-spacing: var(--track-body); }
+.library-group:first-child { margin-top: 0; }
+.library-meta { margin: var(--space-3) 0 0; text-align: right; font-size: var(--fs-mono); color: var(--text-dim); }
+.library-meta[hidden] { display: none; }
+#group-toggle:not([data-group=""]) { color: var(--selected); }

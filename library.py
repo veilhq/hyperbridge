@@ -8,6 +8,7 @@ from datetime import datetime
 
 import db
 import storage
+import swatches
 
 EDITABLE_FIELDS = ("creator", "publisher", "title", "type", "year")
 _MAX_FIELD = 500
@@ -72,6 +73,7 @@ def get_entry(entry_id: int) -> dict | None:
             "assets": _display_assets(conn, entry_id),
             "tags": tags,
             "sets": sets,
+            "swatches": swatches.parse(row["swatches"]),
             **{name: row[name] for name in EDITABLE_FIELDS},
         }
     finally:

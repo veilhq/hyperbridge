@@ -105,6 +105,22 @@
     box.appendChild(link);
   }
 
+  // A Palette flag that expands to the image's dominant swatches.
+  function renderSwatches(entry) {
+    var box = byId("lb-swatches");
+    var flag = byId("lb-palette");
+    box.textContent = "";
+    box.hidden = true;
+    flag.hidden = !entry.swatches || !entry.swatches.length;
+    flag.setAttribute("aria-expanded", "false");
+    (entry.swatches || []).forEach(function (hex) {
+      var chip = makeEl("span", "lightbox-swatch");
+      chip.style.backgroundColor = hex;
+      chip.setAttribute("data-tooltip", hex);
+      box.appendChild(chip);
+    });
+  }
+
   function renderStatus(entry) {
     var box = byId("lb-status");
     box.textContent = "";
@@ -164,6 +180,7 @@
     byId("lb-title").textContent = displayTitle(entry);
     renderCaption(entry);
     renderStatus(entry);
+    renderSwatches(entry);
     renderSource(entry);
     renderChips(byId("lb-tags"), entry.tags, "status-chip-outlined-muted", "No tags.");
     renderSets(entry);
@@ -339,7 +356,7 @@
       returnFocus = null;
       lb.close();
       toast("success", "Discarded " + title + ".");
-      changed();
+      document.dispatchEvent(new CustomEvent("hyperbridge:discarded", { detail: { id: current.id } }));
     }).catch(function () { toast("error", "Could not discard."); });
   }
 
@@ -371,6 +388,12 @@
     document.addEventListener("hyperbridge:open", function (event) {
       var id = event.detail.id;
       openEntry(id, document.querySelector('#library-grid [data-id="' + id + '"]'));
+    });
+    byId("lb-palette").addEventListener("click", function () {
+      var flag = byId("lb-palette");
+      var open = flag.getAttribute("aria-expanded") !== "true";
+      flag.setAttribute("aria-expanded", open ? "true" : "false");
+      byId("lb-swatches").hidden = !open;
     });
     byId("lb-prev").addEventListener("click", function () { cycleAsset(-1); });
     byId("lb-next").addEventListener("click", function () { cycleAsset(1); });

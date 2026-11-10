@@ -44,6 +44,7 @@ import capture  # noqa: E402
 import db  # noqa: E402
 import library  # noqa: E402
 import sets  # noqa: E402
+import swatches  # noqa: E402
 
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 _MAX_PAGE = 200
@@ -53,6 +54,37 @@ def _fts_query(text: str) -> str:
     """Turn free text into a safe FTS5 prefix query (every word must match)."""
     words = re.findall(r"\w+", text, flags=re.UNICODE)
     return " ".join(f'"{word}"*' for word in words)
+
+
+_GROUPS = ("color", "year", "source")
+
+
+def _entry_year(row) -> str:
+    """Return the entry's year field, else the year it was captured."""
+    match = re.search(r"\d{4}", row["year"] or "")
+    return match.group(0) if match else (row["created_at"] or "")[:4]
+
+
+def _group_label(row, group: str) -> str:
+    """Return the section label an entry falls under for a grouping."""
+    if group == "color":
+        return swatches.entry_family(row["swatches"])
+    if group == "year":
+        return _entry_year(row) or "No year"
+    return row["domain"] or "No source"
+
+
+def _group_rank(labels: list, group: str) -> dict:
+    """Map each label to its sort position: color by hue order, year newest first, source by size."""
+    unique = sorted(set(labels))
+    if group == "color":
+        order = [*swatches.FAMILIES, swatches.NO_COLOR]
+        return {label: order.index(label) if label in order else len(order) for label in unique}
+    if group == "year":
+        ranked = sorted(unique, key=lambda label: (not label.isdigit(), -int(label) if label.isdigit() else 0, label))
+    else:
+        ranked = sorted(unique, key=lambda label: (-labels.count(label), label.lower()))
+    return {label: index for index, label in enumerate(ranked)}
 
 
 def _thumb_uri(relative: str | None) -> str | None:
@@ -96,10 +128,12 @@ class HyperbridgeAPI:
             conn.close()
         return {"entries": entries}
 
-    def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None) -> dict:
-        """Return a page of entries, newest first, optionally filtered by a text query and a set."""
+    def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
+                     group: str = "") -> dict:
+        """Return a page of entries, newest first, optionally filtered by text and set and grouped."""
         offset = max(0, int(offset or 0))
         limit = min(_MAX_PAGE, max(1, int(limit or 60)))
+        group = group if group in _GROUPS else ""
         match = _fts_query(query or "")
         clauses, params = [], []
         if match:
@@ -111,23 +145,33 @@ class HyperbridgeAPI:
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
         conn = db.connect()
         try:
-            total = conn.execute(f"SELECT COUNT(*) FROM entries e {where}", params).fetchone()[0]
             rows = conn.execute(
-                "SELECT e.id, e.title, e.domain, e.state, a.path AS thumb_path, a.width, a.height"
-                f" FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
-                f" {where} ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?",
-                [*params, limit, offset],
+                "SELECT e.id, e.title, e.domain, e.state, e.year, e.created_at, e.swatches,"
+                " a.path AS thumb_path, a.width, a.height"
+                " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
+                f" {where} ORDER BY e.created_at DESC, e.id DESC",
+                params,
             ).fetchall()
         finally:
             conn.close()
+        labels = [_group_label(row, group) for row in rows] if group else [""] * len(rows)
+        order = list(range(len(rows)))
+        if group:
+            rank = _group_rank(labels, group)
+            order.sort(key=lambda index: (rank[labels[index]], index))
+        years = [year for year in (_entry_year(row) for row in rows) if year]
         entries = [
             {
-                "id": row["id"], "title": row["title"], "domain": row["domain"], "state": row["state"],
-                "thumb": _thumb_uri(row["thumb_path"]), "width": row["width"], "height": row["height"],
+                "id": rows[i]["id"], "title": rows[i]["title"], "domain": rows[i]["domain"],
+                "state": rows[i]["state"], "thumb": _thumb_uri(rows[i]["thumb_path"]),
+                "width": rows[i]["width"], "height": rows[i]["height"], "group": labels[i],
             }
-            for row in rows
+            for i in order[offset:offset + limit]
         ]
-        return {"entries": entries, "total": total}
+        return {
+            "entries": entries, "total": len(rows),
+            "years": [min(years), max(years)] if years else [],
+        }
 
     def get_entry(self, entry_id: int) -> dict | None:
         """Return one entry's fields, assets, tags and sets for the lightbox."""
@@ -297,10 +341,23 @@ def _start_theme_watcher(window, api):
     threading.Thread(target=_watch, daemon=True).start()
 
 
+def _backfill_swatches():
+    """Fill swatches for entries captured before palettes were stored."""
+    conn = db.connect()
+    try:
+        swatches.backfill(conn)
+    except Exception:  # noqa: BLE001 - a failed backfill only leaves entries ungrouped
+        logger.exception("swatch backfill failed")
+    finally:
+        conn.close()
+
+
 def main():
     logger.info("hyperbridge starting")
-    db.init_library().close()
+    conn = db.init_library()
+    conn.close()
     capture.Worker().start()
+    threading.Thread(target=_backfill_swatches, daemon=True).start()
 
     api = HyperbridgeAPI()
     icon_path = str(ICON_FILE) if ICON_FILE.exists() else None

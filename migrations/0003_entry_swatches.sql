@@ -1,0 +1,1 @@
+ALTER TABLE entries ADD COLUMN swatches TEXT NOT NULL DEFAULT '[]';

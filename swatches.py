@@ -1,0 +1,89 @@
+"""Dominant-color swatches for entries: extraction, hue families and the one-time backfill."""
+
+import colorsys
+import io
+import json
+
+import db
+
+SWATCH_COUNT = 5
+_SAMPLE_EDGE = 96
+FAMILIES = ("Red", "Orange", "Yellow", "Green", "Teal", "Blue", "Purple", "Pink", "Neutral")
+NO_COLOR = "No color"
+
+
+def extract(body: bytes, count: int = SWATCH_COUNT) -> list[str]:
+    """Return up to count dominant colors of an image as hex strings, most common first."""
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(body)) as image:
+            small = image.convert("RGB")
+            small.thumbnail((_SAMPLE_EDGE, _SAMPLE_EDGE))
+            quantized = small.quantize(colors=count, method=Image.Quantize.MEDIANCUT)
+            palette = quantized.getpalette() or []
+            counts = sorted(quantized.getcolors() or [], reverse=True)
+    except Exception:  # noqa: BLE001 - an unreadable image simply has no swatches
+        return []
+    return ["#{:02x}{:02x}{:02x}".format(*palette[index * 3:index * 3 + 3]) for _, index in counts[:count]]
+
+
+def family(hex_color: str) -> str:
+    """Return the hue family name of a hex color; low-saturation or extreme tones are Neutral."""
+    try:
+        red, green, blue = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    except (ValueError, IndexError, TypeError):
+        return NO_COLOR
+    hue, light, sat = colorsys.rgb_to_hls(red, green, blue)
+    if sat < 0.18 or light < 0.12 or light > 0.92:
+        return "Neutral"
+    degrees = hue * 360
+    for limit, name in ((15, "Red"), (45, "Orange"), (70, "Yellow"), (165, "Green"), (200, "Teal"),
+                        (260, "Blue"), (310, "Purple"), (345, "Pink")):
+        if degrees < limit:
+            return name
+    return "Red"
+
+
+def entry_family(raw: str) -> str:
+    """Return the hue family of the first stored swatch, or NO_COLOR when there is none."""
+    try:
+        values = json.loads(raw or "[]")
+    except ValueError:
+        return NO_COLOR
+    return family(values[0]) if values else NO_COLOR
+
+
+def parse(raw: str) -> list[str]:
+    """Parse the stored swatch JSON, tolerating bad data."""
+    try:
+        values = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    return [value for value in values if isinstance(value, str)] if isinstance(values, list) else []
+
+
+def store(conn, entry_id: int, body: bytes) -> None:
+    """Extract swatches from image bytes and save them on the entry."""
+    conn.execute("UPDATE entries SET swatches = ? WHERE id = ?", (json.dumps(extract(body)), entry_id))
+
+
+def backfill(conn) -> int:
+    """Fill swatches for captured entries that have none yet; return how many were updated."""
+    rows = conn.execute(
+        "SELECT e.id, a.path FROM entries e JOIN assets a ON a.entry_id = e.id"
+        " AND a.kind = 'original' AND a.position = 0 WHERE e.swatches = '[]'"
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        path = db.data_dir() / row["path"]
+        try:
+            body = path.read_bytes()
+        except OSError:
+            continue
+        values = extract(body)
+        if values:
+            conn.execute("UPDATE entries SET swatches = ? WHERE id = ?", (json.dumps(values), row["id"]))
+            updated += 1
+    conn.commit()
+    return updated

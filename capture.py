@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlsplit
 
 import db
 import storage
+import swatches
 
 THUMB_EDGE = 480
 MAX_PIXELS = 50_000_000
@@ -421,6 +422,7 @@ def _store_image(conn, entry, body: bytes, position: int = 0) -> None:
     rows = [("original", original, width, height, len(body))]
     if position == 0:
         thumb, thumb_width, thumb_height = _write_thumbnail(body, uid)
+        swatches.store(conn, entry["id"], body)
         rows.append(("thumbnail", thumb, thumb_width, thumb_height, thumb.stat().st_size))
     for kind, path, row_width, row_height, size in rows:
         conn.execute(

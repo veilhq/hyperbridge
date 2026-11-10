@@ -6,7 +6,9 @@
   var POLL_MS = 2000;
   var SEARCH_DEBOUNCE_MS = 250;
 
-  var state = { query: "", setId: null, entries: [], total: 0, loading: false, ticket: 0, signature: "" };
+  var GROUPS = ["", "color", "year", "source"];
+  var GROUP_LABELS = { "": "none", color: "color", year: "year", source: "source" };
+  var state = { query: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {} };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
   var selected = new Set();
@@ -23,15 +25,19 @@
     return el;
   }
 
-  // Placeholder for a capture in flight: a morphing gradient, a label and the source domain.
+  // Placeholder for a capture in flight: a breathing glow and a label.
   function buildPending() {
     var panel = makeEl("span", "library-pending");
-    panel.appendChild(makeEl("span", "library-pending-label", "Capturing..."));
+    var icon = makeEl("span", "library-pending-icon");
+    icon.setAttribute("role", "img");
+    icon.setAttribute("aria-label", "Capturing");
+    icon.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/></svg>';
+    panel.appendChild(icon);
     return panel;
   }
 
   // Builds one entry card as a focusable button that announces its id on click.
-  function buildCard(entry) {
+  function buildCard(entry, reveal) {
     var card = makeEl("button", "library-card");
     card.type = "button";
     card.setAttribute("data-id", entry.id);
@@ -44,6 +50,14 @@
       img.alt = "";
       img.loading = "lazy";
       if (entry.width && entry.height) img.style.aspectRatio = entry.width + " / " + entry.height;
+      if (reveal) {
+        // A capture that just finished fades its image in instead of popping.
+        img.classList.add("library-card-reveal");
+        var show = function () { img.classList.add("is-loaded"); };
+        img.addEventListener("load", show);
+        img.addEventListener("error", show);
+        if (img.complete) requestAnimationFrame(show);
+      }
       card.appendChild(img);
     } else if (entry.state === "pending") {
       card.appendChild(buildPending());
@@ -68,7 +82,7 @@
 
   function signatureOf(entries) {
     return entries.map(function (entry) {
-      return [entry.id, entry.state, entry.title, entry.domain, entry.thumb ? 1 : 0].join("|");
+      return [entry.id, entry.state, entry.title, entry.domain, entry.group, entry.thumb ? 1 : 0].join("|");
     }).join(";");
   }
 
@@ -81,6 +95,33 @@
     emptyEl.hidden = false;
   }
 
+  // Right-aligned count and year range above the grid while a set is open.
+  function renderMeta() {
+    var meta = $("#library-meta");
+    if (!meta) return;
+    var show = state.setId !== null && state.total > 0;
+    meta.hidden = !show;
+    if (!show) return;
+    var years = state.years;
+    var span = years.length === 2 ? (years[0] === years[1] ? years[0] : years[0] + "-" + years[1]) : "";
+    meta.textContent = state.total + (state.total === 1 ? " entry" : " entries") + (span ? " - " + span : "");
+  }
+
+  // Animates a finished card from the pending tile's height to its own, so the grid eases instead of jumping.
+  function growCard(item) {
+    var card = item.card;
+    card.style.height = "auto";
+    var target = card.offsetHeight;
+    if (!item.from || item.from === target) { card.style.height = ""; return; }
+    card.style.height = item.from + "px";
+    void card.offsetHeight;
+    card.classList.add("library-card-grow");
+    card.style.height = target + "px";
+    var done = function () { card.classList.remove("library-card-grow"); card.style.height = ""; };
+    if (parseFloat(getComputedStyle(card).transitionDuration) === 0) { done(); return; }
+    card.addEventListener("transitionend", function (event) { if (event.propertyName === "height") done(); });
+  }
+
   function render() {
     var signature = signatureOf(state.entries);
     if (signature !== state.signature) {
@@ -88,15 +129,34 @@
       var active = document.activeElement;
       var focusedId = active && active.getAttribute ? active.getAttribute("data-id") : null;
       var fragment = document.createDocumentFragment();
-      state.entries.forEach(function (entry) { fragment.appendChild(buildCard(entry)); });
+      var lastGroup = null;
+      var nextPending = {};
+      var grown = [];
+      state.entries.forEach(function (entry) {
+        if (entry.state === "pending") nextPending[entry.id] = true;
+        if (state.group && entry.group !== lastGroup) {
+          fragment.appendChild(makeEl("h2", "library-group", entry.group));
+          lastGroup = entry.group;
+        }
+        var reveal = !!state.pendingIds[entry.id] && !!entry.thumb;
+        var card = buildCard(entry, reveal);
+        if (reveal && entry.width && entry.height) {
+          var old = grid.querySelector('[data-id="' + entry.id + '"]');
+          if (old) grown.push({ card: card, from: old.offsetHeight });
+        }
+        fragment.appendChild(card);
+      });
+      state.pendingIds = nextPending;
       grid.textContent = "";
       grid.appendChild(fragment);
+      grown.forEach(growCard);
       if (focusedId) {
         var restored = grid.querySelector('[data-id="' + focusedId + '"]');
         if (restored) restored.focus();
       }
     }
     renderEmpty();
+    renderMeta();
     updatePolling();
   }
 
@@ -108,9 +168,10 @@
     var ticket = ++state.ticket;
     var offset = reset ? 0 : state.entries.length;
     state.loading = true;
-    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId).then(function (result) {
+    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
+      state.years = result.years || [];
       state.entries = reset ? result.entries : state.entries.concat(result.entries);
       render();
     }).catch(function () {}).then(function () {
@@ -125,9 +186,10 @@
     var ticket = ++state.ticket;
     var limit = Math.max(state.entries.length, PAGE_SIZE);
     state.loading = true;
-    bridge.list_entries(state.query, 0, limit, state.setId).then(function (result) {
+    bridge.list_entries(state.query, 0, limit, state.setId, state.group).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
+      state.years = result.years || [];
       state.entries = result.entries;
       render();
     }).catch(function () {}).then(function () {
@@ -209,14 +271,44 @@
     }).catch(function () { toast("error", "Could not place."); });
   }
 
+  var DISCARD_ICON = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+  // Glows a card red with an x, then collapses it to nothing; resolves when the card is gone.
+  function playDiscardCard(card) {
+    return new Promise(function (resolve) {
+      var mark = makeEl("span", "library-discard-mark");
+      mark.innerHTML = DISCARD_ICON;
+      card.appendChild(mark);
+      card.classList.add("library-card-discarding");
+      if (getComputedStyle(mark).animationName === "none") { resolve(); return; }
+      mark.addEventListener("animationend", function () {
+        card.style.height = card.offsetHeight + "px";
+        void card.offsetHeight;
+        card.classList.add("library-card-collapse");
+        card.style.height = "0px";
+        if (parseFloat(getComputedStyle(card).transitionDuration) === 0) { resolve(); return; }
+        card.addEventListener("transitionend", function (event) { if (event.propertyName === "height") resolve(); });
+      });
+    });
+  }
+
+  function playDiscard(ids) {
+    var cards = ids.map(function (id) { return grid.querySelector('[data-id="' + id + '"]'); }).filter(Boolean);
+    return Promise.all(cards.map(playDiscardCard));
+  }
+
+  function afterDiscard() {
+    load(true);
+    refreshStats();
+    changed();
+  }
+
   function discard(entry) {
     var bridge = api();
     Promise.resolve(bridge.discard_entry(entry.id)).then(function (ok) {
       if (ok) {
         toast("success", "Discarded " + (entry.title || entry.domain || "entry") + ".");
-        load(true);
-        refreshStats();
-        changed();
+        playDiscard([entry.id]).then(afterDiscard);
       } else {
         toast("error", "Could not discard.");
       }
@@ -306,12 +398,11 @@
 
   function bulkDiscard() {
     var bridge = api();
+    var ids = selectedIds();
     bulk(function (id) { return bridge.discard_entry(id); }, function (ok, total) {
       toast(ok === total ? "success" : "error", ok === total ? "Discarded " + ok + "." : "Discarded " + ok + " of " + total + ".");
       clearSelection();
-      load(true);
-      refreshStats();
-      changed();
+      (ok === total ? playDiscard(ids) : Promise.resolve()).then(afterDiscard);
     });
   }
 
@@ -438,6 +529,28 @@
     observer.observe(sentinel);
   }
 
+  // Cycles the grouping between none, color, year and source; the choice persists.
+  function setupGroup() {
+    var button = $("#group-toggle");
+    if (!button) return;
+    function apply(group) {
+      state.group = group;
+      var label = "Group: " + GROUP_LABELS[group];
+      button.setAttribute("aria-label", label);
+      button.setAttribute("data-tooltip", label);
+      button.setAttribute("data-group", group);
+      try { localStorage.setItem("hyperbridge-group", group); } catch (err) { /* ignore */ }
+    }
+    var saved = "";
+    try { saved = localStorage.getItem("hyperbridge-group") || ""; } catch (err) { saved = ""; }
+    apply(GROUPS.indexOf(saved) >= 0 ? saved : "");
+    button.addEventListener("click", function () {
+      apply(GROUPS[(GROUPS.indexOf(state.group) + 1) % GROUPS.length]);
+      state.signature = "";
+      load(true);
+    });
+  }
+
   function init() {
     grid = $("#library-grid");
     emptyEl = $("#library-empty");
@@ -453,11 +566,13 @@
     searchInput.addEventListener("input", onSearchInput);
     watchSentinel();
     setupSelection();
+    setupGroup();
     document.addEventListener("hyperbridge:filter", function (event) {
       state.setId = event.detail.setId || null;
       clearSelection();
       load(true);
     });
+    document.addEventListener("hyperbridge:discarded", function (event) { playDiscard([event.detail.id]).then(afterDiscard); });
     document.addEventListener("hyperbridge:changed", function () {
       refresh();
       refreshStats();

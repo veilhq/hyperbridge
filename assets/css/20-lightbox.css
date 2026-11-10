@@ -65,3 +65,8 @@ html.a11y-reduce-motion .lightbox-nav { animation: none !important; transition: 
 .icon-glyph-sm { width: var(--icon-sm); height: var(--icon-sm); }
 .lightbox:focus { outline: none; }
 .lightbox-set-add { width: auto; height: auto; padding: var(--space-1); margin: 0; display: inline-flex; align-items: center; justify-content: center; }
+.lightbox-palette { align-self: flex-start; }
+.lightbox-palette[hidden], .lightbox-swatches[hidden] { display: none; }
+.lightbox-palette[aria-expanded="true"] { color: var(--selected); border-color: var(--selected); }
+.lightbox-swatches { display: flex; gap: var(--space-2); }
+.lightbox-swatch { flex: 1; height: var(--space-6); border: var(--border-hair) solid var(--border); border-radius: var(--radius); }

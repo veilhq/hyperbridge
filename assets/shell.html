@@ -27,6 +27,7 @@
         <h1 class="set-head-title" id="set-head-title"></h1>
         <p class="set-head-desc" id="set-head-desc" hidden></p>
       </header>
+      <p class="library-meta" id="library-meta" hidden></p>
       <p class="library-empty" id="library-empty" hidden></p>
       <div class="library-grid" id="library-grid"></div>
       <div class="library-sentinel" id="library-sentinel" aria-hidden="true"></div>
@@ -51,6 +52,7 @@
       <button class="action-icon" id="capture-submit" type="submit" aria-label="Capture" data-tooltip="Capture"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       <span class="capture-error" id="capture-error" role="alert" hidden></span>
     </form>
+    <button class="action-icon" id="group-toggle" type="button" aria-label="Group: none" data-tooltip="Group: none" data-group=""><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></button>
     <div class="dock-search" id="dock-search" data-open="false">
       <input class="form-input library-search" id="library-search" type="search" placeholder="Search" aria-label="Search entries" autocomplete="off" tabindex="-1">
       <button class="action-icon" id="search-toggle" type="button" aria-expanded="false" aria-controls="library-search" aria-label="Search">
@@ -74,6 +76,8 @@
       </div>
       <div class="lightbox-caption" id="lb-caption"></div>
       <div class="lightbox-status" id="lb-status"></div>
+      <button class="status-chip status-chip-outlined-muted lightbox-palette" id="lb-palette" type="button" aria-expanded="false" aria-controls="lb-swatches" hidden>Palette</button>
+      <div class="lightbox-swatches" id="lb-swatches" hidden></div>
 
       <section class="lightbox-field" id="lb-view">
         <div class="lightbox-label">Source</div>
