@@ -118,6 +118,54 @@
 
   function entries(count) { return count + (count === 1 ? " entry" : " entries"); }
 
+  // Wires the local-network Share and Fetch controls in the Library section.
+  function initShare() {
+    var start = $("#share-start"), stop = $("#share-stop"), info = $("#share-info");
+    var timer = null;
+    function show(sharing, text) {
+      start.hidden = sharing;
+      stop.hidden = !sharing;
+      info.hidden = !sharing;
+      info.textContent = text || "";
+    }
+    function clear() { if (timer) { clearInterval(timer); timer = null; } }
+    function halt() { clear(); show(false); }
+    start.addEventListener("click", function () {
+      var bridge = api();
+      if (!bridge || !bridge.start_share) return;
+      Promise.resolve(bridge.start_share()).then(function (result) {
+        if (!result || result.status !== "sharing") { toast("error", (result && result.error) || "Could not start sharing."); return; }
+        var left = result.seconds;
+        function paint() {
+          var minutes = Math.floor(left / 60), seconds = left % 60;
+          show(true, "Sharing at " + result.address + " with code " + result.code + ". Closes in " + minutes + ":" + (seconds < 10 ? "0" : "") + seconds + ".");
+        }
+        clear();
+        paint();
+        timer = setInterval(function () { left -= 1; if (left <= 0) halt(); else paint(); }, 1000);
+      }).catch(function () { toast("error", "Could not start sharing."); });
+    });
+    stop.addEventListener("click", function () {
+      var bridge = api();
+      halt();
+      if (bridge && bridge.stop_share) bridge.stop_share();
+    });
+    $("#fetch-form").addEventListener("submit", function (event) {
+      event.preventDefault();
+      var bridge = api();
+      var go = $("#fetch-go");
+      var address = $("#fetch-address").value.trim(), code = $("#fetch-code").value.trim();
+      if (!bridge || !bridge.fetch_from_share || !address || !code) return;
+      go.disabled = true;
+      toast("info", "Fetching new entries.");
+      Promise.resolve(bridge.fetch_from_share(address, code)).then(function (result) {
+        if (!result || result.status === "failed") { toast("error", (result && result.error) || "Something went wrong."); return; }
+        toast("success", "Fetched " + entries(result.added) + (result.skipped ? ", " + result.skipped + " already here." : "."));
+        if (result.added) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+      }).catch(function () { toast("error", "Something went wrong."); }).then(function () { go.disabled = false; });
+    });
+  }
+
   function isOpen() { return library.hasAttribute("data-settings"); }
 
   function setOpen(open) {
@@ -150,6 +198,7 @@
         document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
       });
     });
+    initShare();
     library = $("#library");
     opener = $("#dock-settings");
     opener.addEventListener("click", function () { setOpen(!isOpen()); });

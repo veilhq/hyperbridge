@@ -52,6 +52,7 @@ import screenshot  # noqa: E402
 import sets  # noqa: E402
 import social  # noqa: E402
 import swatches  # noqa: E402
+import lan  # noqa: E402
 import transfer  # noqa: E402
 import tumblr  # noqa: E402
 
@@ -444,6 +445,41 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("import_library failed: %s", err)
             return {"status": "failed", "error": "Could not import that library."}
+
+    def start_share(self) -> dict:
+        """Open a short-lived read-only share on the local network; returns its address, code and lifetime."""
+        try:
+            current = getattr(self, "_share", None)
+            if current is not None:
+                current.stop()
+            self._share = lan.Share()
+            return {"status": "sharing", "address": self._share.address, "code": self._share.code,
+                    "seconds": lan.SHARE_SECONDS}
+        except Exception as err:
+            logger.warning("start_share failed: %s", err)
+            return {"status": "failed", "error": "Could not start sharing."}
+
+    def stop_share(self) -> dict:
+        """Close the share if one is open."""
+        current = getattr(self, "_share", None)
+        if current is not None:
+            current.stop()
+            self._share = None
+        return {"status": "stopped"}
+
+    def fetch_from_share(self, address: str, code: str) -> dict:
+        """Fetch the entries this library lacks from another machine that is sharing."""
+        try:
+            conn = db.connect()
+            try:
+                return {"status": "imported", **lan.fetch(conn, address, code)}
+            finally:
+                conn.close()
+        except (lan.LanError, transfer.TransferError) as err:
+            return {"status": "failed", "error": str(err)}
+        except Exception as err:
+            logger.warning("fetch_from_share failed: %s", err)
+            return {"status": "failed", "error": "Could not fetch from that machine."}
 
     def add_image_data(self, data: str, name: str = "") -> dict:
         """Create an entry from a pasted image sent as base64 text."""

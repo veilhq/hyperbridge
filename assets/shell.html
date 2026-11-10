@@ -58,6 +58,17 @@
             <button class="action-button action-button-ghost" id="library-export" type="button">Export library</button>
             <button class="action-button action-button-ghost" id="library-import" type="button">Import library</button>
           </div>
+          <p class="settings-source-desc">Or move new entries over your local network: share on one machine, fetch on the other. Only entries the other library lacks are sent. Traffic is not encrypted, so use a network you trust.</p>
+          <div class="settings-follow-form">
+            <button class="action-button action-button-ghost" id="share-start" type="button">Share this library</button>
+            <button class="action-button action-button-ghost" id="share-stop" type="button" hidden>Stop sharing</button>
+          </div>
+          <p class="settings-source-desc" id="share-info" role="status" hidden></p>
+          <form class="settings-follow-form" id="fetch-form" autocomplete="off">
+            <input class="form-input" id="fetch-address" type="text" placeholder="Address, like 192.168.1.20:51234" aria-label="Address of the sharing machine">
+            <input class="form-input" id="fetch-code" type="text" inputmode="numeric" maxlength="6" placeholder="Code" aria-label="Six-digit code">
+            <button class="action-button action-button-ghost" id="fetch-go" type="submit">Fetch new entries</button>
+          </form>
         </section>
       </section>
       <p class="library-filter" id="library-filter" hidden><button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-chip" type="button" data-tooltip="Clear tag filter"></button> <button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-color" type="button" data-tooltip="Clear color filter" hidden></button></p>

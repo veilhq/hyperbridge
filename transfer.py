@@ -44,18 +44,32 @@ def _entry_record(conn, row) -> dict:
     return record
 
 
-def export_library(conn, dest) -> dict:
-    """Write every captured entry, set, tag and followed source plus image files to a zip; returns counts."""
+def list_keys(conn) -> list[dict]:
+    """Return the uid and source key of every captured or failed entry, for deciding what another library lacks."""
+    return [
+        {"uid": row["uid"], "source_key": row["source_key"]}
+        for row in conn.execute("SELECT uid, source_key FROM entries WHERE state != 'pending' ORDER BY id")
+    ]
+
+
+def export_library(conn, dest, only_uids=None) -> dict:
+    """Write captured entries (all, or only_uids), their sets, tags and followed sources plus images to a zip."""
     entries = [
         _entry_record(conn, row)
         for row in conn.execute(f"SELECT id, {', '.join(_FIELDS)} FROM entries WHERE state != 'pending' ORDER BY id")
+        if only_uids is None or row["uid"] in only_uids
     ]
+    included = {record["uid"] for record in entries}
     sets = []
     for row in conn.execute("SELECT id, name, description, created_at FROM sets ORDER BY id"):
-        placed = conn.execute(
-            "SELECT e.uid, se.placed_at FROM set_entries se JOIN entries e ON e.id = se.entry_id"
-            " WHERE se.set_id = ? AND e.state != 'pending' ORDER BY se.placed_at", (row["id"],),
-        ).fetchall()
+        placed = [
+            item for item in conn.execute(
+                "SELECT e.uid, se.placed_at FROM set_entries se JOIN entries e ON e.id = se.entry_id"
+                " WHERE se.set_id = ? AND e.state != 'pending' ORDER BY se.placed_at", (row["id"],),
+            ) if item["uid"] in included
+        ]
+        if only_uids is not None and not placed:
+            continue
         sets.append({"name": row["name"], "description": row["description"], "created_at": row["created_at"],
                      "entries": [{"uid": item["uid"], "placed_at": item["placed_at"]} for item in placed]})
     followed = [
