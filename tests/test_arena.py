@@ -140,6 +140,8 @@ class OriginTests(LibraryCase):
         self.assertEqual(tuple(entry), ("Glass Tower", "", "curtain wall", "site.example"))
         origin = self.conn.execute("SELECT block_id, channel_title, channel_text FROM entry_origins").fetchone()
         self.assertEqual(tuple(origin), (1, "Alkaline Graphics", "datacore and nostalgia"))
+        source = self.conn.execute("SELECT source_service, source_ref, collection FROM entries WHERE id = ?", (first,)).fetchone()
+        self.assertEqual(tuple(source), ("arena", "1", "Alkaline Graphics"))
         self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 0)
 
     def test_saved_urls_with_a_different_query_still_match_and_unmatched_rows_retry(self):

@@ -76,6 +76,7 @@ def get_entry(entry_id: int) -> dict | None:
             "tags": tags,
             "sets": sets,
             "swatches": swatches.parse(row["swatches"]),
+            "source": {name: row[name] for name in ("source_service", "source_ref", "collection", "posted_at")},
             **{name: row[name] for name in EDITABLE_FIELDS},
         }
     finally:
@@ -113,6 +114,14 @@ def parse_tags(raw) -> list[str]:
             seen.add(name.lower())
             names.append(name)
     return names[:MAX_TAGS]
+
+
+def add_entry_tags(conn, entry_id: int, raw_tags) -> None:
+    """Add tags to one entry on an open connection, keeping the tags it already has."""
+    for name in parse_tags(raw_tags):
+        conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
+        conn.execute(
+            "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?", (entry_id, name))
 
 
 def _set_tags(conn, entry_id: int, names: list[str]) -> None:

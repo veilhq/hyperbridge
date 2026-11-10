@@ -1,5 +1,6 @@
 """The discovery feed: images pulled from the followed Are.na channels and Tumblr blogs and ranked by similarity to what is saved."""
 
+import json
 import random
 import re
 from collections import Counter
@@ -8,6 +9,7 @@ from datetime import datetime
 import arena
 import capture
 import embed
+import library
 import sets
 import tumblr
 
@@ -162,10 +164,12 @@ def _store(conn, items) -> int:
             continue
         cursor = conn.execute(
             "INSERT OR IGNORE INTO feed_items"
-            " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at, score)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at, score,"
+            " source_ref, collection, posted_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["source_id"], item["url"], item["thumb"], item["width"], item["height"], item["title"],
-             item["creator"], item["page_url"], item["term"], _now(), item.get("score")),
+             item["creator"], item["page_url"], item["term"], _now(), item.get("score"),
+             item.get("source_ref", ""), item.get("collection", ""), item.get("posted_at", ""),
+             json.dumps(item.get("tags") or [])),
         )
         added += cursor.rowcount
     return added
@@ -202,8 +206,11 @@ def accept(conn, ids, set_id=None) -> dict:
         result = capture.add_link(conn, row["url"])
         if result["created"]:
             added += 1
-            conn.execute("UPDATE entries SET source_url = ? WHERE id = ?",
-                         (row["page_url"] or row["url"], result["entry_id"]))
+            conn.execute(
+                "UPDATE entries SET source_url = ?, source_service = ?, source_ref = ?, collection = ?, posted_at = ? WHERE id = ?",
+                (row["page_url"] or row["url"], row["source_id"], row["source_ref"], row["collection"], row["posted_at"],
+                 result["entry_id"]))
+            library.add_entry_tags(conn, result["entry_id"], json.loads(row["tags"] or "[]"))
         conn.execute("UPDATE feed_items SET state = 'saved' WHERE id = ?", (row["id"],))
         if set_id and sets.place(result["entry_id"], int(set_id)):
             placed += 1

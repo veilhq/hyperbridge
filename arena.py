@@ -68,6 +68,13 @@ def _usable(block) -> bool:
     return bool((block.get("image") or {}).get("src"))
 
 
+def _block_fields(block) -> dict:
+    """Return the size, block id and posted date a feed item carries from its Are.na block."""
+    image = block["image"]
+    return {"width": int(image.get("width") or 0), "height": int(image.get("height") or 0),
+            "source_ref": str(block.get("id") or ""), "posted_at": str(block.get("created_at") or "")[:10], "tags": []}
+
+
 def channel_items(channel_url, fetcher, rng) -> list:
     """Return feed items sampled from one channel."""
     found = target(channel_url)
@@ -79,8 +86,8 @@ def channel_items(channel_url, fetcher, rng) -> list:
     return [{
         "source_id": "arena", "url": block["image"]["src"],
         "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
-        "width": 0, "height": 0, "title": (block.get("title") or "")[:300], "creator": "",
-        "page_url": channel_url, "term": title[:100],
+        **_block_fields(block), "title": (block.get("title") or "")[:300], "creator": "",
+        "page_url": channel_url, "term": title[:100], "collection": title[:200],
     } for block in blocks]
 
 
@@ -104,8 +111,8 @@ def user_items(user_url, fetcher, rng) -> list:
     return [{
         "source_id": "arena", "url": block["image"]["src"],
         "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
-        "width": 0, "height": 0, "title": (block.get("title") or "")[:300], "creator": "",
-        "page_url": f"https://www.are.na/block/{block.get('id')}", "term": found[1],
+        **_block_fields(block), "title": (block.get("title") or "")[:300], "creator": "",
+        "page_url": f"https://www.are.na/block/{block.get('id')}", "term": found[1], "collection": found[1],
     } for block in blocks]
 
 
@@ -146,9 +153,9 @@ def backfill_origins(conn, fetcher, rng, max_channels=2, retries=0) -> int:
     """
     now = datetime.now().isoformat(timespec="seconds")
     rows = conn.execute(
-        "SELECT e.id, e.source_key, e.source_url, e.title, e.creator, e.description, e.publisher FROM entries e"
+        "SELECT e.id, e.source_key, e.source_url, e.title, e.creator, e.description, e.publisher, e.source_ref FROM entries e"
         " WHERE e.source_url LIKE '%are.na/%' AND e.source_key IS NOT NULL"
-        " AND NOT EXISTS (SELECT 1 FROM entry_origins o WHERE o.entry_id = e.id AND o.block_id IS NOT NULL)").fetchall()
+        " AND e.source_ref = ''").fetchall()
     by_channel, done = {}, 0
     for row in rows:
         block = _BLOCK_LINK.search(row["source_url"])
@@ -214,6 +221,7 @@ def _match_channel(conn, slug, entries, fetcher, now, retries=0) -> int:
             " VALUES (?, ?, ?, ?, ?, ?)", (row["id"], block.get("id") if block else None, slug, title, text, now))
         if block:
             _fill_entry(conn, row, block)
+            conn.execute("UPDATE entries SET collection = ? WHERE id = ? AND collection = ''", (title, row["id"]))
     return len(wanted)
 
 
@@ -223,6 +231,8 @@ def _fill_entry(conn, row, block) -> None:
     block_title = _clean(block.get("title"), 300)
     description = _clean(_text(block.get("description")), 1000)
     updates = {}
+    if not row["source_ref"] and block.get("id"):
+        updates.update(source_service="arena", source_ref=str(block["id"]), posted_at=str(block.get("created_at") or "")[:10])
     if junk_title(row["title"]) and block_title and not junk_title(block_title):
         updates["title"] = block_title
     if not row["description"] and description and not description.lower().startswith("source pattern"):

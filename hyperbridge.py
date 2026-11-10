@@ -525,6 +525,7 @@ def _backfill_origins():
     conn = db.connect()
     try:
         arena.backfill_origins(conn, capture.default_fetcher(), random.Random(), max_channels=None, retries=arena.RETRIES)
+        tumblr.backfill(conn, capture.default_fetcher())
     except Exception:  # noqa: BLE001 - a failed backfill is retried at the next start
         logger.exception("origin backfill failed")
     finally:
