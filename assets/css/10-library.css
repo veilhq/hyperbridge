@@ -1,6 +1,13 @@
 /* === Hyperbridge: library grid === */
 .capture-form { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; position: relative; }
-.capture-input { flex: 1; }
+.dock-input {
+  flex: 1; min-width: 0; padding: 0 var(--space-2); height: var(--space-6);
+  font: inherit; font-size: var(--fs-mono); color: var(--text-bright);
+  background: transparent; border: 0; outline: none;
+}
+.dock-input::placeholder { color: var(--text-dim); }
+.capture-form:not([data-mode="link"]) .capture-submit { display: none; }
+.capture-form[data-mode="link"] .capture-submit { color: var(--interactive); }
 .capture-error { position: absolute; bottom: 100%; left: 0; margin-bottom: var(--space-3); color: var(--error); font-size: var(--fs-mono); }
 .capture-error[hidden] { display: none; }
 
@@ -19,6 +26,9 @@
 .library-card:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: var(--space-1); }
 .library-card-image { display: block; width: 100%; height: auto; }
 .library-card-grow { transition: border-color var(--motion-base) var(--ease), height var(--motion-linger) var(--ease); }
+/* A rebuilt grid fades its cards in one after another, rows then columns. */
+@keyframes libraryCascade { from { opacity: 0; transform: translateY(var(--space-3)); } to { opacity: 1; transform: none; } }
+.library-cascade { animation: libraryCascade var(--motion-enter) var(--ease) calc(var(--cascade-index, 0) * var(--motion-stagger)) both; }
 .library-card-reveal { opacity: 0; transition: opacity var(--motion-linger) var(--ease); }
 .library-card-reveal.is-loaded { opacity: 1; }
 /* Discard: the card fills with the error color around a dark x, then collapses away. */
@@ -62,9 +72,10 @@
 .library-pending-icon { position: relative; display: flex; color: var(--tone-live); }
 .library-pending-icon .icon-glyph { width: var(--icon-lg); height: var(--icon-lg); }
 .library-card[data-pending="true"] .library-card-details { display: none; }
-@media (prefers-reduced-motion: reduce) { .library-discard-mark { animation: none; } .library-card-collapse { transition: none; } .library-pending::before { animation: none; } .library-card-reveal { opacity: 1; transition: none; } }
+@media (prefers-reduced-motion: reduce) { .library-cascade { animation: none; } .library-discard-mark { animation: none; } .library-card-collapse { transition: none; } .library-pending::before { animation: none; } .library-card-reveal { opacity: 1; transition: none; } }
 html.a11y-reduce-motion .library-pending::before { animation: none; }
 html.a11y-reduce-motion .library-discard-mark { animation: none; }
+html.a11y-reduce-motion .library-cascade { animation: none; }
 html.a11y-reduce-motion .library-card-collapse { transition: none; }
 html.a11y-reduce-motion .library-card-reveal { opacity: 1; transition: none; }
 html.a11y-reduce-motion .library-card-grow { transition: none; }

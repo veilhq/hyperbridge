@@ -64,43 +64,10 @@
       var collapsed = dock.getAttribute("data-collapsed") !== "true";
       apply(collapsed);
       try { localStorage.setItem("hyperbridge-dock", collapsed ? "collapsed" : "open"); } catch (err) { /* ignore */ }
-      if (!collapsed && $("#capture-url")) $("#capture-url").focus();
+      if (!collapsed && $("#dock-input")) $("#dock-input").focus();
     });
   }
   setupDock();
-
-  // The search icon opens an inline field; closing it clears the query.
-  function setupSearch() {
-    var box = $("#dock-search");
-    var toggle = $("#search-toggle");
-    var input = $("#library-search");
-    if (!box || !toggle || !input) return;
-    function setOpen(open) {
-      box.setAttribute("data-open", open ? "true" : "false");
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      input.tabIndex = open ? 0 : -1;
-      if (open) {
-        input.focus();
-      } else if (input.value) {
-        input.value = "";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-    }
-    toggle.addEventListener("mousedown", function (event) { event.preventDefault(); });
-    toggle.addEventListener("click", function () {
-      setOpen(box.getAttribute("data-open") !== "true");
-    });
-    input.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") {
-        setOpen(false);
-        toggle.focus();
-      }
-    });
-    input.addEventListener("blur", function () {
-      if (!input.value.trim() && box.getAttribute("data-open") === "true") setOpen(false);
-    });
-  }
-  setupSearch();
 
   function onBridgeReady() {
     var api = window.pywebview && window.pywebview.api;

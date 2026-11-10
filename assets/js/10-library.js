@@ -4,11 +4,12 @@
 
   var PAGE_SIZE = 60;
   var POLL_MS = 2000;
+  var CASCADE_MAX = 12;
   var SEARCH_DEBOUNCE_MS = 250;
 
   var GROUPS = ["", "color", "year", "source"];
   var GROUP_LABELS = { "": "none", color: "color", year: "year", source: "source" };
-  var state = { query: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {} };
+  var state = { query: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
   var selected = new Set();
@@ -122,6 +123,19 @@
     card.addEventListener("transitionend", function (event) { if (event.propertyName === "height") done(); });
   }
 
+  // Fades the rebuilt grid in as a cascade, ordered by on-screen position (rows, then columns).
+  function cascadeIn() {
+    var items = Array.prototype.slice.call(grid.children).map(function (el) {
+      var rect = el.getBoundingClientRect();
+      return { el: el, top: Math.round(rect.top), left: Math.round(rect.left) };
+    });
+    items.sort(function (a, b) { return a.top - b.top || a.left - b.left; });
+    items.forEach(function (item, index) {
+      item.el.style.setProperty("--cascade-index", Math.min(index, CASCADE_MAX));
+      item.el.classList.add("library-cascade");
+    });
+  }
+
   function render() {
     var signature = signatureOf(state.entries);
     if (signature !== state.signature) {
@@ -150,11 +164,13 @@
       grid.textContent = "";
       grid.appendChild(fragment);
       grown.forEach(growCard);
+      if (state.cascade) cascadeIn();
       if (focusedId) {
         var restored = grid.querySelector('[data-id="' + focusedId + '"]');
         if (restored) restored.focus();
       }
     }
+    state.cascade = false;
     renderEmpty();
     renderMeta();
     updatePolling();
@@ -489,7 +505,7 @@
     event.preventDefault();
     var bridge = api();
     var url = urlInput.value.trim();
-    if (!bridge || !bridge.add_link || !url || submitBtn.disabled) return;
+    if (!bridge || !bridge.add_link || !isLink(url) || submitBtn.disabled) return;
     showError("");
     submitBtn.disabled = true;
     bridge.add_link(url).then(function (result) {
@@ -510,12 +526,18 @@
     });
   }
 
-  function onSearchInput() {
+  // A pasted link is a capture; any other text filters the library.
+  function isLink(text) { return /^https?:\/\//i.test(text); }
+
+  function onDockInput() {
+    showError("");
+    $("#capture-form").setAttribute("data-mode", isLink(searchInput.value.trim()) ? "link" : "search");
     clearTimeout(searchTimer);
     searchTimer = setTimeout(function () {
-      var query = searchInput.value.trim();
+      var query = isLink(searchInput.value.trim()) ? "" : searchInput.value.trim();
       if (query === state.query) return;
       state.query = query;
+      state.cascade = true;
       clearSelection();
       load(true);
     }, SEARCH_DEBOUNCE_MS);
@@ -547,6 +569,7 @@
     button.addEventListener("click", function () {
       apply(GROUPS[(GROUPS.indexOf(state.group) + 1) % GROUPS.length]);
       state.signature = "";
+      state.cascade = true;
       load(true);
     });
   }
@@ -555,20 +578,26 @@
     grid = $("#library-grid");
     emptyEl = $("#library-empty");
     sentinel = $("#library-sentinel");
-    searchInput = $("#library-search");
-    urlInput = $("#capture-url");
+    searchInput = $("#dock-input");
+    urlInput = searchInput;
     submitBtn = $("#capture-submit");
     errorEl = $("#capture-error");
     if (!grid) return;
 
     $("#capture-form").addEventListener("submit", onSubmit);
-    urlInput.addEventListener("input", function () { showError(""); });
-    searchInput.addEventListener("input", onSearchInput);
+    searchInput.addEventListener("input", onDockInput);
+    searchInput.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && searchInput.value) {
+        searchInput.value = "";
+        onDockInput();
+      }
+    });
     watchSentinel();
     setupSelection();
     setupGroup();
     document.addEventListener("hyperbridge:filter", function (event) {
       state.setId = event.detail.setId || null;
+      state.cascade = true;
       clearSelection();
       load(true);
     });
@@ -580,6 +609,7 @@
     });
     setupMenu();
 
+    state.cascade = true;
     if (api()) {
       load(true);
       loadSets();

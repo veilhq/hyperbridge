@@ -10,6 +10,7 @@
   var returnFocus = null;
   var ticket = 0;
   var lb;
+  var swapToken = 0;
 
   function api() { return window.pywebview && window.pywebview.api; }
   function byId(id) { return document.getElementById(id); }
@@ -105,14 +106,13 @@
     box.appendChild(link);
   }
 
-  // A Palette flag that expands to the image's dominant swatches.
+  // The image's dominant swatches, shown as a thin color bar under the title.
   function renderSwatches(entry) {
     var box = byId("lb-swatches");
-    var flag = byId("lb-palette");
     box.textContent = "";
-    box.hidden = true;
-    flag.hidden = !entry.swatches || !entry.swatches.length;
-    flag.setAttribute("aria-expanded", "false");
+    var empty = !entry.swatches || !entry.swatches.length;
+    box.hidden = empty;
+    if (!empty) replay(box);
     (entry.swatches || []).forEach(function (hex) {
       var chip = makeEl("span", "lightbox-swatch");
       chip.style.backgroundColor = hex;
@@ -143,6 +143,24 @@
     }).catch(function () { return null; });
   }
 
+  // Fades the image out, swaps its source, then fades the new one in.
+  function swapImage(image, uri) {
+    var mySwap = ++swapToken;
+    if (image.getAttribute("src") === uri) { image.classList.remove("is-swapping"); return; }
+    var apply = function () {
+      if (mySwap !== swapToken) return;
+      image.addEventListener("load", function done() { image.removeEventListener("load", done); image.classList.remove("is-swapping"); });
+      image.src = uri;
+    };
+    if (!image.getAttribute("src") || image.classList.contains("is-swapping") || parseFloat(getComputedStyle(image).transitionDuration) === 0) { apply(); return; }
+    image.classList.add("is-swapping");
+    image.addEventListener("transitionend", function done(event) {
+      if (event.propertyName !== "opacity") return;
+      image.removeEventListener("transitionend", done);
+      apply();
+    });
+  }
+
   function renderImage() {
     var entry = current;
     var image = byId("lb-image");
@@ -162,21 +180,33 @@
     image.alt = displayTitle(entry) + (multi ? ", asset " + (assetIndex + 1) + " of " + entry.assets.length : "");
     if (!asset) {
       image.removeAttribute("src");
+      image.classList.remove("is-swapping");
       return;
     }
     var mine = ticket;
+    if (!lb.open) {
+      image.removeAttribute("src");
+      image.classList.add("is-swapping");
+    }
     if (imageCache[asset.id]) {
-      image.src = imageCache[asset.id];
+      swapImage(image, imageCache[asset.id]);
       return;
     }
-    image.removeAttribute("src");
     loadImage(asset).then(function (uri) {
-      if (mine === ticket && current && current.assets[assetIndex] === asset && uri) image.src = uri;
+      if (mine === ticket && current && current.assets[assetIndex] === asset && uri) swapImage(image, uri);
     });
+  }
+
+  // Restarts the fade-in on an element so a content change reads as a transition.
+  function replay(el) {
+    el.classList.remove("lightbox-swap");
+    void el.offsetWidth;
+    el.classList.add("lightbox-swap");
   }
 
   function render() {
     var entry = current;
+    if (lb.open) replay(document.querySelector(".lightbox-rail"));
     byId("lb-title").textContent = displayTitle(entry);
     renderCaption(entry);
     renderStatus(entry);
@@ -199,10 +229,28 @@
     byId("app").inert = true;
   }
 
+  // Plays the exit animation, then closes the dialog; the scrim fades out alongside.
+  function closeDialog() {
+    if (!lb.open || lb.hasAttribute("data-closing")) return;
+    lb.setAttribute("data-closing", "true");
+    byId("lb-scrim").classList.remove("visible");
+    var finish = function () { lb.removeAttribute("data-closing"); lb.close(); };
+    if (getComputedStyle(lb).animationName === "lightboxOut") {
+      lb.addEventListener("animationend", function done(event) {
+        if (event.target !== lb) return;
+        lb.removeEventListener("animationend", done);
+        finish();
+      });
+    } else {
+      finish();
+    }
+  }
+
   function closeForm() {
     byId("lb-form").hidden = true;
     byId("lb-view").hidden = false;
     byId("lb-actions").hidden = false;
+    if (lb.open) { replay(byId("lb-view")); replay(byId("lb-actions")); }
   }
 
   function openForm() {
@@ -211,6 +259,7 @@
     byId("lb-view").hidden = true;
     byId("lb-form").hidden = false;
     byId("lb-actions").hidden = true;
+    replay(byId("lb-form"));
     byId("f-creator").focus();
   }
 
@@ -354,14 +403,15 @@
         return;
       }
       returnFocus = null;
-      lb.close();
+      var discardedId = current.id;
+      closeDialog();
       toast("success", "Discarded " + title + ".");
-      document.dispatchEvent(new CustomEvent("hyperbridge:discarded", { detail: { id: current.id } }));
+      document.dispatchEvent(new CustomEvent("hyperbridge:discarded", { detail: { id: discardedId } }));
     }).catch(function () { toast("error", "Could not discard."); });
   }
 
   function onKey(event) {
-    if (event.key === "Escape") { lb.close(); event.preventDefault(); return; }
+    if (event.key === "Escape") { closeDialog(); event.preventDefault(); return; }
     var tag = (event.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
     if (event.key === "ArrowLeft") { cycleAsset(-1); event.preventDefault(); }
@@ -382,6 +432,22 @@
     if (card) card.focus();
   }
 
+  // Toggles the stage between filling the space (default) and showing the whole image with margins; persists.
+  function setupFit() {
+    var button = byId("lb-fit");
+    function apply(mode) {
+      lb.setAttribute("data-fit", mode);
+      var label = mode === "fit" ? "Fill the space" : "Show full image";
+      button.setAttribute("aria-label", label);
+      button.setAttribute("data-tooltip", label);
+      try { localStorage.setItem("hyperbridge-fit", mode); } catch (err) { /* ignore */ }
+    }
+    var saved = "fill";
+    try { saved = localStorage.getItem("hyperbridge-fit") === "fit" ? "fit" : "fill"; } catch (err) { saved = "fill"; }
+    apply(saved);
+    button.addEventListener("click", function () { apply(lb.getAttribute("data-fit") === "fit" ? "fill" : "fit"); });
+  }
+
   function init() {
     lb = byId("lightbox");
     if (!lb) return;
@@ -389,12 +455,7 @@
       var id = event.detail.id;
       openEntry(id, document.querySelector('#library-grid [data-id="' + id + '"]'));
     });
-    byId("lb-palette").addEventListener("click", function () {
-      var flag = byId("lb-palette");
-      var open = flag.getAttribute("aria-expanded") !== "true";
-      flag.setAttribute("aria-expanded", open ? "true" : "false");
-      byId("lb-swatches").hidden = !open;
-    });
+    setupFit();
     byId("lb-prev").addEventListener("click", function () { cycleAsset(-1); });
     byId("lb-next").addEventListener("click", function () { cycleAsset(1); });
     byId("lb-strip").addEventListener("click", function (event) {
@@ -403,7 +464,7 @@
       assetIndex = Number(dot.getAttribute("data-asset"));
       renderImage();
     });
-    byId("lb-scrim").addEventListener("click", function () { lb.close(); });
+    byId("lb-scrim").addEventListener("click", closeDialog);
     lb.addEventListener("close", onClosed);
     lb.addEventListener("keydown", onKey);
     byId("act-edit").addEventListener("click", openForm);
