@@ -23,11 +23,26 @@
     if (input) input.focus();
   }
 
+  // Builds the View sub-rings: Group by and Order, each listing its choices with the current one marked.
+  function viewRing() {
+    var view = window.HyperbridgeView;
+    if (!view) return [];
+    function leaves(field, choices) {
+      return choices.map(function (choice) {
+        return { label: choice[1], active: view.current(field) === choice[0], action: function () { view.choose(field, choice[0]); } };
+      });
+    }
+    return [
+      { label: "Group by", children: leaves("group", view.groups) },
+      { label: "Order", children: leaves("order", view.orders) }
+    ];
+  }
+
   function actions() {
     var items = [
       { label: "Add or search", svg: iconOf("capture-submit"), action: focusInput },
-      { label: "Discover", svg: iconOf("dock-find"), action: function () { press("sets-discover"); } },
-      { label: "View", svg: iconOf("group-toggle"), action: function (at) { document.dispatchEvent(new CustomEvent("hyperbridge:view-menu", { detail: at })); } },
+      { label: "Discover", icon: "compass", action: function () { press("sets-discover"); } },
+      { label: "View", svg: iconOf("group-toggle"), children: viewRing() },
       { label: "Settings", svg: iconOf("dock-settings"), action: function () { press("dock-settings"); } }
     ];
     var find = byId("dock-find");

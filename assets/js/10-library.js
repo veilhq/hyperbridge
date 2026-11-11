@@ -1176,93 +1176,30 @@ var candidates = null;
   var ORDER_CHOICES = [["color", "Color"], ["newest", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]];
   var DEFAULT_ORDER = "color";
 
-  // The view button opens a menu with a Group by section and an Order section; both choices persist.
+  // Group and order choices persist; the radial menu reads and sets them through window.HyperbridgeView.
   function setupGroup() {
-    var button = $("#group-toggle");
-    if (!button) return;
-    var menu = makeEl("div", "view-menu floating-panel");
-    menu.setAttribute("role", "menu");
-    menu.hidden = true;
-    document.body.appendChild(menu);
-
     function read(key, choices, fallback) {
       var saved = "";
       try { saved = localStorage.getItem(key) || ""; } catch (err) { saved = ""; }
       return choices.some(function (choice) { return choice[0] === saved; }) ? saved : fallback;
     }
 
-    function labelOf(choices, value) {
-      return choices.filter(function (choice) { return choice[0] === value; })[0][1];
-    }
-
-    function paintButton() {
-      var label = "View: group " + labelOf(GROUP_CHOICES, state.group).toLowerCase() + ", order " + labelOf(ORDER_CHOICES, state.order).toLowerCase();
-      button.setAttribute("aria-label", label);
-      button.setAttribute("data-tooltip", label);
-      button.setAttribute("data-group", state.group);
-      button.setAttribute("data-order", state.order);
-    }
-
-    function close() {
-      if (menu.hidden) return;
-      menu.hidden = true;
-    }
-
-    function choose(key, field, value) {
-      try { localStorage.setItem(key, value); } catch (err) { /* ignore */ }
+    function choose(field, value) {
+      try { localStorage.setItem("hyperbridge-" + field, value); } catch (err) { /* ignore */ }
       state[field] = value;
-      paintButton();
       state.signature = ""; state.signatureParts = [];
       state.cascade = true;
       load(true);
-      build();
-    }
-
-    function section(title, key, field, choices) {
-      menu.appendChild(makeEl("span", "view-menu-label", title));
-      choices.forEach(function (choice) {
-        var row = makeEl("button", "menu-item" + (state[field] === choice[0] ? " active" : ""));
-        row.type = "button";
-        row.setAttribute("role", "menuitemradio");
-        row.setAttribute("aria-checked", state[field] === choice[0] ? "true" : "false");
-        row.appendChild(makeEl("span", "menu-item-label", choice[1]));
-        row.addEventListener("click", function () { choose(key, field, choice[0]); });
-        menu.appendChild(row);
-      });
-    }
-
-    function build() {
-      menu.textContent = "";
-      section("Group by", "hyperbridge-group", "group", GROUP_CHOICES);
-      menu.appendChild(makeEl("div", "menu-item-separator"));
-      section("Order", "hyperbridge-order", "order", ORDER_CHOICES);
-    }
-
-    // Opens the menu with its top-left corner at a point, nudged so it stays inside the window.
-    function open(x, y) {
-      build();
-      menu.hidden = false;
-      menu.style.left = "0px";
-      menu.style.top = "0px";
-      var left = Math.min(Math.max(0, x), Math.max(0, window.innerWidth - menu.offsetWidth));
-      var top = Math.min(Math.max(0, y), Math.max(0, window.innerHeight - menu.offsetHeight));
-      menu.style.left = left + "px";
-      menu.style.top = top + "px";
     }
 
     state.group = read("hyperbridge-group", GROUP_CHOICES, "");
     state.order = read("hyperbridge-order", ORDER_CHOICES, DEFAULT_ORDER);
-    paintButton();
-    document.addEventListener("hyperbridge:view-menu", function (event) {
-      var at = event.detail || {};
-      open(at.x || 0, at.y || 0);
-    });
-    document.addEventListener("click", function (event) {
-      if (!menu.hidden && !menu.contains(event.target)) close();
-    });
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && !menu.hidden) close();
-    });
+    window.HyperbridgeView = {
+      groups: GROUP_CHOICES,
+      orders: ORDER_CHOICES,
+      current: function (field) { return state[field]; },
+      choose: choose
+    };
   }
 
   function init() {
