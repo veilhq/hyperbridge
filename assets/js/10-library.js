@@ -8,7 +8,7 @@
   var CASCADE_MAX = 12;
   var SEARCH_DEBOUNCE_MS = 250;
 
-  var state = { query: "", tag: "", color: "", setId: null, group: "", order: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
+  var state = { query: "", tag: "", color: "", setId: null, group: "", order: "color", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
   var tagsCache = [];
@@ -1173,7 +1173,8 @@ var candidates = null;
   }
 
   var GROUP_CHOICES = [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]];
-  var ORDER_CHOICES = [["", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"], ["color", "Color"]];
+  var ORDER_CHOICES = [["color", "Color"], ["newest", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]];
+  var DEFAULT_ORDER = "color";
 
   // The view button opens a menu with a Group by section and an Order section; both choices persist.
   function setupGroup() {
@@ -1184,10 +1185,10 @@ var candidates = null;
     menu.hidden = true;
     document.body.appendChild(menu);
 
-    function read(key, choices) {
+    function read(key, choices, fallback) {
       var saved = "";
       try { saved = localStorage.getItem(key) || ""; } catch (err) { saved = ""; }
-      return choices.some(function (choice) { return choice[0] === saved; }) ? saved : "";
+      return choices.some(function (choice) { return choice[0] === saved; }) ? saved : fallback;
     }
 
     function labelOf(choices, value) {
@@ -1247,8 +1248,8 @@ var candidates = null;
       button.setAttribute("aria-expanded", "true");
     }
 
-    state.group = read("hyperbridge-group", GROUP_CHOICES);
-    state.order = read("hyperbridge-order", ORDER_CHOICES);
+    state.group = read("hyperbridge-group", GROUP_CHOICES, "");
+    state.order = read("hyperbridge-order", ORDER_CHOICES, DEFAULT_ORDER);
     button.setAttribute("aria-haspopup", "menu");
     button.setAttribute("aria-expanded", "false");
     paintButton();

@@ -129,7 +129,7 @@ html.a11y-reduce-motion .library-card-details { transition: none; }
 .library-filter[hidden] { display: none; }
 .library-meta { margin: var(--space-3) 0 0; text-align: right; font-size: var(--fs-mono); color: var(--text-dim); }
 .library-meta[hidden] { display: none; }
-#group-toggle:not([data-group=""]), #group-toggle:not([data-order=""]) { color: var(--selected); }
+#group-toggle:not([data-group=""]), #group-toggle:not([data-order="color"]) { color: var(--selected); }
 /* The view menu floats above the dock button: a floating panel of radio rows in two labeled sections. */
 .view-menu { position: fixed; min-width: calc(var(--space-6) * 5); padding: var(--space-2); z-index: var(--z-dropdown); }
 .view-menu[hidden] { display: none; }
