@@ -84,6 +84,22 @@ def entry_family(raw: str) -> str:
     return family(values[0]) if values else NO_COLOR
 
 
+HUE_STEPS = 24
+
+
+def gradient_key(raw: str) -> tuple:
+    """Sort key that runs colors around the hue wheel (light to dark within a step), then greys dark to light, then no color."""
+    values = parse(raw)
+    try:
+        red, green, blue = (int(values[0][i:i + 2], 16) / 255 for i in (1, 3, 5))
+    except (IndexError, ValueError):
+        return (2, 0, 0.0)
+    hue, light, sat = colorsys.rgb_to_hls(red, green, blue)
+    if sat < 0.18 or light < 0.12 or light > 0.92:
+        return (1, 0, light)
+    return (0, int(hue * HUE_STEPS) % HUE_STEPS, -light)
+
+
 def parse(raw: str) -> list[str]:
     """Parse the stored swatch JSON, tolerating bad data."""
     try:

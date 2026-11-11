@@ -191,6 +191,8 @@ class HyperbridgeAPI:
             conn.close()
         if re.fullmatch(r"#[0-9a-fA-F]{6}", color or ""):
             rows = [row for row in rows if swatches.near(row["swatches"], color)]
+        if order == "color":
+            rows = sorted(rows, key=lambda row: swatches.gradient_key(row["swatches"]))
         labels = [_group_label(row, group) for row in rows] if group else [""] * len(rows)
         order = list(range(len(rows)))
         if group:

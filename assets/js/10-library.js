@@ -1173,7 +1173,7 @@ var candidates = null;
   }
 
   var GROUP_CHOICES = [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]];
-  var ORDER_CHOICES = [["", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]];
+  var ORDER_CHOICES = [["", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"], ["color", "Color"]];
 
   // The view button opens a menu with a Group by section and an Order section; both choices persist.
   function setupGroup() {

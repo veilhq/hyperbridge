@@ -57,6 +57,15 @@ class SwatchTests(LibraryOpsCase):
         self.assertEqual(titles("source"), ["apple", "", "Banana"])
         self.assertEqual(titles("junk"), ["", "apple", "Banana"])
 
+    def test_list_orders_by_color_as_a_gradient(self):
+        shades = {"none": None, "white": "#ffffff", "blue": "#0000ff", "green": "#00ff00", "red": "#ff0000", "black": "#000000"}
+        for name, shade in shades.items():
+            entry = self.add_entry(name)
+            self.conn.execute("UPDATE entries SET swatches = ? WHERE id = ?", (json.dumps([shade] if shade else []), entry))
+        self.conn.commit()
+        titles = [e["title"] for e in hyperbridge.HyperbridgeAPI().list_entries(order="color")["entries"]]
+        self.assertEqual(titles, ["red", "green", "blue", "black", "white", "none"])
+
     def test_list_groups_by_color_year_and_source(self):
         red, blue = self.add_entry("Red"), self.add_entry("Blue")
         self.conn.execute("UPDATE entries SET swatches = ?, year = '2020', domain = 'b.com' WHERE id = ?",
