@@ -68,10 +68,16 @@ def normalize_url(url) -> str:
     return urlunsplit((scheme, netloc, path or "/", query, ""))
 
 
+def source_domain(url) -> str:
+    """Return the site name shown under an entry: the URL's host without a leading www."""
+    host = (urlsplit(str(url or "")).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
 def add_link(conn, url, now=None) -> dict:
     """Queue a URL for capture; an already-known URL returns its existing entry."""
     key = normalize_url(url)
-    domain = urlsplit(key).hostname or ""
+    domain = source_domain(key)
     stamp = _timestamp(now)
     existing = conn.execute("SELECT id FROM entries WHERE source_key = ?", (key,)).fetchone()
     if existing:
@@ -599,6 +605,15 @@ def fix_image_types(conn) -> None:
     conn.execute(
         "UPDATE entries SET type = 'image/' || substr(type, 5) WHERE source_key IS NULL AND type LIKE 'img/%'"
     )
+
+
+def fix_domains(conn) -> None:
+    """Point each entry's shown domain at its source page rather than the image host it was saved from."""
+    rows = conn.execute("SELECT id, source_url, domain FROM entries WHERE source_url IS NOT NULL AND source_url != ''").fetchall()
+    for row in rows:
+        domain = source_domain(row["source_url"])
+        if domain and domain != row["domain"]:
+            conn.execute("UPDATE entries SET domain = ? WHERE id = ?", (domain, row["id"]))
 
 
 def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:

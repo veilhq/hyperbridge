@@ -657,6 +657,7 @@ def _backfill_swatches():
     conn = db.connect()
     try:
         capture.fix_image_types(conn)
+        capture.fix_domains(conn)
         swatches.backfill(conn)
     except Exception:  # noqa: BLE001 - a failed backfill only leaves entries ungrouped
         logger.exception("swatch backfill failed")

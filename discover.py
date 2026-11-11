@@ -160,7 +160,8 @@ def add_candidates(conn, urls, page_url, set_id) -> dict:
         result = capture.add_link(conn, url)
         if result["created"]:
             added += 1
-            conn.execute("UPDATE entries SET source_url = ? WHERE id = ?", (page_url, result["entry_id"]))
+            conn.execute("UPDATE entries SET source_url = ?, domain = ? WHERE id = ?",
+                         (page_url, capture.source_domain(page_url) or capture.source_domain(url), result["entry_id"]))
         if set_id and sets.place(result["entry_id"], int(set_id)):
             placed += 1
     return {"added": added, "placed": placed}

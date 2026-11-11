@@ -399,6 +399,18 @@ class AddImageTests(LibraryCase):
         self.assertEqual(capture.readable_name("IMG_20240101_123456.jpg"), "")
         self.assertEqual(capture.readable_name("harbor%20at%20dawn_8f3a9c2e1b.webp"), "harbor at dawn")
 
+    def test_fix_domains_points_entries_at_their_source_page(self):
+        self.conn.execute(
+            "INSERT INTO entries (uid, source_url, source_key, domain, state, created_at, updated_at)"
+            " VALUES ('u1', 'https://www.are.na/block/1', 'https://d1.cloudfront.net/a.jpg', 'd1.cloudfront.net', 'captured', 'x', 'x')"
+        )
+        capture.fix_domains(self.conn)
+        self.assertEqual(self.conn.execute("SELECT domain FROM entries").fetchone()[0], "are.na")
+
+    def test_source_domain_drops_www(self):
+        self.assertEqual(capture.source_domain("https://WWW.Cosmos.so/e/1"), "cosmos.so")
+        self.assertEqual(capture.source_domain(""), "")
+
     def test_non_image_bytes_are_rejected_and_nothing_is_created(self):
         with self.assertRaises(capture.CaptureError):
             capture.add_image(self.conn, b"not an image", "x.png")

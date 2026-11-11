@@ -146,8 +146,8 @@ def accept(conn, ids, set_id=None) -> dict:
         if result["created"]:
             added += 1
             conn.execute(
-                "UPDATE entries SET source_url = ?, source_service = ?, source_ref = ?, collection = ?, posted_at = ? WHERE id = ?",
-                (row["page_url"] or row["url"], row["source_id"], row["source_ref"], row["collection"], row["posted_at"],
+                "UPDATE entries SET source_url = ?, domain = ?, source_service = ?, source_ref = ?, collection = ?, posted_at = ? WHERE id = ?",
+                (row["page_url"] or row["url"], capture.source_domain(row["page_url"] or row["url"]), row["source_id"], row["source_ref"], row["collection"], row["posted_at"],
                  result["entry_id"]))
             library.add_entry_tags(conn, result["entry_id"], json.loads(row["tags"] or "[]"))
         conn.execute("UPDATE feed_items SET state = 'saved' WHERE id = ?", (row["id"],))
