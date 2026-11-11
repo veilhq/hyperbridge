@@ -667,6 +667,7 @@ def _backfill_swatches():
         capture.fix_domains(conn)
         capture.fix_file_name_titles(conn)
         swatches.backfill(conn)
+        capture.refresh_animated_thumbnails(conn)
     except Exception:  # noqa: BLE001 - a failed backfill only leaves entries ungrouped
         logger.exception("swatch backfill failed")
     finally:

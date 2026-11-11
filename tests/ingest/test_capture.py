@@ -578,3 +578,39 @@ class MultiImageTests(unittest.TestCase):
     def test_caps_image_count(self):
         html = "".join(f'<meta property="og:image" content="/{i}.jpg">' for i in range(40)).encode()
         self.assertEqual(len(capture.extract_metadata(html, "https://x.example/")["image_urls"]), capture.MAX_IMAGES)
+
+
+def animated_gif_bytes(size=(600, 400)) -> bytes:
+    from PIL import Image
+
+    frames = [Image.new("RGB", size, color) for color in ("red", "green", "blue")]
+    buffer = io.BytesIO()
+    frames[0].save(buffer, "GIF", save_all=True, append_images=frames[1:], duration=80, loop=0)
+    return buffer.getvalue()
+
+
+class AnimatedThumbnailTests(LibraryCase):
+    def test_animated_gif_gets_an_animated_thumbnail(self):
+        from PIL import Image
+
+        result = capture.add_image(self.conn, animated_gif_bytes(), "spin.gif")
+        row = self.conn.execute(
+            "SELECT path FROM assets WHERE entry_id = ? AND kind = 'thumbnail'", (result["entry_id"],)
+        ).fetchone()
+        with Image.open(db.data_dir() / row[0]) as thumb:
+            self.assertTrue(getattr(thumb, "is_animated", False))
+            self.assertLessEqual(max(thumb.size), capture.THUMB_EDGE)
+
+    def test_refresh_rebuilds_a_static_thumbnail(self):
+        from PIL import Image
+
+        result = capture.add_image(self.conn, animated_gif_bytes(), "spin.gif")
+        row = self.conn.execute(
+            "SELECT path FROM assets WHERE entry_id = ? AND kind = 'thumbnail'", (result["entry_id"],)
+        ).fetchone()
+        target = db.data_dir() / row[0]
+        Image.new("RGB", (480, 320), "red").save(target, "WEBP")
+        self.assertFalse(capture._has_animation(target))
+        self.assertEqual(capture.refresh_animated_thumbnails(self.conn), 1)
+        self.assertTrue(capture._has_animation(target))
+        self.assertEqual(capture.refresh_animated_thumbnails(self.conn), 0)

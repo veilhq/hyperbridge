@@ -414,6 +414,11 @@ def _write_thumbnail(body: bytes, target_dir_uid: str):
     from PIL import Image
 
     with Image.open(io.BytesIO(body)) as image:
+        if getattr(image, "is_animated", False):
+            animated = _write_animated_thumbnail(image, target_dir_uid)
+            if animated:
+                return animated
+            image.seek(0)
         image.load()
         transparent = "A" in image.getbands() or "transparency" in image.info
         image = image.convert("RGBA" if transparent else "RGB")
@@ -427,6 +432,75 @@ def _write_thumbnail(body: bytes, target_dir_uid: str):
             path = storage.asset_path(target_dir_uid, "thumbnail", 0, "jpg")
             image.convert("RGB").save(path, "JPEG", quality=85)
         return path, image.width, image.height
+
+
+ANIM_FRAME_BUDGET = 128 * 1024 * 1024  # bytes of decoded frames held while building an animated thumbnail
+
+
+def _write_animated_thumbnail(image, target_dir_uid: str):
+    """Write an animated webp thumbnail for a multi-frame image; return (path, width, height) or None."""
+    from PIL import ImageSequence
+
+    scale = min(1.0, THUMB_EDGE / max(image.width, image.height))
+    width, height = max(1, round(image.width * scale)), max(1, round(image.height * scale))
+    if width * height * 4 * getattr(image, "n_frames", 1) > ANIM_FRAME_BUDGET:
+        return None
+    frames, durations = [], []
+    try:
+        for frame in ImageSequence.Iterator(image):
+            durations.append(max(20, int(frame.info.get("duration", 100) or 100)))
+            frames.append(frame.convert("RGBA").resize((width, height)))
+        path = storage.asset_path(target_dir_uid, "thumbnail", 0, "webp")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        frames[0].save(path, "WEBP", save_all=True, append_images=frames[1:], duration=durations,
+                       loop=0, quality=75, method=4)
+    except (OSError, KeyError, ValueError, MemoryError):
+        return None
+    return path, width, height
+
+
+def _has_animation(path) -> bool:
+    """Return True when a webp file carries an ANIM chunk (an animated webp)."""
+    try:
+        with open(path, "rb") as handle:
+            return b"ANIM" in handle.read(64)
+    except OSError:
+        return False
+
+
+def refresh_animated_thumbnails(conn) -> int:
+    """Rebuild static grid thumbnails of animated originals as animated webp; return how many changed."""
+    from PIL import Image
+
+    rows = conn.execute(
+        "SELECT e.id, e.uid, o.path AS original, t.path AS thumb FROM entries e"
+        " JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
+        " JOIN assets t ON t.entry_id = e.id AND t.kind = 'thumbnail' AND t.position = 0"
+        " WHERE o.path LIKE '%.gif' OR o.path LIKE '%.webp' OR o.path LIKE '%.png'"
+    ).fetchall()
+    changed = 0
+    for row in rows:
+        thumb = db.data_dir() / row["thumb"]
+        if thumb.suffix == ".webp" and _has_animation(thumb):
+            continue
+        try:
+            with Image.open(db.data_dir() / row["original"]) as image:
+                if not getattr(image, "is_animated", False):
+                    continue
+                made = _write_animated_thumbnail(image, row["uid"])
+        except (OSError, ValueError):
+            continue
+        if not made:
+            continue
+        path, width, height = made
+        conn.execute(
+            "UPDATE assets SET path = ?, width = ?, height = ?, bytes = ?"
+            " WHERE entry_id = ? AND kind = 'thumbnail' AND position = 0",
+            (storage.relative_path(path), width, height, path.stat().st_size, row["id"]),
+        )
+        changed += 1
+    conn.commit()
+    return changed
 
 
 def _store_image(conn, entry, body: bytes, position: int = 0) -> None:
