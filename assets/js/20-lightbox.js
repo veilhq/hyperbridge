@@ -372,13 +372,12 @@
     }).catch(function () { toast("error", "Could not place."); });
   }
 
-  // Opens the shared menu of sets the entry is not yet in, anchored under the add button.
+  // Opens the shared menu of sets the entry is not yet in, anchored to the add button.
   function onPlaceMenu(event) {
     var add = event.target.closest("#lb-place");
     if (!add || !window.HvContextMenu || !current) return;
     event.stopPropagation();
-    var rect = add.getBoundingClientRect();
-    add.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom + 4 }));
+    window.HvContextMenu.openFor(add, placeItems());
   }
 
   function placeItems() {
@@ -521,7 +520,6 @@
     byId("act-save").addEventListener("click", onSaveAsset);
     byId("act-save-all").addEventListener("click", onSaveAll);
     byId("lb-sets").addEventListener("click", onPlaceMenu);
-    if (window.HvContextMenu) window.HvContextMenu.register("#lb-place", function () { return current ? placeItems() : []; });
     byId("lb-sets").addEventListener("click", onSetRemove);
     byId("f-cancel").addEventListener("click", function () {
       closeForm();

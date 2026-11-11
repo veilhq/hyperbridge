@@ -42,6 +42,20 @@ var candidates = null;
     return panel;
   }
 
+  // Reserves an image's height before it loads so lazy images never resize the grid; an unknown size is corrected on load without moving the view.
+  function reserveSpace(img, width, height) {
+    if (width && height) { img.style.aspectRatio = width + " / " + height; return; }
+    img.style.aspectRatio = "4 / 3";
+    img.addEventListener("load", function () {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      var scroller = document.getElementById("library");
+      var before = img.offsetHeight;
+      var above = scroller && img.getBoundingClientRect().bottom < scroller.getBoundingClientRect().top;
+      img.style.aspectRatio = img.naturalWidth + " / " + img.naturalHeight;
+      if (above) scroller.scrollTop += img.offsetHeight - before;
+    });
+  }
+
   // Builds one entry card as a focusable button that announces its id on click.
   function buildCard(entry, reveal) {
     var card = makeEl("button", "library-card");
@@ -55,7 +69,8 @@ var candidates = null;
       img.src = entry.thumb;
       img.alt = "";
       img.loading = "lazy";
-      if (entry.width && entry.height) img.style.aspectRatio = entry.width + " / " + entry.height;
+      img.decoding = "async";
+      reserveSpace(img, entry.width, entry.height);
       if (reveal) {
         // A capture that just finished fades its image in instead of popping.
         img.classList.add("library-card-reveal");
@@ -98,7 +113,7 @@ var candidates = null;
     img.className = "library-card-image";
     img.src = item.thumb;
     img.alt = "";
-    if (item.width && item.height) img.style.aspectRatio = item.width + " / " + item.height;
+    reserveSpace(img, item.width, item.height);
     card.appendChild(img);
     if (item.known_entry_id) card.appendChild(makeEl("span", "library-card-flag status-chip status-chip-outlined-accent", "Saved"));
     var details = card.appendChild(makeEl("span", "library-card-details"));
@@ -614,7 +629,7 @@ var candidates = null;
 
   function restoreFocus(focusedId) {
     var restored = focusedId ? grid.querySelector('[data-id="' + focusedId + '"]') : null;
-    if (restored) restored.focus();
+    if (restored && restored !== document.activeElement) restored.focus({ preventScroll: true });
   }
 
   // Redraws every card: fixed columns normally, sectioned CSS columns while grouped.
@@ -999,11 +1014,12 @@ var candidates = null;
     return items;
   }
 
-  // Opens the menu just above the selection bar; it flips upward when there is no room below.
+  // Opens the add-to-set or tag menu beside the button that was clicked.
   function openSetMenu(event) {
     event.stopPropagation();
-    var rect = event.currentTarget.getBoundingClientRect();
-    event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: rect.left, clientY: $("#select-bar").getBoundingClientRect().top - 8 }));
+    if (!window.HvContextMenu) return;
+    var button = event.currentTarget;
+    window.HvContextMenu.openFor(button, button.id === "sel-tag" ? tagMenuItems() : setMenuItems());
   }
 
   function setupSelection() {
@@ -1014,10 +1030,6 @@ var candidates = null;
     $("#sel-save").addEventListener("click", bulkSave);
     $("#sel-discard").addEventListener("click", bulkDiscard);
     $("#sel-clear").addEventListener("click", clearSelection);
-    if (window.HvContextMenu) {
-      window.HvContextMenu.register("#sel-add", setMenuItems);
-      window.HvContextMenu.register("#sel-tag", tagMenuItems);
-    }
     document.addEventListener("keydown", function (event) {
       if ($("#app").inert) return;
       var tag = event.target && event.target.tagName;
