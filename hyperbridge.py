@@ -738,6 +738,7 @@ def main():
         width=1200,
         height=800,
         min_size=(720, 480),
+        maximized=True,
         background_color="#000000",
     )
 
