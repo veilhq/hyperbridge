@@ -36,7 +36,7 @@
 .library-card-grow { transition: border-color var(--motion-base) var(--ease), height var(--motion-linger) var(--ease); }
 /* A rebuilt grid fades its cards in one after another, rows then columns. */
 @keyframes libraryCascade { from { opacity: 0; transform: translateY(var(--space-3)); } to { opacity: 1; transform: none; } }
-.library-cascade { animation: libraryCascade var(--motion-enter) var(--ease) calc(var(--cascade-index, 0) * var(--motion-stagger)) both; }
+.library-cascade { animation: libraryCascade var(--motion-reveal) var(--ease) calc(var(--cascade-index, 0) * var(--motion-stagger) * 2) both; }
 .library-card-reveal { opacity: 0; transition: opacity var(--motion-linger) var(--ease); }
 .library-card-reveal.is-loaded { opacity: 1; }
 /* Discard: the card fills with the error color around a dark x, then collapses away. */
