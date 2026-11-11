@@ -140,7 +140,7 @@
     $("#find-head-title").textContent = result.title || host;
     $("#find-head-desc").textContent = count + (count === 1 ? " image" : " images") + " found on " + host + ". Select the ones to add to this set.";
     if (!result.candidates.length) {
-      emptyEl.textContent = "No usable images found. Pages that load images with scripts, such as Pinterest boards, are not readable yet.";
+      emptyEl.textContent = "No usable images found. Pages that load images with scripts are not readable yet; public Pinterest board links are the exception.";
       emptyEl.hidden = false;
     }
   }

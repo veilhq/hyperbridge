@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
-from bridge.ingest import capture
+from bridge.ingest import capture, pinterest
 from bridge.library import sets
 
 MAX_CANDIDATES = 60
@@ -126,23 +126,48 @@ def _probe(url, fetcher):
         return None
 
 
+def _probe_pin(pin, fetcher):
+    """Build a candidate from a Pinterest pin: a small preview for the card, the full-size URL to capture."""
+    try:
+        response = fetcher(pin["preview"])
+        if not capture._is_image(response):
+            return None
+        _, width, height = capture._open_image(response.body)
+        return {"url": pin["url"], "thumb": _thumbnail(response.body),
+                "width": pin["width"] or width, "height": pin["height"] or height}
+    except Exception:  # noqa: BLE001 - a pin whose preview fails to load is simply left out
+        return None
+
+
 def discover(conn, url, fetcher=None) -> dict:
     """List the usable images on a page, marking those already in the library."""
     fetcher = fetcher or capture.default_fetcher()
     page_url = capture.normalize_url(url)
-    response = fetcher(page_url)
-    base = getattr(response, "final_url", "") or page_url
-    slug = _arena_slug(base)
-    if slug:
-        title, urls = _arena_images(slug, fetcher)
-    elif capture._is_image(response):
-        urls, title = [base], ""
+    board = pinterest.board_ref(page_url)
+    response = None
+    if not board:
+        response = fetcher(page_url)
+        board = pinterest.board_ref(getattr(response, "final_url", "") or page_url)
+    limit = MAX_CANDIDATES
+    if board:
+        title, pins = pinterest.board_pins(board, fetcher)
+        limit = pinterest.PIN_LIMIT
+        probe = lambda pin: _probe_pin(pin, fetcher)  # noqa: E731
+        urls = pins
     else:
-        urls = page_images(response.body, base)
-        title = capture.extract_metadata(response.body, base)["title"]
+        base = getattr(response, "final_url", "") or page_url
+        slug = _arena_slug(base)
+        if slug:
+            title, urls = _arena_images(slug, fetcher)
+        elif capture._is_image(response):
+            urls, title = [base], ""
+        else:
+            urls = page_images(response.body, base)
+            title = capture.extract_metadata(response.body, base)["title"]
+        probe = lambda item: _probe(item, fetcher)  # noqa: E731
     with ThreadPoolExecutor(max_workers=8) as pool:
-        probed = list(pool.map(lambda item: _probe(item, fetcher), urls))
-    candidates = [item for item in probed if item][:MAX_CANDIDATES]
+        probed = list(pool.map(probe, urls))
+    candidates = [item for item in probed if item][:limit]
     for item in candidates:
         try:
             key = capture.normalize_url(item["url"])

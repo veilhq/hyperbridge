@@ -170,12 +170,13 @@ def safe_fetch(
     resolver=None,
     opener=None,
     user_agent=DEFAULT_UA,
+    headers=None,
 ) -> FetchResult:
     """GET url over http/https, refusing non-public addresses, and return a FetchResult.
 
     Each hop resolves the host once, requires every address to be public, and connects
     to the first validated IP (pinned). Redirects are re-validated up to max_redirects.
-    Cookies and credentials are never sent. timeout is an overall deadline in seconds.
+    Cookies and credentials are never sent (headers adds plain request headers but refuses those). timeout is an overall deadline in seconds.
 
     resolver: callable(host) -> list of IP strings (default: socket.getaddrinfo).
     opener: callable(scheme, host, port, ip, path, headers, timeout) -> (status, headers,
@@ -193,6 +194,10 @@ def safe_fetch(
         "Accept-Encoding": "identity",
         "Connection": "close",
     }
+    for name, value in (headers or {}).items():
+        if name.lower() in ("cookie", "authorization", "proxy-authorization"):
+            raise FetchError("scheme", f"refusing to send the {name} header")
+        request_headers[name] = value
     current = url
     for hop in range(max_redirects + 1):
         scheme, host, port, path = _split(current)
