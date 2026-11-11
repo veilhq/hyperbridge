@@ -181,23 +181,60 @@ var candidates = null;
     for (var i = 0, count = columnCount(); i < count; i++) grid.appendChild(makeEl("div", "library-grid-column"));
   }
 
-  // Adds an element to the shortest column.
-  function placeInColumn(el) {
+  // Adds an element to the shortest column, at its top when asked.
+  function placeInColumn(el, top) {
     var columns = grid.querySelectorAll(".library-grid-column");
     var best = columns[0];
     for (var i = 1; i < columns.length; i++) if (columns[i].offsetHeight < best.offsetHeight) best = columns[i];
-    best.appendChild(el);
+    if (top && best.firstChild) best.insertBefore(el, best.firstChild);
+    else best.appendChild(el);
   }
 
-  // Re-deals the feed's cards into the right number of columns after the window changes width.
-  function relayoutColumns() {
-    if (!candidates || !candidates.feed || candidates.busy || !grid.hasAttribute("data-columns")) return;
-    if (grid.querySelector(".loading-skeleton") || columnCount() === grid.querySelectorAll(".library-grid-column").length) return;
-    var cards = Array.prototype.slice.call(grid.querySelectorAll(".library-card")).sort(function (a, b) {
-      return Number(a.getAttribute("data-id")) - Number(b.getAttribute("data-id"));
+  function motionSeconds(name) {
+    var value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return parseFloat(value) / (value.slice(-2) === "ms" ? 1000 : 1);
+  }
+
+  function reducedMotion() {
+    return document.documentElement.classList.contains("a11y-reduce-motion") || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  // Runs a grid change and glides every card that moved from where it was to where it landed.
+  function flip(mutate) {
+    var before = Array.prototype.slice.call(grid.querySelectorAll(".library-card")).map(function (card) {
+      return { card: card, rect: card.getBoundingClientRect() };
     });
-    resetColumns();
-    cards.forEach(placeInColumn);
+    mutate();
+    if (reducedMotion()) return;
+    var view = window.innerHeight;
+    var duration = motionSeconds("--motion-enter") * 1000 || 400;
+    var easing = getComputedStyle(document.documentElement).getPropertyValue("--ease").trim() || "ease";
+    before.forEach(function (item) {
+      if (!item.card.isConnected || !item.card.animate) return;
+      var now = item.card.getBoundingClientRect();
+      var dx = item.rect.left - now.left, dy = item.rect.top - now.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      if ((item.rect.bottom < 0 || item.rect.top > view) && (now.bottom < 0 || now.top > view)) return;
+      item.card.animate([{ transform: "translate(" + dx + "px, " + dy + "px)" }, { transform: "none" }], { duration: duration, easing: easing });
+    });
+  }
+
+  // Re-deals the cards into the right number of columns after the window changes width.
+  function relayoutColumns() {
+    if (!grid.hasAttribute("data-columns") || grid.querySelector(".loading-skeleton")) return;
+    if (candidates && (!candidates.feed || candidates.busy)) return;
+    if (columnCount() === grid.querySelectorAll(".library-grid-column").length) return;
+    var cards = Array.prototype.slice.call(grid.querySelectorAll(".library-card"));
+    var order = {};
+    state.entries.forEach(function (entry, index) { order[entry.id] = index; });
+    cards.sort(function (a, b) {
+      var first = a.getAttribute("data-id"), second = b.getAttribute("data-id");
+      return candidates ? Number(first) - Number(second) : order[first] - order[second];
+    });
+    flip(function () {
+      resetColumns();
+      cards.forEach(function (card) { placeInColumn(card); });
+    });
   }
   var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr" };
 
@@ -236,6 +273,7 @@ var candidates = null;
     var ticket = findTicket;
     var current = candidates;
     current.busy = true;
+    syncMore();
     var tail = [];
     for (var i = 0; i < 8; i++) {
       var tile = makeEl("div", "library-card loading-skeleton");
@@ -267,8 +305,26 @@ var candidates = null;
     }).catch(function () { current.finished = true; }).then(function () {
       tail.forEach(function (tile) { tile.remove(); });
       current.busy = false;
-      if (candidates === current && !current.finished && feedObserver) { feedObserver.unobserve(sentinel); feedObserver.observe(sentinel); }
+      if (candidates !== current) return;
+      if (current.finished && current.manual) toast("info", "Nothing new from your sources right now.");
+      current.manual = false;
+      syncMore();
+      if (!current.finished && feedObserver) { feedObserver.unobserve(sentinel); feedObserver.observe(sentinel); }
     });
+  }
+
+  // Shows the Discover more button once the feed has run out of images to add.
+  function syncMore() {
+    var button = $("#library-more");
+    if (button) button.hidden = !(candidates && candidates.feed && candidates.finished && !candidates.busy && candidates.candidates.length);
+  }
+
+  function discoverMore() {
+    if (!candidates || !candidates.feed || candidates.busy) return;
+    candidates.finished = false;
+    candidates.manual = true;
+    syncMore();
+    loadMoreFeed();
   }
 
   function feedMessage(text) {
@@ -299,6 +355,7 @@ var candidates = null;
 
   function showFeedLoading() {
     candidates = { feed: true, page_url: "", candidates: [] };
+    syncMore();
     clearSelection();
     feedMessage("");
     $("#library-meta").hidden = true;
@@ -400,6 +457,7 @@ var candidates = null;
   function leaveCandidates() {
     if (!candidates) return;
     candidates = null;
+    syncMore();
     findTicket++;
     $("#find-refresh").hidden = true;
     $("#find-exit").textContent = "Back to set";
@@ -462,10 +520,8 @@ var candidates = null;
     }).catch(function () { toast("error", "Could not add those images."); });
   }
 
-  function signatureOf(entries) {
-    return entries.map(function (entry) {
-      return [entry.id, entry.state, entry.title, entry.domain, entry.group, entry.thumb ? 1 : 0, (entry.caption || []).join("/")].join("|");
-    });
+  function partOf(entry) {
+    return [entry.id, entry.state, entry.title, entry.domain, entry.group, entry.thumb ? 1 : 0, (entry.caption || []).join("/")].join("|");
   }
 
   function renderEmpty() {
@@ -547,52 +603,95 @@ var candidates = null;
     });
   }
 
-  function render() {
-    if (candidates) return;
-    var parts = signatureOf(state.entries);
-    var signature = parts.join(";");
-    var previous = state.signatureParts || [];
-    // A page that only extends the list adds its cards without touching the ones already shown.
-    var appended = signature !== state.signature && !state.group && previous.length > 0 && parts.length > previous.length
-      && previous.every(function (part, index) { return part === parts[index]; });
-    if (appended) {
-      var extra = document.createDocumentFragment();
-      state.entries.slice(previous.length).forEach(function (entry) { extra.appendChild(buildCard(entry, false)); });
-      grid.appendChild(extra);
-      state.signature = signature;
-      state.signatureParts = parts;
-    } else if (signature !== state.signature) {
-      state.signature = signature;
-      state.signatureParts = parts;
-      var active = document.activeElement;
-      var focusedId = active && active.getAttribute ? active.getAttribute("data-id") : null;
+  // Builds the card for an entry; a capture that just finished remembers the pending tile's height to grow from.
+  function makeCard(entry, grown) {
+    var reveal = !!state.pendingIds[entry.id] && !!entry.thumb;
+    var card = buildCard(entry, reveal);
+    if (reveal && entry.width && entry.height) {
+      var old = grid.querySelector('[data-id="' + entry.id + '"]');
+      if (old) grown.push({ card: card, from: old.offsetHeight });
+    }
+    return card;
+  }
+
+  function restoreFocus(focusedId) {
+    var restored = focusedId ? grid.querySelector('[data-id="' + focusedId + '"]') : null;
+    if (restored) restored.focus();
+  }
+
+  // Redraws every card: fixed columns normally, sectioned CSS columns while grouped.
+  function rebuildGrid() {
+    var active = document.activeElement;
+    var focusedId = active && active.getAttribute ? active.getAttribute("data-id") : null;
+    var grown = [];
+    var cards = state.entries.map(function (entry) { return makeCard(entry, grown); });
+    if (state.group) {
       var fragment = document.createDocumentFragment();
       var lastGroup = null;
-      var nextPending = {};
-      var grown = [];
-      state.entries.forEach(function (entry) {
-        if (entry.state === "pending") nextPending[entry.id] = true;
-        if (state.group && entry.group !== lastGroup) {
+      state.entries.forEach(function (entry, index) {
+        if (entry.group !== lastGroup) {
           fragment.appendChild(makeEl("h2", "library-group", entry.group));
           lastGroup = entry.group;
         }
-        var reveal = !!state.pendingIds[entry.id] && !!entry.thumb;
-        var card = buildCard(entry, reveal);
-        if (reveal && entry.width && entry.height) {
-          var old = grid.querySelector('[data-id="' + entry.id + '"]');
-          if (old) grown.push({ card: card, from: old.offsetHeight });
-        }
-        fragment.appendChild(card);
+        fragment.appendChild(cards[index]);
       });
-      state.pendingIds = nextPending;
+      grid.removeAttribute("data-columns");
       grid.textContent = "";
       grid.appendChild(fragment);
+    } else {
+      resetColumns();
+      cards.forEach(function (card) { placeInColumn(card); });
+    }
+    grown.forEach(growCard);
+    if (state.cascade) cascadeIn();
+    restoreFocus(focusedId);
+  }
+
+  // Applies a list change to the cards already shown: removed ones leave, changed ones swap in place, new ones join a column. Nothing else changes column.
+  function patchGrid() {
+    var current = {};
+    grid.querySelectorAll(".library-card[data-id]").forEach(function (card) { current[card.getAttribute("data-id")] = card; });
+    var wanted = {};
+    var lastKept = -1;
+    state.entries.forEach(function (entry, index) {
+      wanted[entry.id] = true;
+      if (current[entry.id]) lastKept = index;
+    });
+    var active = document.activeElement;
+    var focusedId = active && active.getAttribute ? active.getAttribute("data-id") : null;
+    var grown = [];
+    flip(function () {
+      Object.keys(current).forEach(function (id) { if (!wanted[id]) current[id].remove(); });
+      state.entries.forEach(function (entry, index) {
+        var card = current[entry.id];
+        if (card && state.partById[entry.id] === partOf(entry)) return;
+        var fresh = makeCard(entry, grown);
+        if (card) card.replaceWith(fresh);
+        else placeInColumn(fresh, index < lastKept);
+      });
       grown.forEach(growCard);
-      if (state.cascade) cascadeIn();
-      if (focusedId) {
-        var restored = grid.querySelector('[data-id="' + focusedId + '"]');
-        if (restored) restored.focus();
-      }
+    });
+    restoreFocus(focusedId);
+  }
+
+  function render() {
+    if (candidates) return;
+    var parts = state.entries.map(partOf);
+    var signature = parts.join(";");
+    if (signature !== state.signature) {
+      var patchable = !state.group && !state.cascade && state.signatureParts && state.signatureParts.length > 0 && grid.hasAttribute("data-columns");
+      if (patchable) patchGrid();
+      else rebuildGrid();
+      var nextPending = {};
+      var partById = {};
+      state.entries.forEach(function (entry, index) {
+        if (entry.state === "pending") nextPending[entry.id] = true;
+        partById[entry.id] = parts[index];
+      });
+      state.pendingIds = nextPending;
+      state.partById = partById;
+      state.signature = signature;
+      state.signatureParts = parts;
     }
     state.cascade = false;
     renderEmpty();
@@ -1105,6 +1204,7 @@ var candidates = null;
       else leaveCandidates();
     });
     $("#find-refresh").addEventListener("click", function () { openFeed(true); });
+    $("#feed-more").addEventListener("click", discoverMore);
     document.addEventListener("hyperbridge:feed", function () { openFeed(false); });
     window.addEventListener("resize", function () {
       clearTimeout(resizeTimer);

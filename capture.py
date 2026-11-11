@@ -279,6 +279,24 @@ def shorten_title(title: str) -> str:
     return cut.rstrip(" -|,:;") + "..."
 
 
+_GENERIC_WORDS = {"original", "orig", "image", "img", "full", "large", "medium", "small",
+                  "download", "file", "default", "untitled", "thumb", "thumbnail"}
+
+
+def readable_name(filename: str) -> str:
+    """Turn an image file name into a short title, dropping generic words and random-looking tokens; empty when nothing is left."""
+    stem = unquote(str(filename or "")).rsplit(".", 1)[0] if "." in str(filename or "") else unquote(str(filename or ""))
+    words = []
+    for token in re.split(r"[\s_.+-]+", stem):
+        if not token or token.lower() in _GENERIC_WORDS:
+            continue
+        mixed = bool(re.search(r"\d", token)) and bool(re.search(r"[A-Za-z]", token))
+        if (mixed and len(token) >= 6) or len(token) >= 16 or (token.isdigit() and len(token) >= 4):
+            continue
+        words.append(token)
+    return shorten_title(" ".join(words))
+
+
 def extract_metadata(html_bytes, base_url) -> dict:
     """Return title, description, creator, publisher, type, year and image_url from page HTML."""
     result = {key: "" for key in _FIELDS}
@@ -462,7 +480,7 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
     response = fetcher(url)
     if _is_image(response):
         name = unquote(urlsplit(response.final_url or url).path.rsplit("/", 1)[-1])
-        _apply_metadata(conn, entry, {"title": name}, _timestamp())
+        _apply_metadata(conn, entry, {"title": readable_name(name)}, _timestamp())
         _store_image(conn, entry, response.body)
         return
     base = getattr(response, "final_url", "") or url
@@ -545,7 +563,7 @@ def add_image(conn, body: bytes, name: str = "", now=None) -> dict:
     stamp = _timestamp(now)
     found = image_info(body)
     title = found.get("title") or (
-        shorten_title(re.sub(r"[_-]+", " ", str(name).rsplit(".", 1)[0]).strip()) if name else ""
+        readable_name(name) if name else ""
     )
     cursor = conn.execute(
         "INSERT INTO entries (uid, title, description, creator, publisher, type, year, state, created_at, updated_at)"

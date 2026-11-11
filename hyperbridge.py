@@ -53,6 +53,7 @@ import screenshot  # noqa: E402
 import sets  # noqa: E402
 import social  # noqa: E402
 import swatches  # noqa: E402
+import sync  # noqa: E402
 import lan  # noqa: E402
 import transfer  # noqa: E402
 import tumblr  # noqa: E402
@@ -483,6 +484,66 @@ class HyperbridgeAPI:
             logger.warning("fetch_from_share failed: %s", err)
             return {"status": "failed", "error": "Could not fetch from that machine."}
 
+    def _sync(self):
+        machines = getattr(self, "sync", None)
+        if machines is None:
+            raise lan.LanError("Sync is not running.")
+        return machines
+
+    def sync_status(self) -> dict:
+        """This machine, its pairing window and the machines found on the network."""
+        try:
+            return {"status": "ok", **self._sync().status()}
+        except Exception as err:
+            logger.warning("sync_status failed: %s", err)
+            return {"status": "failed", "error": "Sync is not available."}
+
+    def start_pairing(self) -> dict:
+        """Open a pairing window and return its code."""
+        try:
+            return {"status": "ok", **self._sync().start_pairing()}
+        except Exception as err:
+            logger.warning("start_pairing failed: %s", err)
+            return {"status": "failed", "error": "Could not open pairing."}
+
+    def stop_pairing(self) -> dict:
+        """Close the pairing window."""
+        try:
+            self._sync().stop_pairing()
+            return {"status": "ok"}
+        except Exception as err:
+            logger.warning("stop_pairing failed: %s", err)
+            return {"status": "failed", "error": "Could not close pairing."}
+
+    def pair_with(self, machine_id: str, code: str) -> dict:
+        """Pair with a machine that is showing a pairing code."""
+        try:
+            return {"status": "ok", **self._sync().pair(str(machine_id), code)}
+        except lan.LanError as err:
+            return {"status": "failed", "error": str(err)}
+        except Exception as err:
+            logger.warning("pair_with failed: %s", err)
+            return {"status": "failed", "error": "Could not pair with that machine."}
+
+    def sync_with(self, machine_id: str) -> dict:
+        """Pull a paired machine's new entries and ask it to pull ours."""
+        try:
+            return {"status": "ok", **self._sync().sync_with(str(machine_id))}
+        except (lan.LanError, transfer.TransferError) as err:
+            return {"status": "failed", "error": str(err)}
+        except Exception as err:
+            logger.warning("sync_with failed: %s", err)
+            return {"status": "failed", "error": "Could not sync with that machine."}
+
+    def unpair(self, machine_id: str) -> dict:
+        """Forget a paired machine on this side."""
+        try:
+            self._sync().store.remove(str(machine_id))
+            return {"status": "ok"}
+        except Exception as err:
+            logger.warning("unpair failed: %s", err)
+            return {"status": "failed", "error": "Could not unpair."}
+
     def add_image_data(self, data: str, name: str = "") -> dict:
         """Create an entry from a pasted image sent as base64 text."""
         try:
@@ -654,6 +715,10 @@ def main():
     threading.Thread(target=_backfill_origins, daemon=True).start()
 
     api = HyperbridgeAPI()
+    try:
+        api.sync = sync.Sync()
+    except Exception:  # noqa: BLE001 - the library works without sync
+        logger.exception("sync failed to start")
     icon_path = str(ICON_FILE) if ICON_FILE.exists() else None
 
     window = webview.create_window(
@@ -677,6 +742,8 @@ def main():
         logger.info("hyperbridge ready")
 
     webview.start(on_start, icon=icon_path, debug=False)
+    if getattr(api, "sync", None):
+        api.sync.stop()
     logger.info("hyperbridge shutdown")
 
 

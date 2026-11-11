@@ -11,9 +11,11 @@
 <div id="app">
   <div class="workspace">
     <aside class="sets-rail" id="sets-rail" aria-label="Sets">
+      <div class="sets-feed">
+        <button class="sets-item" id="sets-discover" type="button"><span class="sets-text"><span class="sets-name">Discover</span><span class="sets-desc">New images from your sources</span></span></button>
+      </div>
       <div class="sets-list" id="sets-list">
         <button class="sets-item" id="sets-all" type="button" data-set="" aria-current="true"><span class="sets-text"><span class="sets-name">All</span><span class="sets-desc">Everything captured</span></span><span class="sets-count" id="all-count"></span></button>
-        <button class="sets-item" id="sets-discover" type="button"><span class="sets-text"><span class="sets-name">Discover</span><span class="sets-desc">New images from your sources</span></span></button>
       </div>
       <div class="sets-more" id="sets-more"></div>
       <form class="sets-form" id="sets-form" novalidate hidden>
@@ -66,6 +68,16 @@
           </header>
           <div class="settings-source">
             <span class="settings-source-text">
+              <span class="settings-source-name">Sync with your other machines</span>
+              <span class="settings-source-desc">Pair two machines once, then one click sends and fetches new entries both ways. Both must be open on the same network. Traffic is not encrypted, so use a network you trust.</span>
+              <span class="settings-share-info" id="sync-info" role="status" hidden></span>
+            </span>
+            <button class="action-button action-button-ghost" id="sync-pair-start" type="button">Pair a new machine</button>
+            <button class="action-button action-button-ghost" id="sync-pair-stop" type="button" hidden>Cancel</button>
+          </div>
+          <div id="sync-list"></div>
+          <div class="settings-source">
+            <span class="settings-source-text">
               <span class="settings-source-name">Export to a file</span>
               <span class="settings-source-desc">Images, tags, sets and followed sources in one zip.</span>
             </span>
@@ -105,6 +117,9 @@
       <p class="library-empty" id="library-empty" hidden></p>
       <div class="library-grid" id="library-grid"></div>
       <div class="library-sentinel" id="library-sentinel" aria-hidden="true"></div>
+      <div class="library-more" id="library-more" hidden>
+        <button class="action-button action-button-ghost" id="feed-more" type="button">Discover more</button>
+      </div>
     </main>
   </div>
 </div>

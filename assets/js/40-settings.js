@@ -166,6 +166,141 @@
     });
   }
 
+  // Lists the machines found on the network and lets the Operator pair, sync or unpair; polls while Settings is open.
+  function initSync() {
+    var list = $("#sync-list"), info = $("#sync-info"), pairStart = $("#sync-pair-start"), pairStop = $("#sync-pair-stop");
+    var timer = null, lastReceived = null, busy = false;
+    var codes = {};
+
+    function pad(value) { return (value < 10 ? "0" : "") + value; }
+
+    function row(machine) {
+      var item = document.createElement("div");
+      item.className = "settings-source";
+      item.setAttribute("data-machine", machine.id);
+      var text = document.createElement("span");
+      text.className = "settings-source-text";
+      var name = document.createElement("span");
+      name.className = "settings-source-name";
+      name.textContent = machine.name;
+      var desc = document.createElement("span");
+      desc.className = "settings-source-desc";
+      desc.textContent = machine.paired ? (machine.online ? "Paired, on the network." : "Paired, not seen right now.") : "Showing a pairing code. Enter it to pair.";
+      text.appendChild(name);
+      text.appendChild(desc);
+      item.appendChild(text);
+      if (machine.paired) {
+        var sync = document.createElement("button");
+        sync.className = "action-button action-button-ghost";
+        sync.type = "button";
+        sync.textContent = "Sync";
+        sync.disabled = !machine.online || busy;
+        sync.addEventListener("click", function () { runSync(machine, sync); });
+        var unpair = document.createElement("button");
+        unpair.className = "action-button action-button-ghost";
+        unpair.type = "button";
+        unpair.textContent = "Unpair";
+        unpair.addEventListener("click", function () {
+          var bridge = api();
+          if (bridge && bridge.unpair) Promise.resolve(bridge.unpair(machine.id)).then(poll);
+        });
+        item.appendChild(sync);
+        item.appendChild(unpair);
+      } else {
+        var form = document.createElement("form");
+        form.className = "settings-follow-form";
+        form.autocomplete = "off";
+        var input = document.createElement("input");
+        input.className = "form-input settings-code";
+        input.type = "text";
+        input.inputMode = "numeric";
+        input.maxLength = 6;
+        input.placeholder = "Code";
+        input.setAttribute("aria-label", "Pairing code shown on " + machine.name);
+        input.value = codes[machine.id] || "";
+        input.addEventListener("input", function () { codes[machine.id] = input.value; });
+        var go = document.createElement("button");
+        go.className = "action-button action-button-ghost";
+        go.type = "submit";
+        go.textContent = "Pair";
+        form.appendChild(input);
+        form.appendChild(go);
+        form.addEventListener("submit", function (event) {
+          event.preventDefault();
+          var bridge = api();
+          if (!bridge || !bridge.pair_with || !input.value.trim()) return;
+          go.disabled = true;
+          Promise.resolve(bridge.pair_with(machine.id, input.value.trim())).then(function (result) {
+            if (!result || result.status === "failed") { toast("error", (result && result.error) || "Could not pair."); return; }
+            delete codes[machine.id];
+            toast("success", "Paired with " + result.name + ".");
+            poll();
+          }).catch(function () { toast("error", "Could not pair."); }).then(function () { go.disabled = false; });
+        });
+        item.appendChild(form);
+      }
+      return item;
+    }
+
+    function runSync(machine, button) {
+      var bridge = api();
+      if (!bridge || !bridge.sync_with || busy) return;
+      busy = true;
+      button.disabled = true;
+      toast("info", "Syncing with " + machine.name + ".");
+      Promise.resolve(bridge.sync_with(machine.id)).then(function (result) {
+        if (!result || result.status === "failed") { toast("error", (result && result.error) || "Could not sync."); return; }
+        var got = result.pulled ? result.pulled.added : 0;
+        var sent = result.pushed ? result.pushed.added : 0;
+        toast(result.push_error ? "error" : "success", "Received " + entries(got) + ", sent " + entries(sent) + "." + (result.push_error ? " " + result.push_error : ""));
+        if (got) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+      }).catch(function () { toast("error", "Could not sync."); }).then(function () { busy = false; poll(); });
+    }
+
+    function paint(status) {
+      var pairing = status.pairing_seconds > 0;
+      pairStart.hidden = pairing;
+      pairStop.hidden = !pairing;
+      info.hidden = !pairing;
+      info.textContent = pairing ? "Enter code " + status.code + " on the other machine. Closes in " + Math.floor(status.pairing_seconds / 60) + ":" + pad(status.pairing_seconds % 60) + "." : "";
+      var active = document.activeElement;
+      if (active && list.contains(active) && active.tagName === "INPUT") return;
+      list.textContent = "";
+      status.machines.forEach(function (machine) { list.appendChild(row(machine)); });
+    }
+
+    function poll() {
+      var bridge = api();
+      if (!bridge || !bridge.sync_status) return;
+      Promise.resolve(bridge.sync_status()).then(function (status) {
+        if (!status || status.status !== "ok") return;
+        if (lastReceived !== null && status.received > lastReceived) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+        lastReceived = status.received;
+        paint(status);
+      }).catch(function () {});
+    }
+
+    pairStart.addEventListener("click", function () {
+      var bridge = api();
+      if (!bridge || !bridge.start_pairing) return;
+      Promise.resolve(bridge.start_pairing()).then(function (result) {
+        if (!result || result.status !== "ok") toast("error", (result && result.error) || "Could not open pairing.");
+        poll();
+      });
+    });
+    pairStop.addEventListener("click", function () {
+      var bridge = api();
+      if (bridge && bridge.stop_pairing) Promise.resolve(bridge.stop_pairing()).then(poll);
+    });
+
+    return {
+      start: function () { if (timer) return; poll(); timer = setInterval(poll, 3000); },
+      stop: function () { if (timer) { clearInterval(timer); timer = null; } }
+    };
+  }
+
+  var syncPoller = null;
+
   function isOpen() { return library.hasAttribute("data-settings"); }
 
   function setOpen(open) {
@@ -176,6 +311,7 @@
     opener.setAttribute("aria-pressed", open ? "true" : "false");
     opener.toggleAttribute("data-active", open);
     if (open) load();
+    if (syncPoller) { if (open) syncPoller.start(); else syncPoller.stop(); }
   }
 
   function init() {
@@ -199,6 +335,7 @@
       });
     });
     initShare();
+    syncPoller = initSync();
     library = $("#library");
     opener = $("#dock-settings");
     opener.addEventListener("click", function () { setOpen(!isOpen()); });

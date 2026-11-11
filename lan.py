@@ -75,6 +75,16 @@ class Share:
         self._timer.daemon = True
         self._timer.start()
 
+    def authorize(self, request) -> bool:
+        """Accept a request carrying the share code; five wrong codes close the share."""
+        if hmac.compare_digest(request.headers.get("X-Code", "").encode(), self.code.encode()):
+            return True
+        self.failures += 1
+        if self.failures >= MAX_FAILURES:
+            threading.Thread(target=self.stop, daemon=True).start()
+        request._reply(403)
+        return False
+
     def stop(self) -> None:
         """Close the server; safe to call more than once."""
         if self._stopped.is_set():
@@ -85,7 +95,9 @@ class Share:
         self.server.server_close()
 
 
-def _handler_for(share: "Share"):
+def _handler_for(share):
+    """Build the request handler for a server whose authorize(request) decides who may read; share.post(request) may add routes."""
+
     class Handler(BaseHTTPRequestHandler):
         timeout = 30
 
@@ -100,13 +112,18 @@ def _handler_for(share: "Share"):
             self.wfile.write(body)
 
         def _authorized(self) -> bool:
-            if hmac.compare_digest(self.headers.get("X-Code", "").encode(), share.code.encode()):
-                return True
-            share.failures += 1
-            if share.failures >= MAX_FAILURES:
-                threading.Thread(target=share.stop, daemon=True).start()
-            self._reply(403)
-            return False
+            return share.authorize(self)
+
+        def json_body(self):
+            """Return the small JSON object in the request body, or None when it is missing or malformed."""
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > MAX_BODY:
+                return None
+            try:
+                body = json.loads(self.rfile.read(length))
+            except ValueError:
+                return None
+            return body if isinstance(body, dict) else None
 
         def do_GET(self):
             if self.path != "/manifest":
@@ -123,7 +140,9 @@ def _handler_for(share: "Share"):
 
         def do_POST(self):
             if self.path != "/bundle":
-                self._reply(404)
+                extra = getattr(share, "post", None)
+                if not (extra and extra(self)):
+                    self._reply(404)
                 return
             if not self._authorized():
                 return
@@ -181,26 +200,23 @@ def _require_private(host: str) -> None:
             raise LanError("That address is not on your local network.")
 
 
-def _request(opener, url: str, code: str, body: bytes | None = None):
-    request = urllib.request.Request(url, data=body, headers={"X-Code": code, "Content-Type": "application/json"})
+def _request(opener, url: str, headers: dict, body: bytes | None = None, denied: str = "Wrong code.", timeout: int = 30):
+    request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json", **headers})
     try:
-        return opener.open(request, timeout=30)
+        return opener.open(request, timeout=timeout)
     except urllib.error.HTTPError as err:
-        raise LanError("Wrong code." if err.code == 403 else "The other machine refused the request.") from err
+        raise LanError(denied if err.code == 403 else "The other machine refused the request.") from err
     except OSError as err:
         raise LanError(
-            "Could not reach that machine. Check that Share is still open, that both machines are on the same "
+            "Could not reach that machine. Check that it is open, that both machines are on the same "
             "network (try the other address if two are listed), and that the firewall allows Python."
         ) from err
 
 
-def fetch(conn, address: str, code: str) -> dict:
-    """Download the entries this library lacks from a sharing machine and merge them in; returns counts."""
-    host, port = _parse_address(address)
-    _require_private(host)
+def pull(conn, base: str, sign, denied: str = "Wrong code.") -> dict:
+    """Download the entries this library lacks from the server at base and merge them in; sign(method, path) gives the request headers."""
     opener = urllib.request.build_opener(_NoRedirect)
-    base = f"http://{host}:{port}"
-    with _request(opener, f"{base}/manifest", str(code or "").strip()) as reply:
+    with _request(opener, f"{base}/manifest", sign("GET", "/manifest"), denied=denied) as reply:
         try:
             manifest = json.loads(reply.read(50_000_000))
             remote = manifest["entries"]
@@ -217,7 +233,7 @@ def fetch(conn, address: str, code: str) -> dict:
         batch = json.dumps({"uids": missing[start:start + BATCH]}).encode()
         with tempfile.TemporaryDirectory() as folder:
             bundle = Path(folder) / "bundle.zip"
-            with _request(opener, f"{base}/bundle", str(code).strip(), batch) as reply, open(bundle, "wb") as out:
+            with _request(opener, f"{base}/bundle", sign("POST", "/bundle"), batch, denied=denied, timeout=600) as reply, open(bundle, "wb") as out:
                 if int(reply.headers.get("Content-Length") or 0) > MAX_BUNDLE_BYTES:
                     raise LanError("That transfer is too large.")
                 shutil.copyfileobj(reply, out)
@@ -226,3 +242,11 @@ def fetch(conn, address: str, code: str) -> dict:
         totals["skipped"] += result["skipped"]
         totals["sets"] += result["sets"]
     return totals
+
+
+def fetch(conn, address: str, code: str) -> dict:
+    """Fetch from a machine that is sharing, using its on-screen code; returns counts."""
+    host, port = _parse_address(address)
+    _require_private(host)
+    headers = {"X-Code": str(code or "").strip()}
+    return pull(conn, f"http://{host}:{port}", lambda method, path: headers)

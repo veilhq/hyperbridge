@@ -108,6 +108,8 @@ html.a11y-reduce-motion .library-card-grow { transition: none; }
 html.a11y-reduce-motion .library-card,
 html.a11y-reduce-motion .library-card-details { transition: none; }
 .library-sentinel { height: var(--space-1); }
+.library-more { display: flex; justify-content: center; padding: var(--space-4) 0 var(--space-6); }
+.library-more[hidden] { display: none; }
 
 /* Multi-select: selected cards take the selection color; the bar floats above the dock. */
 .library-card { user-select: none; }

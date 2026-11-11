@@ -232,7 +232,7 @@ class RunCaptureTests(LibraryCase):
         capture.run_capture(self.conn, job_id, fetcher)
         self.assertEqual(fetcher.calls, [url])
         self.assertEqual(self.entry(entry_id)["state"], "captured")
-        self.assertEqual(self.entry(entry_id)["title"], "photo.png")
+        self.assertEqual(self.entry(entry_id)["title"], "photo")
         self.assertEqual(set(self.assets(entry_id)), {"original", "thumbnail"})
 
     def test_non_image_body_is_rejected(self):
@@ -387,6 +387,17 @@ class AddImageTests(LibraryCase):
         result = capture.add_image(self.conn, png_bytes(), "my_cool-shot.png")
         title = self.conn.execute("SELECT title FROM entries WHERE id = ?", (result["entry_id"],)).fetchone()[0]
         self.assertEqual(title, "my cool shot")
+
+    def test_random_looking_file_name_leaves_the_title_empty(self):
+        result = capture.add_image(self.conn, png_bytes(), "original_Ab3xK9qLm2.png")
+        title = self.conn.execute("SELECT title FROM entries WHERE id = ?", (result["entry_id"],)).fetchone()[0]
+        self.assertEqual(title, "")
+
+    def test_readable_name_keeps_words_and_drops_noise(self):
+        self.assertEqual(capture.readable_name("sunset-over-the-bay.png"), "sunset over the bay")
+        self.assertEqual(capture.readable_name("original_Ab3xK9qLm2.jpg"), "")
+        self.assertEqual(capture.readable_name("IMG_20240101_123456.jpg"), "")
+        self.assertEqual(capture.readable_name("harbor%20at%20dawn_8f3a9c2e1b.webp"), "harbor at dawn")
 
     def test_non_image_bytes_are_rejected_and_nothing_is_created(self):
         with self.assertRaises(capture.CaptureError):
