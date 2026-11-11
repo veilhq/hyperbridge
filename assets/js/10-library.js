@@ -1206,7 +1206,6 @@ var candidates = null;
     function close() {
       if (menu.hidden) return;
       menu.hidden = true;
-      button.setAttribute("aria-expanded", "false");
     }
 
     function choose(key, field, value) {
@@ -1239,29 +1238,30 @@ var candidates = null;
       section("Order", "hyperbridge-order", "order", ORDER_CHOICES);
     }
 
-    function open() {
+    // Opens the menu with its top-left corner at a point, nudged so it stays inside the window.
+    function open(x, y) {
       build();
       menu.hidden = false;
-      var rect = button.getBoundingClientRect();
-      menu.style.bottom = (window.innerHeight - rect.top) + "px";
-      menu.style.right = Math.max(0, window.innerWidth - rect.right) + "px";
-      button.setAttribute("aria-expanded", "true");
+      menu.style.left = "0px";
+      menu.style.top = "0px";
+      var left = Math.min(Math.max(0, x), Math.max(0, window.innerWidth - menu.offsetWidth));
+      var top = Math.min(Math.max(0, y), Math.max(0, window.innerHeight - menu.offsetHeight));
+      menu.style.left = left + "px";
+      menu.style.top = top + "px";
     }
 
     state.group = read("hyperbridge-group", GROUP_CHOICES, "");
     state.order = read("hyperbridge-order", ORDER_CHOICES, DEFAULT_ORDER);
-    button.setAttribute("aria-haspopup", "menu");
-    button.setAttribute("aria-expanded", "false");
     paintButton();
-    button.addEventListener("click", function (event) {
-      event.stopPropagation();
-      if (menu.hidden) open(); else close();
+    document.addEventListener("hyperbridge:view-menu", function (event) {
+      var at = event.detail || {};
+      open(at.x || 0, at.y || 0);
     });
     document.addEventListener("click", function (event) {
       if (!menu.hidden && !menu.contains(event.target)) close();
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && !menu.hidden) { close(); button.focus(); }
+      if (event.key === "Escape" && !menu.hidden) close();
     });
   }
 

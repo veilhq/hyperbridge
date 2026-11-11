@@ -27,7 +27,7 @@
     var items = [
       { label: "Add or search", svg: iconOf("capture-submit"), action: focusInput },
       { label: "Discover", svg: iconOf("dock-find"), action: function () { press("sets-discover"); } },
-      { label: "View", svg: iconOf("group-toggle"), action: function () { press("group-toggle"); } },
+      { label: "View", svg: iconOf("group-toggle"), action: function (at) { document.dispatchEvent(new CustomEvent("hyperbridge:view-menu", { detail: at })); } },
       { label: "Settings", svg: iconOf("dock-settings"), action: function () { press("dock-settings"); } }
     ];
     var find = byId("dock-find");

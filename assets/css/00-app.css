@@ -38,6 +38,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .action-icon:disabled { opacity: 0.5; }
 .action-icon:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: calc(var(--space-1) * -1); }
 .icon-glyph { width: var(--icon-md); height: var(--icon-md); }
+.dock-retired { display: none; }
 .notification-toast-container { bottom: calc(var(--space-6) * 3); }
 @media (prefers-reduced-motion: reduce) { .dock, .dock-toggle, .dock-panel, .action-icon { transition: none; } }
 html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-reduce-motion .dock-panel, html.a11y-reduce-motion .action-icon { transition: none; }
