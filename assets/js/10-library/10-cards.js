@@ -109,6 +109,8 @@
     clearSelection();
     emptyEl.hidden = true;
     $("#library-meta").hidden = true;
+    grid.removeAttribute("data-columns");
+    grid.style.columns = "";
     grid.textContent = "";
     var fragment = document.createDocumentFragment();
     for (var i = 0; i < 12; i++) {

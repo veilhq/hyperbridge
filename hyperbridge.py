@@ -47,6 +47,7 @@ from bridge.ingest import capture  # noqa: E402
 from bridge.ingest import discover  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import feed_sources  # noqa: E402
+from bridge.ingest import pinterest  # noqa: E402
 from bridge.core import db  # noqa: E402
 from bridge.library import library  # noqa: E402
 from bridge.ingest import screenshot  # noqa: E402
@@ -61,6 +62,13 @@ from bridge.ingest import tumblr  # noqa: E402
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 _MAX_PAGE = 200
 _MAX_BULK = 1000
+
+
+def _follower(link: str):
+    """Pick the follow function for a link: Are.na, Pinterest, or else a Tumblr blog."""
+    if arena.target(link):
+        return arena.follow
+    return pinterest.follow if pinterest.is_pinterest(link) else tumblr.follow
 
 
 def _fts_query(text: str) -> str:
@@ -306,11 +314,11 @@ class HyperbridgeAPI:
         return self._feed_call("list_followed", arena.list_followed, [])
 
     def follow_source(self, url: str) -> dict:
-        """Follow an Are.na channel or user link, or a Tumblr blog, for the discovery feed."""
+        """Follow an Are.na channel or user link, a Pinterest board, or a Tumblr blog for the discovery feed."""
         try:
             conn = db.connect()
             try:
-                return {"ok": True, "item": (arena.follow if arena.target(str(url or "").strip()) else tumblr.follow)(conn, str(url or ""), capture.default_fetcher())}
+                return {"ok": True, "item": _follower(str(url or "").strip())(conn, str(url or ""), capture.default_fetcher())}
             finally:
                 conn.close()
         except ValueError as err:

@@ -60,7 +60,7 @@
         }).catch(function () { toast("error", "Could not remove."); });
       });
       row.appendChild(text);
-      row.appendChild(makeEl("span", "status-chip status-chip-outlined-muted", item.kind === "user" ? "User" : "Channel"));
+      row.appendChild(makeEl("span", "status-chip status-chip-outlined-muted", item.kind === "user" ? "User" : item.kind === "pinterest" ? "Board" : item.kind === "tumblr" ? "Blog" : "Channel"));
       row.appendChild(remove);
       followList.appendChild(row);
     });

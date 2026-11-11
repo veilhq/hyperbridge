@@ -6,13 +6,14 @@ from datetime import datetime, timedelta
 
 from bridge.ingest import arena
 from bridge.ingest import capture
+from bridge.ingest import pinterest
 from bridge.library import library
 from bridge.library import sets
 from bridge.ingest import tumblr
 
 MAX_CHANNELS = 3
 ROUNDS = 3
-FEED_SOURCES = ("arena", "tumblr")
+FEED_SOURCES = ("arena", "tumblr", "pinterest")
 STALE_HOURS = 6
 PRUNE_DISMISSED_DAYS = 180
 PRUNE_UNSEEN_DAYS = 30
@@ -34,8 +35,10 @@ def _weighted_pick(rng, weights, count) -> list:
 
 
 def pull(url, fetcher, rng) -> list:
-    """Return feed items for one followed link, from Are.na or a Tumblr blog."""
-    return arena.pull(url, fetcher, rng) if arena.target(url) else tumblr.items(url, fetcher, rng)
+    """Return feed items for one followed link, from Are.na, a Pinterest board or a Tumblr blog."""
+    if arena.target(url):
+        return arena.pull(url, fetcher, rng)
+    return pinterest.items(url, fetcher, rng) if pinterest.is_pinterest(url) else tumblr.items(url, fetcher, rng)
 
 
 def _round(followed, fetcher, rng):
@@ -116,10 +119,10 @@ def _store(conn, items) -> int:
 
 def list_items(conn, offset=0, limit=60) -> dict:
     """Return unseen feed items, oldest first so later pulls append, with whether the feed is due a refresh."""
-    total = conn.execute("SELECT COUNT(*) FROM feed_items WHERE state = 'new' AND source_id IN ('arena', 'tumblr')").fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) FROM feed_items WHERE state = 'new' AND source_id IN ('arena', 'tumblr', 'pinterest')").fetchone()[0]
     rows = conn.execute(
         "SELECT id, source_id, url, thumb, width, height, title, creator, page_url FROM feed_items"
-        " WHERE state = 'new' AND source_id IN ('arena', 'tumblr') ORDER BY id LIMIT ? OFFSET ?",
+        " WHERE state = 'new' AND source_id IN ('arena', 'tumblr', 'pinterest') ORDER BY id LIMIT ? OFFSET ?",
         (max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
     newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > STALE_HOURS * 3600

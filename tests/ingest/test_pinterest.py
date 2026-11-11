@@ -1,6 +1,7 @@
 """Tests for reading a public Pinterest board and offering its pins as Discover candidates."""
 
 import json
+import random
 import sys
 import unittest
 from pathlib import Path
@@ -10,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bridge.core import fetchguard  # noqa: E402
-from bridge.ingest import discover, pinterest  # noqa: E402
+from bridge.ingest import discover, feed, pinterest  # noqa: E402
 from tests.core.test_db import LibraryCase  # noqa: E402
 
 BOARD = "https://www.pinterest.com/someone/moodboard/"
@@ -34,7 +35,7 @@ def fake_pinterest(calls):
         if "/BoardResource/" in url:
             return json_response({"data": {"id": "42", "name": "Moodboard", "pin_count": 4}})
         if "/BoardSectionsResource/" in url:
-            return json_response({"data": [{"id": "s1", "slug": "faces", "title": "Faces"}, {"id": "s2", "slug": "hands", "title": "Hands"}]})
+            return json_response({"data": [{"id": "s1", "slug": "faces", "title": "Faces", "pin_count": 2}, {"id": "s2", "slug": "hands", "title": "Hands", "pin_count": 2}]})
         if "/BoardSectionPinsResource/" in url:
             if options["section_id"] == "s1":
                 if "bookmarks" not in options:
@@ -104,6 +105,30 @@ class DiscoverBoardTests(LibraryCase):
         discover.add_candidates(self.conn, [url], BOARD, set_id, details)
         row = self.conn.execute("SELECT source_url, source_service, source_ref, collection FROM entries").fetchone()
         self.assertEqual(tuple(row), ("https://www.pinterest.com/pin/1001/", "pinterest", "1001", "Moodboard / Faces"))
+
+
+class FollowBoardTests(LibraryCase):
+    def test_a_board_link_can_be_followed_and_pulled(self):
+        item = pinterest.follow(self.conn, BOARD, fake_pinterest([]))
+        self.assertEqual((item["kind"], item["label"]), ("pinterest", "Moodboard"))
+        self.assertEqual(item["url"], BOARD)
+        self.assertEqual(pinterest.follow(self.conn, BOARD, fake_pinterest([]))["id"], item["id"])
+        pulled = feed.pull(item["url"], fake_pinterest([]), random.Random(1))
+        self.assertTrue(pulled)
+        first = pulled[0]
+        self.assertEqual(first["source_id"], "pinterest")
+        self.assertTrue(first["collection"].startswith("Moodboard / "))
+        self.assertTrue(first["thumb"].startswith("https://i.pinimg.com/474x/"))
+
+    def test_other_links_are_refused(self):
+        with self.assertRaises(ValueError):
+            pinterest.follow(self.conn, "https://www.pinterest.com/pin/12345/", fake_pinterest([]))
+
+    def test_a_section_link_is_followed_with_its_section(self):
+        item = pinterest.follow(self.conn, BOARD + "hands/", fake_pinterest([]))
+        self.assertEqual(item["label"], "Moodboard / hands")
+        pulled = feed.pull(item["url"], fake_pinterest([]), random.Random(1))
+        self.assertEqual({entry["collection"] for entry in pulled}, {"Moodboard / Hands"})
 
 
 if __name__ == "__main__":

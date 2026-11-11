@@ -95,3 +95,73 @@ def board_pins(ref, fetcher, limit=PIN_LIMIT):
                 seen.add(pin["url"])
                 pins.append(pin)
     return board.get("name") or "", pins[:limit]
+
+
+FEED_PULL = 50
+PER_BOARD = 24
+
+
+def is_pinterest(url):
+    """Return True for a pin.it short link or any Pinterest host."""
+    host = (urlsplit((url or "").strip()).hostname or "").lower()
+    return host == "pin.it" or host == "pinterest.com" or host.startswith("pinterest.") or host.endswith(".pinterest.com")
+
+
+def items(url, fetcher, rng) -> list:
+    """Return feed items from a random section of a followed board (or the whole board when it has none)."""
+    ref = board_ref(url)
+    if not ref:
+        return []
+    username, slug, section_slug = ref
+    source = "/" + quote(username) + "/" + quote(slug) + "/"
+    board = _read(fetcher, "BoardResource", {"username": username, "slug": slug, "field_set_key": "detail"}, source).get("data") or {}
+    if not board.get("id"):
+        return []
+    name = board.get("name") or slug
+    sections = list(_pages(fetcher, "BoardSectionsResource", {"board_id": board["id"]}, source, 200))
+    sections = [item for item in sections if int(item.get("pin_count") or 0) > 0 and (not section_slug or item.get("slug") == section_slug)]
+    if sections:
+        picked = rng.choices(sections, weights=[int(item["pin_count"]) for item in sections])[0]
+        pins = _section_pins(fetcher, picked, source, FEED_PULL)
+    else:
+        options = {"board_id": board["id"], "board_url": source, "field_set_key": "react_grid_pin",
+                   "filter_section_pins": False, "layout": "default"}
+        pins = [pin for pin in (_pin(item) for item in _pages(fetcher, "BoardFeedResource", options, source, FEED_PULL)) if pin]
+    board_url = "https://www.pinterest.com" + source
+    result = []
+    for pin in rng.sample(pins, min(PER_BOARD, len(pins))):
+        result.append({
+            "source_id": "pinterest", "url": pin["url"], "thumb": pin["preview"], "width": pin["width"], "height": pin["height"],
+            "title": pin["title"][:300], "creator": "", "page_url": "https://www.pinterest.com/pin/" + pin["id"] + "/" if pin["id"] else board_url,
+            "term": (pin["section"] or name)[:100], "tags": [], "source_ref": pin["id"], "posted_at": "",
+            "collection": " / ".join(part for part in (name, pin["section"]) if part)[:200],
+        })
+    return result
+
+
+def follow(conn, url, fetcher) -> dict:
+    """Follow a public Pinterest board or section link (short pin.it links included); raises ValueError otherwise."""
+    from datetime import datetime
+
+    ref = board_ref(url)
+    if not ref:
+        try:
+            ref = board_ref(getattr(fetcher(url), "final_url", "") or "")
+        except Exception:  # noqa: BLE001 - an unreadable short link just cannot be followed
+            ref = None
+    if not ref:
+        raise ValueError("Paste a public Pinterest board link.")
+    username, slug, section_slug = ref
+    source = "/" + quote(username) + "/" + quote(slug) + "/"
+    try:
+        board = _read(fetcher, "BoardResource", {"username": username, "slug": slug, "field_set_key": "detail"}, source).get("data") or {}
+    except Exception as err:  # noqa: BLE001 - any read failure means the board cannot be followed
+        raise ValueError("Could not read that board. Only public boards can be followed.") from err
+    if not board.get("id"):
+        raise ValueError("Could not read that board. Only public boards can be followed.")
+    label = " / ".join(part for part in (board.get("name") or slug, section_slug) if part)
+    canonical = "https://www.pinterest.com" + source + (quote(section_slug) + "/" if section_slug else "")
+    conn.execute(
+        "INSERT OR IGNORE INTO followed_sources (kind, url, label, created_at) VALUES ('pinterest', ?, ?, ?)",
+        (canonical, label[:200], datetime.now().isoformat(timespec="seconds")))
+    return dict(conn.execute("SELECT id, kind, url, label FROM followed_sources WHERE url = ?", (canonical,)).fetchone())

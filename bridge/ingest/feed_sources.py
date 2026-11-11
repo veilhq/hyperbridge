@@ -6,7 +6,7 @@ SOURCES = [
     {"id": "tumblr", "name": "Tumblr", "access": "open", "description": "Blogs such as searchsystem.co, read through the blog's public API."},
     {"id": "cosmos", "name": "Cosmos", "access": "none", "description": "No public API, and its terms forbid automated access."},
     {"id": "savee", "name": "Savee", "access": "none", "description": "Its terms forbid scraping, storing its content and building indexes from it."},
-    {"id": "pinterest", "name": "Pinterest", "access": "none", "description": "Boards load through scripts and a login, so they cannot be read automatically."},
+    {"id": "pinterest", "name": "Pinterest", "access": "open", "description": "Public boards and their sections, read through the same endpoints the board page uses. Undocumented, so it can break."},
 ]
 
 
