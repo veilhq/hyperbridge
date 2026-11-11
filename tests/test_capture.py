@@ -407,6 +407,15 @@ class AddImageTests(LibraryCase):
         capture.fix_domains(self.conn)
         self.assertEqual(self.conn.execute("SELECT domain FROM entries").fetchone()[0], "are.na")
 
+    def test_fix_file_name_titles_cleans_only_file_names(self):
+        rows = [("a", "original_Ab3xK9qLm2.jpg", "[]"), ("b", "sunset-over-the-bay.png", "[]"),
+                ("c", "Plain page title", "[]"), ("d", "keep_me_8f3a9c2e1b.jpg", '["title"]')]
+        for uid, title, manual in rows:
+            self.conn.execute("INSERT INTO entries (uid, title, manual_fields, state, created_at, updated_at) VALUES (?, ?, ?, 'captured', 'x', 'x')", (uid, title, manual))
+        capture.fix_file_name_titles(self.conn)
+        titles = dict(self.conn.execute("SELECT uid, title FROM entries").fetchall())
+        self.assertEqual(titles, {"a": "", "b": "sunset over the bay", "c": "Plain page title", "d": "keep_me_8f3a9c2e1b.jpg"})
+
     def test_source_domain_drops_www(self):
         self.assertEqual(capture.source_domain("https://WWW.Cosmos.so/e/1"), "cosmos.so")
         self.assertEqual(capture.source_domain(""), "")

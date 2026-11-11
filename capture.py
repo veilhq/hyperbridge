@@ -607,6 +607,23 @@ def fix_image_types(conn) -> None:
     )
 
 
+def fix_file_name_titles(conn) -> None:
+    """Clean titles that are raw image file names (one token with an extension or underscores) unless the title was edited by hand."""
+    rows = conn.execute("SELECT id, title, manual_fields FROM entries WHERE title != '' AND title NOT LIKE '% %'").fetchall()
+    for row in rows:
+        title = row["title"]
+        if not (re.search(r"\.(png|jpe?g|gif|webp)$", title, re.I) or "_" in title):
+            continue
+        try:
+            if "title" in json.loads(row["manual_fields"] or "[]"):
+                continue
+        except ValueError:
+            pass
+        cleaned = readable_name(title)
+        if cleaned != title:
+            conn.execute("UPDATE entries SET title = ? WHERE id = ?", (cleaned, row["id"]))
+
+
 def fix_domains(conn) -> None:
     """Point each entry's shown domain at its source page rather than the image host it was saved from."""
     rows = conn.execute("SELECT id, source_url, domain FROM entries WHERE source_url IS NOT NULL AND source_url != ''").fetchall()
