@@ -78,3 +78,9 @@ input[type="text"], input[type="search"], input[type="url"], input[type="number"
 }
 button:disabled, button:disabled * { cursor: not-allowed !important; }
 .context-menu { z-index: calc(var(--z-modal) + 2); }
+
+/* Launch sequence: the sets rail slides in, then the dock rises; the grid cascades in as its first page lands. */
+@keyframes appLaunchSide { from { opacity: 0; translate: calc(var(--space-4) * -1) 0; } to { opacity: 1; translate: none; } }
+@keyframes appLaunchRise { from { opacity: 0; translate: 0 var(--space-5); } to { opacity: 1; translate: none; } }
+.sets-rail { animation: appLaunchSide var(--motion-enter) var(--ease) backwards; }
+.dock { animation: appLaunchRise var(--motion-reveal) var(--ease) calc(var(--motion-stagger) * 4) backwards; }
