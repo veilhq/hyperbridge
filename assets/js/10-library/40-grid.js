@@ -161,6 +161,7 @@
     if (signature !== state.signature) {
       var patchable = !state.group && !state.cascade && state.signatureParts && state.signatureParts.length > 0 && grid.hasAttribute("data-columns");
       if (patchable) patchGrid();
+      else if (!state.cascade && grid.querySelector(".library-card[data-id]")) flip(rebuildGrid);
       else rebuildGrid();
       var nextPending = {};
       var partById = {};

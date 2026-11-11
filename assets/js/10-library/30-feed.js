@@ -211,8 +211,10 @@
       if (ticket !== findTicket || !candidates || !candidates.feed) return null;
       return preloadFeed(result.items).then(function (items) {
         if (ticket !== findTicket || !candidates || !candidates.feed) return;
-        showFeed({ items: items, total: result.total, loaded: result.items.length }, "", true);
-        host.scrollTop = top;
+        flip(function () {
+          showFeed({ items: items, total: result.total, loaded: result.items.length }, "", true);
+          host.scrollTop = top;
+        });
       });
     }).catch(function () {});
   }

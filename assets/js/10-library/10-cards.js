@@ -75,6 +75,7 @@
     var card = makeEl("button", "library-card");
     card.type = "button";
     card.setAttribute("data-id", index);
+    if (item.feedId) card.setAttribute("data-key", "feed-" + item.feedId);
     card.setAttribute("aria-label", "Select image " + (index + 1));
     var img = document.createElement("img");
     img.className = "library-card-image";

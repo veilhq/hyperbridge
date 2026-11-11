@@ -79,10 +79,22 @@
     return document.documentElement.classList.contains("a11y-reduce-motion") || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   }
 
-  // Runs a grid change and glides every card that moved from where it was to where it landed.
+  // A card's identity across a rebuild: the saved feed id when it has one, else its entry id.
+  function cardKey(card) {
+    return card.getAttribute("data-key") || card.getAttribute("data-id");
+  }
+
+  // Finds the card now standing in for one that was replaced during a rebuild.
+  function successorOf(item) {
+    if (item.card.isConnected) return item.card;
+    if (!item.key) return null;
+    return grid.querySelector('.library-card[data-key="' + item.key + '"]') || grid.querySelector('.library-card[data-id="' + item.key + '"]');
+  }
+
+  // Runs a grid change and glides every card that moved (or was rebuilt) from where it was to where it landed.
   function flip(mutate) {
     var before = Array.prototype.slice.call(grid.querySelectorAll(".library-card")).map(function (card) {
-      return { card: card, rect: card.getBoundingClientRect() };
+      return { card: card, key: cardKey(card), rect: card.getBoundingClientRect() };
     });
     mutate();
     if (reducedMotion()) return;
@@ -90,7 +102,8 @@
     var duration = motionSeconds("--motion-enter") * 1000 || 400;
     var easing = getComputedStyle(document.documentElement).getPropertyValue("--ease").trim() || "ease";
     before.forEach(function (item) {
-      if (!item.card.isConnected || !item.card.animate) return;
+      item.card = successorOf(item);
+      if (!item.card || !item.card.animate) return;
       var now = item.card.getBoundingClientRect();
       var dx = item.rect.left - now.left, dy = item.rect.top - now.top;
       var sx = now.width ? item.rect.width / now.width : 1, sy = now.height ? item.rect.height / now.height : 1;
