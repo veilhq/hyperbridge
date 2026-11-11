@@ -45,11 +45,21 @@ def render_hyperkit_js_blocks():
 
 
 def render_js_blocks():
-    """Emit one <script> block per local JS module, in sorted order."""
+    """Emit one <script> block per local JS module, in sorted order.
+
+    A folder (e.g. assets/js/10-library/) is one module split across files: its
+    parts are joined in name order inside a single strict-mode closure.
+    """
     blocks = []
-    for f in sorted(glob.glob(str(ROOT / "assets/js/*.js"))):
-        name = Path(f).name
-        blocks.append(f"<!-- {name} -->\n<script>\n{Path(f).read_text(encoding='utf-8')}\n</script>")
+    for entry in sorted((ROOT / "assets/js").iterdir()):
+        if entry.is_dir():
+            parts = "\n".join(part.read_text(encoding="utf-8") for part in sorted(entry.glob("*.js")))
+            body = f'(function () {{\n  "use strict";\n\n{parts}\n}})();'
+        elif entry.suffix == ".js":
+            body = entry.read_text(encoding="utf-8")
+        else:
+            continue
+        blocks.append(f"<!-- {entry.name} -->\n<script>\n{body}\n</script>")
     return "\n".join(blocks)
 
 

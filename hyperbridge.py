@@ -42,21 +42,21 @@ from generated_html import HTML  # noqa: E402
 
 HTML = with_notice(HTML, _build_notice)
 
-import arena  # noqa: E402
-import capture  # noqa: E402
-import discover  # noqa: E402
-import feed  # noqa: E402
-import feed_sources  # noqa: E402
-import db  # noqa: E402
-import library  # noqa: E402
-import screenshot  # noqa: E402
-import sets  # noqa: E402
-import social  # noqa: E402
-import swatches  # noqa: E402
-import sync  # noqa: E402
-import lan  # noqa: E402
-import transfer  # noqa: E402
-import tumblr  # noqa: E402
+from bridge.ingest import arena  # noqa: E402
+from bridge.ingest import capture  # noqa: E402
+from bridge.ingest import discover  # noqa: E402
+from bridge.ingest import feed  # noqa: E402
+from bridge.ingest import feed_sources  # noqa: E402
+from bridge.core import db  # noqa: E402
+from bridge.library import library  # noqa: E402
+from bridge.ingest import screenshot  # noqa: E402
+from bridge.library import sets  # noqa: E402
+from bridge.ingest import social  # noqa: E402
+from bridge.library import swatches  # noqa: E402
+from bridge.exchange import sync  # noqa: E402
+from bridge.exchange import lan  # noqa: E402
+from bridge.exchange import transfer  # noqa: E402
+from bridge.ingest import tumblr  # noqa: E402
 
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 _MAX_PAGE = 200
