@@ -22,3 +22,10 @@
 .settings-follow-error[hidden] { display: none; }
 .settings-followed .settings-source { grid-template-columns: 1fr auto auto; }
 #dock-settings[data-active] { color: var(--interactive); }
+.sync-overlay { position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center; color: var(--live); background: var(--scrim-soft); -webkit-backdrop-filter: blur(var(--space-2)); backdrop-filter: blur(var(--space-2)); box-shadow: inset 0 0 var(--space-6) var(--space-2) var(--live-wash), inset 0 0 0 var(--border-rail) var(--live); animation: syncOverlayIn var(--motion-slow) var(--ease); }
+.sync-overlay[hidden] { display: none; }
+.sync-overlay-icon { width: var(--icon-xl); height: var(--icon-xl); animation: syncOverlayPulse var(--period-pulse) ease-in-out infinite; }
+@keyframes syncOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes syncOverlayPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .sync-overlay, .sync-overlay-icon { animation: none; } }
+html.a11y-reduce-motion .sync-overlay, html.a11y-reduce-motion .sync-overlay-icon { animation: none; }

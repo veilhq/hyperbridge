@@ -136,6 +136,21 @@ class SyncWithTests(SyncCase):
         self.assertEqual(peer_id, self.home.store.id)
         self.assertTrue(address.endswith(f":{self.home.port}"))
 
+    def test_both_machines_report_syncing_while_it_runs_and_clear_after(self):
+        self.pair()
+        seen = {}
+
+        def slow_pull(peer_id, address):
+            seen["there"] = self.there.syncing()
+            seen["home"] = self.home.syncing()
+            return {"added": 0, "skipped": 0, "updated": 0, "sets": 0}
+
+        self.assertFalse(self.home.syncing())
+        with mock.patch.object(self.there, "pull_from", side_effect=slow_pull):
+            self.home.sync_with(self.there.store.id)
+        self.assertEqual(seen, {"there": True, "home": True})
+        self.assertFalse(self.home.syncing())
+
     def test_unsigned_pull_request_is_refused(self):
         self.pair()
         request = urllib.request.Request(f"http://{self.laptop_address}/pull", data=json.dumps({"port": self.home.port}).encode(),

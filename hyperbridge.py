@@ -506,6 +506,11 @@ class HyperbridgeAPI:
             raise lan.LanError("Sync is not running.")
         return machines
 
+    def sync_busy(self) -> dict:
+        """Whether this machine is syncing now, as the initiator or as the machine being read from."""
+        machines = getattr(self, "sync", None)
+        return {"status": "ok", "syncing": bool(machines and machines.syncing())}
+
     def sync_status(self) -> dict:
         """This machine, its pairing window and the machines found on the network."""
         try:

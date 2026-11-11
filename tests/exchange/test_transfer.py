@@ -102,6 +102,68 @@ class ExportImportTests(TransferCase):
         conn.close()
 
 
+class EditSyncTests(TransferCase):
+    def edit_laptop(self, stamp="2999-01-01T00:00:00"):
+        """Retitle, retag and unset the first laptop entry, then re-export."""
+        conn = use_library(str(self.laptop))
+        conn.execute("UPDATE entries SET title = 'Renamed', updated_at = ? WHERE id = 1", (stamp,))
+        conn.execute("DELETE FROM entry_tags WHERE entry_id = 1")
+        conn.execute("INSERT INTO tags (name) VALUES ('fresh')")
+        conn.execute("INSERT INTO entry_tags (entry_id, tag_id) SELECT 1, id FROM tags WHERE name = 'fresh'")
+        conn.execute("DELETE FROM set_entries WHERE entry_id = 1")
+        transfer.export_library(conn, self.zip_path)
+        conn.close()
+
+    def tags_of(self, conn, uid):
+        return {r[0] for r in conn.execute(
+            "SELECT t.name FROM entries e JOIN entry_tags et ON et.entry_id = e.id JOIN tags t ON t.id = et.tag_id WHERE e.uid = ?", (uid,))}
+
+    def test_a_newer_copy_replaces_title_tags_and_sets(self):
+        uids, _ = self.seed_laptop()
+        conn = use_library(str(self.main))
+        self.addCleanup(conn.close)
+        transfer.import_library(conn, self.zip_path)
+        self.edit_laptop()
+        result = transfer.import_library(conn, self.zip_path, update=True)
+        self.assertEqual((result["added"], result["updated"]), (0, 1))
+        row = conn.execute("SELECT id, title, updated_at FROM entries WHERE uid = ?", (uids[0],)).fetchone()
+        self.assertEqual((row["title"], row["updated_at"]), ("Renamed", "2999-01-01T00:00:00"))
+        self.assertEqual(self.tags_of(conn, uids[0]), {"fresh"})
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM set_entries WHERE entry_id = ?", (row["id"],)).fetchone()[0], 0)
+        self.assertEqual(transfer.import_library(conn, self.zip_path, update=True)["updated"], 0)
+
+    def test_without_update_edits_are_ignored(self):
+        uids, _ = self.seed_laptop()
+        conn = use_library(str(self.main))
+        self.addCleanup(conn.close)
+        transfer.import_library(conn, self.zip_path)
+        self.edit_laptop()
+        result = transfer.import_library(conn, self.zip_path)
+        self.assertEqual(result["updated"], 0)
+        self.assertEqual(conn.execute("SELECT title FROM entries WHERE uid = ?", (uids[0],)).fetchone()[0], "First")
+
+    def test_a_locally_newer_entry_is_kept(self):
+        uids, _ = self.seed_laptop()
+        conn = use_library(str(self.main))
+        self.addCleanup(conn.close)
+        transfer.import_library(conn, self.zip_path)
+        self.edit_laptop(stamp="2998-01-01T00:00:00")
+        conn.execute("UPDATE entries SET title = 'Mine', updated_at = '2999-06-01T00:00:00' WHERE uid = ?", (uids[0],))
+        self.assertEqual(transfer.import_library(conn, self.zip_path, update=True)["updated"], 0)
+        self.assertEqual(conn.execute("SELECT title FROM entries WHERE uid = ?", (uids[0],)).fetchone()[0], "Mine")
+
+    def test_editing_through_the_library_bumps_the_edit_time(self):
+        from bridge.library import library, sets
+        self.seed_laptop()
+        conn = use_library(str(self.laptop))
+        self.addCleanup(conn.close)
+        conn.execute("UPDATE entries SET updated_at = '2000-01-01T00:00:00'")
+        library.add_tags([2], "extra")
+        self.assertGreater(conn.execute("SELECT updated_at FROM entries WHERE id = 2").fetchone()[0], "2000-01-01T00:00:00")
+        sets.remove(1, 1)
+        self.assertGreater(conn.execute("SELECT updated_at FROM entries WHERE id = 1").fetchone()[0], "2000-01-01T00:00:00")
+
+
 class SafetyTests(TransferCase):
     def test_non_library_and_newer_files_are_refused(self):
         conn = use_library(str(self.main))

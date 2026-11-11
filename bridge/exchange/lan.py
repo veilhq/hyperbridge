@@ -213,8 +213,11 @@ def _request(opener, url: str, headers: dict, body: bytes | None = None, denied:
         ) from err
 
 
-def pull(conn, base: str, sign, denied: str = "Wrong code.") -> dict:
-    """Download the entries this library lacks from the server at base and merge them in; sign(method, path) gives the request headers."""
+def pull(conn, base: str, sign, denied: str = "Wrong code.", update=False) -> dict:
+    """Download the entries this library lacks from the server at base and merge them in; sign(method, path) gives the request headers.
+
+    With update, entries edited more recently there also bring their fields, tags and sets here.
+    """
     opener = urllib.request.build_opener(_NoRedirect)
     with _request(opener, f"{base}/manifest", sign("GET", "/manifest"), denied=denied) as reply:
         try:
@@ -224,21 +227,25 @@ def pull(conn, base: str, sign, denied: str = "Wrong code.") -> dict:
             raise LanError("That machine did not send a library.") from err
     if int(manifest.get("schema") or 0) > len(db.list_migrations()):
         raise LanError("That library comes from a newer Hyperbridge. Update this copy first.")
-    uids = {row[0] for row in conn.execute("SELECT uid FROM entries")}
+    uids = {row[0]: row[1] or "" for row in conn.execute("SELECT uid, updated_at FROM entries")}
     keys = {row[0] for row in conn.execute("SELECT source_key FROM entries WHERE source_key IS NOT NULL")}
     missing = [item["uid"] for item in remote
                if item.get("uid") not in uids and not (item.get("source_key") and item["source_key"] in keys)]
-    totals = {"added": 0, "skipped": len(remote) - len(missing), "sets": 0}
-    for start in range(0, len(missing), BATCH):
-        batch = json.dumps({"uids": missing[start:start + BATCH]}).encode()
+    newer = [item["uid"] for item in remote
+             if update and item.get("uid") in uids and str(item.get("updated_at") or "") > uids[item["uid"]]]
+    wanted = missing + newer
+    totals = {"added": 0, "skipped": len(remote) - len(wanted), "updated": 0, "sets": 0}
+    for start in range(0, len(wanted), BATCH):
+        batch = json.dumps({"uids": wanted[start:start + BATCH]}).encode()
         with tempfile.TemporaryDirectory() as folder:
             bundle = Path(folder) / "bundle.zip"
             with _request(opener, f"{base}/bundle", sign("POST", "/bundle"), batch, denied=denied, timeout=600) as reply, open(bundle, "wb") as out:
                 if int(reply.headers.get("Content-Length") or 0) > MAX_BUNDLE_BYTES:
                     raise LanError("That transfer is too large.")
                 shutil.copyfileobj(reply, out)
-            result = transfer.import_library(conn, bundle)
+            result = transfer.import_library(conn, bundle, update=update)
         totals["added"] += result["added"]
+        totals["updated"] += result["updated"]
         totals["skipped"] += result["skipped"]
         totals["sets"] += result["sets"]
     return totals

@@ -248,13 +248,16 @@
       busy = true;
       button.disabled = true;
       toast("info", "Syncing with " + machine.name + ".");
+      syncOverlay.local = true;
+      paintSyncOverlay();
       Promise.resolve(bridge.sync_with(machine.id)).then(function (result) {
         if (!result || result.status === "failed") { toast("error", (result && result.error) || "Could not sync."); return; }
         var got = result.pulled ? result.pulled.added : 0;
         var sent = result.pushed ? result.pushed.added : 0;
-        toast(result.push_error ? "error" : "success", "Received " + entries(got) + ", sent " + entries(sent) + "." + (result.push_error ? " " + result.push_error : ""));
-        if (got) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
-      }).catch(function () { toast("error", "Could not sync."); }).then(function () { busy = false; poll(); });
+        var edits = (result.pulled ? result.pulled.updated : 0) + (result.pushed ? result.pushed.updated : 0);
+        toast(result.push_error ? "error" : "success", "Received " + entries(got) + ", sent " + entries(sent) + (edits ? ", synced " + edits + (edits === 1 ? " edit" : " edits") : "") + "." + (result.push_error ? " " + result.push_error : ""));
+        if (got || (result.pulled && result.pulled.updated)) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+      }).catch(function () { toast("error", "Could not sync."); }).then(function () { busy = false; syncOverlay.local = false; paintSyncOverlay(); poll(); });
     }
 
     function paint(status) {
@@ -300,6 +303,24 @@
   }
 
   var syncPoller = null;
+  var syncOverlay = { local: false, remote: false };
+
+  // Shows the full-screen sync overlay while this machine starts a sync or another machine is syncing with it.
+  function paintSyncOverlay() {
+    var overlay = $("#sync-overlay");
+    if (overlay) overlay.hidden = !(syncOverlay.local || syncOverlay.remote);
+  }
+
+  function watchSyncActivity() {
+    setInterval(function () {
+      var bridge = api();
+      if (!bridge || !bridge.sync_busy) return;
+      Promise.resolve(bridge.sync_busy()).then(function (state) {
+        syncOverlay.remote = !!(state && state.syncing);
+        paintSyncOverlay();
+      }).catch(function () {});
+    }, 1500);
+  }
 
   function isOpen() { return library.hasAttribute("data-settings"); }
 
@@ -336,6 +357,7 @@
     });
     initShare();
     syncPoller = initSync();
+    watchSyncActivity();
     library = $("#library");
     opener = $("#dock-settings");
     opener.addEventListener("click", function () { setOpen(!isOpen()); });

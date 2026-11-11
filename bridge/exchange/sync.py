@@ -21,6 +21,7 @@ BEACON_SECONDS = 3
 SEEN_SECONDS = 12
 PAIRING_SECONDS = 300
 SIGNATURE_SKEW = 120
+ACTIVE_SECONDS = 6
 APP_TAG = "hyperbridge"
 DENIED = "That machine does not recognize this one. Pair the two again."
 
@@ -93,6 +94,8 @@ class Sync:
         self.broadcast = broadcast
         self.received = 0
         self.failures = 0
+        self._running = 0
+        self._served = 0.0
         self.code: str | None = None
         self.pairing_until = 0.0
         self.found: dict[str, dict] = {}
@@ -129,6 +132,10 @@ class Sync:
             return False
         return hmac.compare_digest(request.headers.get("X-Code", "").encode(), (self.code or "").encode())
 
+    def syncing(self) -> bool:
+        """True while this machine is syncing or a paired machine has read from it within the last few seconds."""
+        return self._running > 0 or time.monotonic() - self._served < ACTIVE_SECONDS
+
     def _signed_ok(self, request) -> bool:
         secret = self.store.secret_for(request.headers.get("X-Peer", ""))
         stamp = request.headers.get("X-Time", "")
@@ -147,7 +154,10 @@ class Sync:
 
     def authorize(self, request) -> bool:
         """Accept a request signed by a paired machine, or one carrying the open pairing code."""
-        if self._signed_ok(request) or self._code_ok(request):
+        if self._signed_ok(request):
+            self._served = time.monotonic()
+            return True
+        if self._code_ok(request):
             return True
         return self._refuse(request)
 
@@ -182,11 +192,14 @@ class Sync:
             request._reply(400)
             return True
         peer_id = request.headers.get("X-Peer", "")
+        self._running += 1
         try:
             result = self.pull_from(peer_id, f"{request.client_address[0]}:{port}")
         except lan.LanError as err:
             request._reply(502, json.dumps({"error": str(err)}).encode())
             return True
+        finally:
+            self._running -= 1
         request._reply(200, json.dumps(result).encode())
         return True
 
@@ -202,12 +215,12 @@ class Sync:
         return sign
 
     def pull_from(self, peer_id: str, address: str) -> dict:
-        """Merge the entries a paired machine has that this library lacks; the count is added to received when anything arrived."""
+        """Merge the entries a paired machine has that this library lacks, and the edits it made more recently; the count is added to received when anything arrived."""
         host, port = lan._parse_address(address)
         lan._require_private(host)
         conn = db.connect()
         try:
-            result = lan.pull(conn, f"http://{host}:{port}", self._signer(peer_id), denied=DENIED)
+            result = lan.pull(conn, f"http://{host}:{port}", self._signer(peer_id), denied=DENIED, update=True)
         finally:
             conn.close()
         self.received += result["added"]
@@ -232,6 +245,14 @@ class Sync:
 
     def sync_with(self, machine_id: str) -> dict:
         """Pull a paired machine's new entries, then ask it to pull ours; returns counts for each direction."""
+        self._running += 1
+        try:
+            return self._sync_with(machine_id)
+        finally:
+            self._running -= 1
+            self._served = 0.0
+
+    def _sync_with(self, machine_id: str) -> dict:
         machine = self.machines().get(machine_id)
         if not machine or not machine["paired"]:
             raise lan.LanError("That machine is not visible right now. Check that it is open on the same network.")

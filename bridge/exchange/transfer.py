@@ -21,6 +21,9 @@ _FIELDS = (
 )
 
 
+_EDITED = ("title", "description", "creator", "publisher", "type", "year", "manual_fields")
+
+
 class TransferError(Exception):
     """A library file that cannot be read or does not fit this version."""
 
@@ -45,10 +48,10 @@ def _entry_record(conn, row) -> dict:
 
 
 def list_keys(conn) -> list[dict]:
-    """Return the uid and source key of every captured or failed entry, for deciding what another library lacks."""
+    """Return the uid, source key and last edit time of every captured or failed entry, for deciding what another library lacks or has newer."""
     return [
-        {"uid": row["uid"], "source_key": row["source_key"]}
-        for row in conn.execute("SELECT uid, source_key FROM entries WHERE state != 'pending' ORDER BY id")
+        {"uid": row["uid"], "source_key": row["source_key"], "updated_at": row["updated_at"]}
+        for row in conn.execute("SELECT uid, source_key, updated_at FROM entries WHERE state != 'pending' ORDER BY id")
     ]
 
 
@@ -154,8 +157,11 @@ def _insert_entry(conn, record: dict, rows: list[dict]) -> int:
     return entry_id
 
 
-def import_library(conn, source) -> dict:
-    """Merge a library zip into this library; entries already here (same id or source) are kept, not duplicated."""
+def import_library(conn, source, update=False) -> dict:
+    """Merge a library zip into this library; entries already here (same id or source) are kept, not duplicated.
+
+    With update, an entry that is newer in the zip also replaces its title and other fields, tags and sets here.
+    """
     try:
         archive = zipfile.ZipFile(source)
     except (zipfile.BadZipFile, OSError) as err:
@@ -163,7 +169,7 @@ def import_library(conn, source) -> dict:
     with archive:
         manifest = _read_manifest(archive)
         local = {}
-        added = skipped = 0
+        added = skipped = updated = 0
         for record in manifest["entries"]:
             if not isinstance(record, dict) or not re.fullmatch(r"[0-9a-f]{32}", str(record.get("uid", ""))):
                 continue
@@ -172,7 +178,10 @@ def import_library(conn, source) -> dict:
                 found = conn.execute("SELECT id FROM entries WHERE source_key = ?", (record["source_key"],)).fetchone()
             if found is not None:
                 local[record["uid"]] = found["id"]
-                skipped += 1
+                if update and _apply_edits(conn, found["id"], record, manifest.get("sets", [])):
+                    updated += 1
+                else:
+                    skipped += 1
                 continue
             if record.get("state") not in ("captured", "failed"):
                 continue
@@ -188,7 +197,29 @@ def import_library(conn, source) -> dict:
             added += 1
         sets_touched = _merge_sets(conn, manifest.get("sets", []), local)
         _merge_followed(conn, manifest.get("followed", []))
-    return {"added": added, "skipped": skipped, "sets": sets_touched}
+    return {"added": added, "skipped": skipped, "updated": updated, "sets": sets_touched}
+
+
+def _apply_edits(conn, entry_id: int, record: dict, sets: list) -> bool:
+    """Replace an entry's editable fields, tags and set membership with a newer copy; returns False when this copy is as new."""
+    current = conn.execute("SELECT updated_at FROM entries WHERE id = ?", (entry_id,)).fetchone()["updated_at"] or ""
+    if str(record.get("updated_at") or "") <= current:
+        return False
+    values = [str(record.get(name) or "") for name in _EDITED]
+    conn.execute(f"UPDATE entries SET {', '.join(f'{name} = ?' for name in _EDITED)}, updated_at = ? WHERE id = ?",
+                 (*values, record["updated_at"], entry_id))
+    conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", (entry_id,))
+    for name in record.get("tags", []):
+        clean = str(name).strip()
+        if clean:
+            conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (clean,))
+            conn.execute("INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?", (entry_id, clean))
+    conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM entry_tags)")
+    kept = [str(item.get("name", "")).strip() for item in sets if any(placed.get("uid") == record["uid"] for placed in item.get("entries", []))]
+    conn.execute(
+        f"DELETE FROM set_entries WHERE entry_id = ? AND set_id NOT IN (SELECT id FROM sets WHERE name IN ({','.join('?' * len(kept))}))",
+        (entry_id, *kept))
+    return True
 
 
 def _merge_sets(conn, sets: list, local: dict) -> int:

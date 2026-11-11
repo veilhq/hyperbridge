@@ -160,10 +160,12 @@ def add_tags(entry_ids, raw_tags) -> int:
         for name in names if ids else []:
             conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
             for entry_id in ids:
-                conn.execute(
+                added = conn.execute(
                     "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
                     (entry_id, name),
-                )
+                ).rowcount
+                if added:
+                    conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (_now(), entry_id))
     finally:
         conn.close()
     return len(ids)
@@ -186,10 +188,15 @@ def update_entry(entry_id: int, fields: dict) -> dict | None:
                 changes[name] = value
                 if name not in manual:
                     manual.append(name)
+        tags_changed = False
         if "tags" in fields:
-            _set_tags(conn, entry_id, parse_tags(fields["tags"]))
+            before = {item[0] for item in conn.execute(
+                "SELECT t.name FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE et.entry_id = ?", (entry_id,))}
+            wanted = parse_tags(fields["tags"])
+            tags_changed = before != set(wanted)
+            _set_tags(conn, entry_id, wanted)
         state = "captured" if row["state"] == "failed" else row["state"]
-        if changes or state != row["state"]:
+        if changes or tags_changed or state != row["state"]:
             assignments = ", ".join(f"{name} = ?" for name in changes)
             conn.execute(
                 f"UPDATE entries SET {assignments + ', ' if assignments else ''}"

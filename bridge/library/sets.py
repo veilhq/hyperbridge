@@ -101,10 +101,12 @@ def place(entry_id: int, set_id: int) -> bool:
         has_entry = conn.execute("SELECT 1 FROM entries WHERE id = ?", (entry_id,)).fetchone()
         if not has_entry or _row(conn, set_id) is None:
             return False
-        conn.execute(
+        added = conn.execute(
             "INSERT OR IGNORE INTO set_entries (set_id, entry_id, placed_at) VALUES (?, ?, ?)",
             (set_id, entry_id, _now()),
-        )
+        ).rowcount
+        if added:
+            conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (_now(), entry_id))
         return True
     finally:
         conn.close()
@@ -114,8 +116,11 @@ def remove(entry_id: int, set_id: int) -> bool:
     """Take an entry out of a set; the entry stays in the library."""
     conn = db.connect()
     try:
-        return conn.execute(
+        removed = conn.execute(
             "DELETE FROM set_entries WHERE set_id = ? AND entry_id = ?", (set_id, entry_id)
         ).rowcount > 0
+        if removed:
+            conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (_now(), entry_id))
+        return removed
     finally:
         conn.close()
