@@ -47,6 +47,7 @@
   animation: libraryDiscard var(--motion-reveal) var(--ease) forwards;
 }
 .library-discard-mark .icon-glyph { width: var(--icon-lg); height: var(--icon-lg); }
+.library-saved-mark { background: var(--success); }
 @keyframes libraryDiscard { from { opacity: 0; } to { opacity: 1; } }
 .library-card-collapse {
   opacity: 0; margin-bottom: 0;

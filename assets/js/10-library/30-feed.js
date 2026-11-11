@@ -180,12 +180,13 @@
     var bridge = api();
     if (!candidates || !candidates.feed || !selected.size) return;
     var ids = feedIdsOfSelection();
+    var cardIds = selectedIds();
     Promise.resolve(bridge.accept_feed(ids, setId || null)).then(function (result) {
       if (!result || !result.ok) { toast("error", "Could not save those images."); return; }
       toast("success", "Saved " + ids.length + (ids.length === 1 ? " image." : " images."));
       refreshStats();
       changed();
-      reloadFeed();
+      return playDiscard(cardIds, true).then(reloadFeed);
     }).catch(function () { toast("error", "Could not save those images."); });
   }
 

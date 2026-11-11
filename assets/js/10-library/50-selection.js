@@ -1,10 +1,12 @@
   var DISCARD_ICON = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
-  // Glows a card red with an x, then collapses it to nothing; resolves when the card is gone.
-  function playDiscardCard(card) {
+  var SAVED_ICON = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  // Glows a card red with an x (or in the success color with a check when saved), then collapses it; resolves when the card is gone.
+  function playDiscardCard(card, saved) {
     return new Promise(function (resolve) {
-      var mark = makeEl("span", "library-discard-mark");
-      mark.innerHTML = DISCARD_ICON;
+      var mark = makeEl("span", saved ? "library-discard-mark library-saved-mark" : "library-discard-mark");
+      mark.innerHTML = saved ? SAVED_ICON : DISCARD_ICON;
       card.appendChild(mark);
       card.classList.add("library-card-discarding");
       if (getComputedStyle(mark).animationName === "none") { resolve(); return; }
@@ -19,9 +21,9 @@
     });
   }
 
-  function playDiscard(ids) {
+  function playDiscard(ids, saved) {
     var cards = ids.map(function (id) { return grid.querySelector('[data-id="' + id + '"]'); }).filter(Boolean);
-    return Promise.all(cards.map(playDiscardCard));
+    return Promise.all(cards.map(function (card) { return playDiscardCard(card, saved); }));
   }
 
   function afterDiscard() {
