@@ -252,12 +252,13 @@ class HyperbridgeAPI:
             return {"ok": False, "error": "Could not read that page."}
         return {"ok": True, **result}
 
-    def add_discovered(self, urls: list, page_url: str, set_id: int | None = None) -> dict:
-        """Capture the chosen image URLs, crediting the page, and place them in a set."""
+    def add_discovered(self, urls: list, page_url: str, set_id: int | None = None, details: dict | None = None) -> dict:
+        """Capture the chosen image URLs, crediting the page (or each image's own details), and place them in a set."""
         try:
             conn = db.connect()
             try:
-                result = discover.add_candidates(conn, list(urls or [])[:_MAX_BULK], str(page_url or ""), set_id)
+                result = discover.add_candidates(conn, list(urls or [])[:_MAX_BULK], str(page_url or ""), set_id,
+                                           details if isinstance(details, dict) else None)
             finally:
                 conn.close()
         except Exception as err:

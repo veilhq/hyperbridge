@@ -126,17 +126,12 @@ def _probe(url, fetcher):
         return None
 
 
-def _probe_pin(pin, fetcher):
-    """Build a candidate from a Pinterest pin: a small preview for the card, the full-size URL to capture."""
-    try:
-        response = fetcher(pin["preview"])
-        if not capture._is_image(response):
-            return None
-        _, width, height = capture._open_image(response.body)
-        return {"url": pin["url"], "thumb": _thumbnail(response.body),
-                "width": pin["width"] or width, "height": pin["height"] or height}
-    except Exception:  # noqa: BLE001 - a pin whose preview fails to load is simply left out
-        return None
+def _pin_candidate(pin, board_name, board_url):
+    """Build a candidate from a Pinterest pin: its preview for the card, the full-size URL to capture, and its board and section."""
+    collection = " / ".join(part for part in (board_name, pin["section"]) if part)
+    return {"url": pin["url"], "thumb": pin["preview"], "width": pin["width"], "height": pin["height"],
+            "page_url": "https://www.pinterest.com/pin/" + pin["id"] + "/" if pin["id"] else board_url,
+            "source_service": "pinterest", "source_ref": pin["id"], "collection": collection, "section": pin["section"]}
 
 
 def discover(conn, url, fetcher=None) -> dict:
@@ -152,7 +147,7 @@ def discover(conn, url, fetcher=None) -> dict:
     if board:
         title, pins = pinterest.board_pins(board, fetcher)
         limit = pinterest.PIN_LIMIT
-        probe = lambda pin: _probe_pin(pin, fetcher)  # noqa: E731
+        probe = lambda pin: _pin_candidate(pin, title, page_url)  # noqa: E731
         urls = pins
     else:
         base = getattr(response, "final_url", "") or page_url
@@ -165,8 +160,11 @@ def discover(conn, url, fetcher=None) -> dict:
             urls = page_images(response.body, base)
             title = capture.extract_metadata(response.body, base)["title"]
         probe = lambda item: _probe(item, fetcher)  # noqa: E731
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        probed = list(pool.map(probe, urls))
+    if board:
+        probed = [probe(pin) for pin in urls]
+    else:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            probed = list(pool.map(probe, urls))
     candidates = [item for item in probed if item][:limit]
     for item in candidates:
         try:
@@ -178,15 +176,22 @@ def discover(conn, url, fetcher=None) -> dict:
     return {"page_url": page_url, "title": title, "candidates": candidates}
 
 
-def add_candidates(conn, urls, page_url, set_id) -> dict:
-    """Queue the chosen image URLs for capture, credit the page as their source and place them in a set."""
+def add_candidates(conn, urls, page_url, set_id, details=None) -> dict:
+    """Queue the chosen image URLs for capture, credit the page as their source and place them in a set.
+
+    details maps an image URL to its own page_url, source_service, source_ref and collection (a Pinterest board and section).
+    """
     added = placed = 0
     for url in urls:
         result = capture.add_link(conn, url)
         if result["created"]:
             added += 1
-            conn.execute("UPDATE entries SET source_url = ?, domain = ? WHERE id = ?",
-                         (page_url, capture.source_domain(page_url) or capture.source_domain(url), result["entry_id"]))
+            own = (details or {}).get(url) or {}
+            credit = str(own.get("page_url") or page_url)
+            conn.execute(
+                "UPDATE entries SET source_url = ?, domain = ?, source_service = ?, source_ref = ?, collection = ? WHERE id = ?",
+                (credit, capture.source_domain(credit) or capture.source_domain(url), str(own.get("source_service") or "")[:40],
+                 str(own.get("source_ref") or "")[:100], str(own.get("collection") or "")[:200], result["entry_id"]))
         if set_id and sets.place(result["entry_id"], int(set_id)):
             placed += 1
     return {"added": added, "placed": placed}

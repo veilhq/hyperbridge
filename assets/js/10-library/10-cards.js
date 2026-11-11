@@ -89,7 +89,7 @@
       if (item.title) details.appendChild(makeEl("span", "library-card-title", item.title));
       details.appendChild(makeEl("span", "library-card-domain", item.creator || item.source));
     } else {
-      details.appendChild(makeEl("span", "library-card-domain", item.width + " x " + item.height));
+      details.appendChild(makeEl("span", "library-card-domain", item.section || (item.width + " x " + item.height)));
     }
     if (selected.has(index)) card.setAttribute("data-selected", "true");
     card.addEventListener("click", function (event) {

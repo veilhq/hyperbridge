@@ -274,8 +274,13 @@
     var bridge = api();
     if (candidates && candidates.feed) { acceptFeed(state.setId); return; }
     if (!candidates || !state.setId || !selected.size) return;
-    var urls = selectedIds().sort(function (a, b) { return a - b; }).map(function (index) { return candidates.candidates[index].url; });
-    Promise.resolve(bridge.add_discovered(urls, candidates.page_url, state.setId)).then(function (result) {
+    var chosen = selectedIds().sort(function (a, b) { return a - b; }).map(function (index) { return candidates.candidates[index]; });
+    var urls = chosen.map(function (item) { return item.url; });
+    var details = {};
+    chosen.forEach(function (item) {
+      if (item.source_service) details[item.url] = { page_url: item.page_url, source_service: item.source_service, source_ref: item.source_ref, collection: item.collection };
+    });
+    Promise.resolve(bridge.add_discovered(urls, candidates.page_url, state.setId, details)).then(function (result) {
       if (!result || !result.ok) { toast("error", "Could not add those images."); return; }
       toast("success", "Added " + result.placed + (result.placed === 1 ? " image." : " images."));
       leaveCandidates();
