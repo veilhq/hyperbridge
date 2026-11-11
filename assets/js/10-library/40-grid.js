@@ -114,9 +114,11 @@
         fragment.appendChild(cards[index]);
       });
       grid.removeAttribute("data-columns");
+      grid.style.columns = String(columnCount());
       grid.textContent = "";
       grid.appendChild(fragment);
     } else {
+      grid.style.columns = "";
       resetColumns();
       cards.forEach(function (card) { placeInColumn(card); });
     }

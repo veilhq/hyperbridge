@@ -200,7 +200,11 @@
       if ($("#app").inert) return;
       var tag = event.target && event.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (event.key === "Escape") {
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key === "+" || event.key === "=")) {
+        zoomColumns(1);
+      } else if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key === "-" || event.key === "_")) {
+        zoomColumns(-1);
+      } else if (event.key === "Escape") {
         if (selected.size) clearSelection();
         else if (candidates && candidates.feed) $("#sets-all").click();
         else if (candidates) leaveCandidates();

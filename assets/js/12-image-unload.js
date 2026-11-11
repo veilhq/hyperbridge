@@ -38,6 +38,14 @@
     for (var i = 0; i < images.length; i++) observer.unobserve(images[i]);
   }
 
+  // After the columns change width, unloaded images drop their pinned height and fall back to their reserved ratio.
+  function releasePins(grid) {
+    var images = grid.querySelectorAll(".library-card-image");
+    for (var i = 0; i < images.length; i++) {
+      if (!images[i].getAttribute("src") && sources.has(images[i])) images[i].style.height = "";
+    }
+  }
+
   function init() {
     var grid = document.getElementById("library-grid");
     var scroller = document.getElementById("library");
@@ -55,6 +63,8 @@
       });
     }).observe(grid, { childList: true, subtree: true });
     watch(grid);
+    document.addEventListener("hyperbridge:relayout", function () { releasePins(grid); });
+    window.addEventListener("resize", function () { releasePins(grid); });
   }
 
   init();
