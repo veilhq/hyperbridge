@@ -22,7 +22,7 @@ sys.path.insert(0, str(HYPERKIT_DIR / "python"))
 from hyperkit_css import hyperkit_css  # noqa: E402
 from design_lint import report as report_design_lint  # noqa: E402
 
-HYPERKIT_JS_MODULES = ["utils.js", "cursor-trail.js", "toast.js", "tooltip.js", "context-menu.js", "cursor-box.js"]
+HYPERKIT_JS_MODULES = ["utils.js", "cursor-trail.js", "toast.js", "tooltip.js", "context-menu.js", "radial-menu.js", "cursor-box.js"]
 
 
 def concat_files(pattern):

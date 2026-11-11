@@ -6,11 +6,12 @@
   var sources = new WeakMap();
   var observer = null;
 
-  // Drops the image data of a card that has scrolled far away, keeping its height so the grid does not jump.
+  // Drops the image data of a card that has scrolled far away, pinning its exact fractional height so the grid does not shift.
   function unload(img) {
-    if (!img.getAttribute("src") || !img.complete || !img.clientHeight) return;
+    var height = img.getBoundingClientRect().height;
+    if (!img.getAttribute("src") || !img.complete || !height) return;
     sources.set(img, img.getAttribute("src"));
-    img.style.height = img.clientHeight + "px";
+    img.style.height = height + "px";
     img.removeAttribute("src");
   }
 
