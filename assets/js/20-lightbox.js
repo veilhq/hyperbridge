@@ -34,7 +34,7 @@
 
   function changed() { document.dispatchEvent(new CustomEvent("hyperbridge:changed")); }
 
-  function displayTitle(entry) { return entry.title || entry.domain || "Untitled"; }
+  function displayTitle(entry) { return entry.title || "Untitled"; }
 
   // Fills the caption line in fixed field order; edited fields get a dashed underline.
   function renderCaption(entry) {

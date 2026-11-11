@@ -70,6 +70,11 @@ def _fts_query(text: str) -> str:
 
 
 _GROUPS = ("color", "year", "source")
+_ORDERS = {
+    "oldest": "e.created_at ASC, e.id ASC",
+    "title": "(e.title = '') ASC, lower(e.title) ASC, e.id DESC",
+    "source": "lower(e.domain) ASC, e.created_at DESC, e.id DESC",
+}
 
 
 def _entry_year(row) -> str:
@@ -153,8 +158,8 @@ class HyperbridgeAPI:
         return {"entries": entries}
 
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
-                     group: str = "", tag: str = "", color: str = "") -> dict:
-        """Return a page of entries, newest first, optionally filtered by text, set, tag and color, and grouped."""
+                     group: str = "", tag: str = "", color: str = "", order: str = "") -> dict:
+        """Return a page of entries, newest first unless order is oldest, title or source; filtered by text, set, tag and color, and optionally grouped."""
         offset = max(0, int(offset or 0))
         limit = min(_MAX_PAGE, max(1, int(limit or 60)))
         group = group if group in _GROUPS else ""
@@ -179,7 +184,7 @@ class HyperbridgeAPI:
                 " a.path AS thumb_path, a.width, a.height, o.path AS original_path, o.bytes AS original_bytes"
                 " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
                 " LEFT JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
-                f" {where} ORDER BY e.created_at DESC, e.id DESC",
+                f" {where} ORDER BY {_ORDERS.get(order, 'e.created_at DESC, e.id DESC')}",
                 params,
             ).fetchall()
         finally:

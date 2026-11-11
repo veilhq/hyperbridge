@@ -43,6 +43,20 @@ class SwatchTests(LibraryOpsCase):
         self.assertEqual(library_swatches(self.conn, blank)[0], "#0000ff")
         self.assertEqual(library_swatches(self.conn, done), ["#123456"])
 
+    def test_list_orders_by_age_title_and_source(self):
+        first, second, third = self.add_entry("Banana"), self.add_entry("apple"), self.add_entry("")
+        self.conn.execute("UPDATE entries SET domain = 'z.com', created_at = '2020' WHERE id = ?", (first,))
+        self.conn.execute("UPDATE entries SET domain = 'a.com', created_at = '2021' WHERE id = ?", (second,))
+        self.conn.execute("UPDATE entries SET domain = 'm.com', created_at = '2022' WHERE id = ?", (third,))
+        self.conn.commit()
+        api = hyperbridge.HyperbridgeAPI()
+        titles = lambda order: [e["title"] for e in api.list_entries(order=order)["entries"]]
+        self.assertEqual(titles(""), ["", "apple", "Banana"])
+        self.assertEqual(titles("oldest"), ["Banana", "apple", ""])
+        self.assertEqual(titles("title"), ["apple", "Banana", ""])
+        self.assertEqual(titles("source"), ["apple", "", "Banana"])
+        self.assertEqual(titles("junk"), ["", "apple", "Banana"])
+
     def test_list_groups_by_color_year_and_source(self):
         red, blue = self.add_entry("Red"), self.add_entry("Blue")
         self.conn.execute("UPDATE entries SET swatches = ?, year = '2020', domain = 'b.com' WHERE id = ?",

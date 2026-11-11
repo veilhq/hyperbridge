@@ -8,9 +8,7 @@
   var CASCADE_MAX = 12;
   var SEARCH_DEBOUNCE_MS = 250;
 
-  var GROUPS = ["", "color", "year", "source"];
-  var GROUP_LABELS = { "": "none", color: "color", year: "year", source: "source" };
-  var state = { query: "", tag: "", color: "", setId: null, group: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
+  var state = { query: "", tag: "", color: "", setId: null, group: "", order: "", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
   var tagsCache = [];
@@ -79,7 +77,7 @@ var candidates = null;
     }
 
     var body = makeEl("span", "library-card-details");
-    body.appendChild(makeEl("span", "library-card-title", entry.title || entry.domain || "Untitled"));
+    body.appendChild(makeEl("span", "library-card-title", entry.title || "Untitled"));
     var caption = (entry.caption || []).join(" / ");
     if (caption) body.appendChild(makeEl("span", "library-card-caption", caption));
     else if (entry.domain) body.appendChild(makeEl("span", "library-card-domain", entry.domain));
@@ -707,7 +705,7 @@ var candidates = null;
     var ticket = ++state.ticket;
     var offset = reset ? 0 : state.entries.length;
     state.loading = true;
-    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag, state.color).then(function (result) {
+    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag, state.color, state.order).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
@@ -727,7 +725,7 @@ var candidates = null;
     var tail = state.entries.slice(limit);
     var knownTotal = state.total;
     state.loading = true;
-    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color).then(function (result) {
+    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color, state.order).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
@@ -1162,26 +1160,95 @@ var candidates = null;
     observer.observe(sentinel);
   }
 
-  // Cycles the grouping between none, color, year and source; the choice persists.
+  var GROUP_CHOICES = [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]];
+  var ORDER_CHOICES = [["", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]];
+
+  // The view button opens a menu with a Group by section and an Order section; both choices persist.
   function setupGroup() {
     var button = $("#group-toggle");
     if (!button) return;
-    function apply(group) {
-      state.group = group;
-      var label = "Group: " + GROUP_LABELS[group];
+    var menu = makeEl("div", "view-menu floating-panel");
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+    document.body.appendChild(menu);
+
+    function read(key, choices) {
+      var saved = "";
+      try { saved = localStorage.getItem(key) || ""; } catch (err) { saved = ""; }
+      return choices.some(function (choice) { return choice[0] === saved; }) ? saved : "";
+    }
+
+    function labelOf(choices, value) {
+      return choices.filter(function (choice) { return choice[0] === value; })[0][1];
+    }
+
+    function paintButton() {
+      var label = "View: group " + labelOf(GROUP_CHOICES, state.group).toLowerCase() + ", order " + labelOf(ORDER_CHOICES, state.order).toLowerCase();
       button.setAttribute("aria-label", label);
       button.setAttribute("data-tooltip", label);
-      button.setAttribute("data-group", group);
-      try { localStorage.setItem("hyperbridge-group", group); } catch (err) { /* ignore */ }
+      button.setAttribute("data-group", state.group);
+      button.setAttribute("data-order", state.order);
     }
-    var saved = "";
-    try { saved = localStorage.getItem("hyperbridge-group") || ""; } catch (err) { saved = ""; }
-    apply(GROUPS.indexOf(saved) >= 0 ? saved : "");
-    button.addEventListener("click", function () {
-      apply(GROUPS[(GROUPS.indexOf(state.group) + 1) % GROUPS.length]);
+
+    function close() {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    }
+
+    function choose(key, field, value) {
+      try { localStorage.setItem(key, value); } catch (err) { /* ignore */ }
+      state[field] = value;
+      paintButton();
       state.signature = ""; state.signatureParts = [];
       state.cascade = true;
       load(true);
+      build();
+    }
+
+    function section(title, key, field, choices) {
+      menu.appendChild(makeEl("span", "view-menu-label", title));
+      choices.forEach(function (choice) {
+        var row = makeEl("button", "menu-item" + (state[field] === choice[0] ? " active" : ""));
+        row.type = "button";
+        row.setAttribute("role", "menuitemradio");
+        row.setAttribute("aria-checked", state[field] === choice[0] ? "true" : "false");
+        row.appendChild(makeEl("span", "menu-item-label", choice[1]));
+        row.addEventListener("click", function () { choose(key, field, choice[0]); });
+        menu.appendChild(row);
+      });
+    }
+
+    function build() {
+      menu.textContent = "";
+      section("Group by", "hyperbridge-group", "group", GROUP_CHOICES);
+      menu.appendChild(makeEl("div", "menu-item-separator"));
+      section("Order", "hyperbridge-order", "order", ORDER_CHOICES);
+    }
+
+    function open() {
+      build();
+      menu.hidden = false;
+      var rect = button.getBoundingClientRect();
+      menu.style.bottom = (window.innerHeight - rect.top) + "px";
+      menu.style.right = Math.max(0, window.innerWidth - rect.right) + "px";
+      button.setAttribute("aria-expanded", "true");
+    }
+
+    state.group = read("hyperbridge-group", GROUP_CHOICES);
+    state.order = read("hyperbridge-order", ORDER_CHOICES);
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-expanded", "false");
+    paintButton();
+    button.addEventListener("click", function (event) {
+      event.stopPropagation();
+      if (menu.hidden) open(); else close();
+    });
+    document.addEventListener("click", function (event) {
+      if (!menu.hidden && !menu.contains(event.target)) close();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !menu.hidden) { close(); button.focus(); }
     });
   }
 
