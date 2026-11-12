@@ -107,6 +107,28 @@ def add_link(conn, url, now=None) -> dict:
     return {"entry_id": entry_id, "created": True, "already_captured": False}
 
 
+def requeue(conn, entry_ids) -> int:
+    """Queue a fresh capture for saved entries that came from a link, so their images are fetched again at full size; returns how many were queued.
+
+    Entries without a source link (pastes and drops) and entries already capturing are skipped.
+    """
+    stamp = _timestamp()
+    queued = 0
+    for entry_id in entry_ids:
+        row = conn.execute(
+            "SELECT id, source_url, source_key, state FROM entries WHERE id = ?", (int(entry_id),)).fetchone()
+        if row is None or row["state"] == "pending" or not (row["source_key"] or row["source_url"]):
+            continue
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("UPDATE entries SET state = 'pending' WHERE id = ?", (row["id"],))
+        conn.execute(
+            "INSERT INTO jobs (kind, entry_id, payload, state, created_at, updated_at) VALUES ('capture', ?, ?, 'queued', ?, ?)",
+            (row["id"], json.dumps({"url": row["source_key"] or row["source_url"], "recapture": True}), stamp, stamp))
+        conn.execute("COMMIT")
+        queued += 1
+    return queued
+
+
 _IMAGE_META = (
     "og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src",
     "twitter:image0", "twitter:image1", "twitter:image2", "twitter:image3",
@@ -790,6 +812,8 @@ def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
         error = f"{type(exc).__name__}: {exc}"[:500]
     stamp = _timestamp()
     entry_state, job_state = ("failed", "failed") if error else ("captured", "done")
+    if error and job["entry_id"] is not None and _kept_image(conn, job, job["entry_id"]):
+        entry_state = "captured"
     if not error and job["entry_id"] is not None:
         from bridge.ingest import enrich
         enrich.enrich_entry(conn, conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone())
@@ -802,6 +826,16 @@ def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
         "UPDATE jobs SET state = ?, error = ?, updated_at = ? WHERE id = ?",
         (job_state, error, stamp, job_id),
     )
+
+
+def _kept_image(conn, job, entry_id) -> bool:
+    """Whether a failed re-capture left the entry with the image it already had."""
+    try:
+        again = bool(json.loads(job["payload"] or "{}").get("recapture"))
+    except ValueError:
+        again = False
+    return again and conn.execute(
+        "SELECT 1 FROM assets WHERE entry_id = ? AND kind = 'original' LIMIT 1", (entry_id,)).fetchone() is not None
 
 
 def claim_next_job(conn):

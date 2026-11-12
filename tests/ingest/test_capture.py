@@ -558,6 +558,24 @@ class KeepDetailsTests(LibraryCase):
         self.assertEqual(json.loads(row["manual_fields"] or "[]"), [])
 
 
+class RequeueTests(LibraryCase):
+    def test_a_saved_link_entry_is_captured_again_and_a_failure_keeps_its_image(self):
+        url = "https://example.com/files/pic.png"
+        added = capture.add_link(self.conn, url)
+        job = self.conn.execute("SELECT id FROM jobs WHERE entry_id = ?", (added["entry_id"],)).fetchone()
+        capture.run_capture(self.conn, job["id"], FakeFetcher({url: reply(url, png_bytes(40, 30), "image/png")}))
+        self.assertEqual(capture.requeue(self.conn, [added["entry_id"], 9999]), 1)
+        self.assertEqual(self.conn.execute("SELECT state FROM entries").fetchone()[0], "pending")
+        self.assertEqual(capture.requeue(self.conn, [added["entry_id"]]), 0)
+        again = self.conn.execute("SELECT id FROM jobs WHERE state = 'queued'").fetchone()
+        capture.run_capture(self.conn, again["id"], FakeFetcher({url: OSError("down")}))
+        self.assertEqual(self.conn.execute("SELECT state FROM entries").fetchone()[0], "captured")
+
+    def test_pasted_images_without_a_link_are_skipped(self):
+        entry = capture.add_image(self.conn, png_bytes(20, 20), "pasted.png")["entry_id"]
+        self.assertEqual(capture.requeue(self.conn, [entry]), 0)
+
+
 class FullSizeTests(LibraryCase):
     def test_known_hosts_map_to_their_full_size_url(self):
         cases = {

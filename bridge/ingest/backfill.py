@@ -3,7 +3,7 @@ import logging
 import random
 import time
 
-from bridge.ingest import arena, capture, enrich, social, tumblr
+from bridge.ingest import arena, capture, enrich, restore, social, tumblr
 from bridge.library import swatches
 
 logger = logging.getLogger("hyperbridge")
@@ -26,6 +26,7 @@ def source_steps(conn, fetcher) -> list:
         ("arena", lambda: arena.backfill_origins(conn, fetcher, random.Random(), max_channels=None, retries=arena.RETRIES)),
         ("tumblr", lambda: tumblr.backfill(conn, fetcher)),
         ("social", lambda: social.backfill(conn, fetcher)),
+        ("titles", lambda: restore.titles(conn, fetcher)),
     ]
 
 

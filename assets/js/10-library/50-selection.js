@@ -59,6 +59,7 @@
     $("#sel-add").hidden = (picking && !feedMode) || !setsCache.length;
     $("#sel-tag").hidden = picking || !tagsCache.length;
     $("#sel-save").hidden = picking;
+    $("#sel-recapture").hidden = picking;
     $("#sel-discard").hidden = picking && !feedMode;
   }
 
@@ -145,6 +146,16 @@
     Promise.resolve(bridge.save_entries_assets(selectedIds())).then(reportSave).catch(function () { toast("error", "Could not save images."); });
   }
 
+  // Fetches the selected link entries again so their images are saved at full size; they show as capturing until done.
+  function bulkRecapture() {
+    var bridge = api();
+    Promise.resolve(bridge.recapture_entries(selectedIds())).then(function (count) {
+      toast(count ? "success" : "error", count ? "Re-capturing " + count + (count === 1 ? " entry." : " entries.") : "Nothing to re-capture. Pasted and dropped images have no source link.");
+      clearSelection();
+      load(true);
+    }).catch(function () { toast("error", "Could not re-capture."); });
+  }
+
   function bulkDiscard() {
     if (candidates && candidates.feed) { dismissFeed(); return; }
     var bridge = api();
@@ -177,6 +188,7 @@
     if (tagsCache.length) items.push({ label: "Add tag", children: tagMenuItems() });
     if (state.setId) items.push({ label: "Remove from set", action: bulkRemove });
     items.push({ label: "Download", action: bulkSave });
+    items.push({ label: "Re-capture at full size", action: bulkRecapture });
     items.push({ separator: true });
     items.push({ label: "Discard " + selected.size, action: bulkDiscard });
     return items;
@@ -196,6 +208,7 @@
     $("#sel-tag").addEventListener("click", openSetMenu);
     $("#sel-remove").addEventListener("click", bulkRemove);
     $("#sel-save").addEventListener("click", bulkSave);
+    $("#sel-recapture").addEventListener("click", bulkRecapture);
     $("#sel-discard").addEventListener("click", bulkDiscard);
     $("#sel-clear").addEventListener("click", clearSelection);
     document.addEventListener("keydown", function (event) {

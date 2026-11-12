@@ -244,6 +244,14 @@ class HyperbridgeAPI:
             "years": [min(years), max(years)] if years else [],
         }
 
+    def recapture_entries(self, entry_ids: list) -> int:
+        """Fetch the images of saved link entries again at full size; returns how many were queued."""
+        conn = db.connect()
+        try:
+            return capture.requeue(conn, list(entry_ids or [])[:_MAX_BULK])
+        finally:
+            conn.close()
+
     def get_entry(self, entry_id: int) -> dict | None:
         """Return one entry's fields, assets, tags and sets for the lightbox."""
         return library.get_entry(int(entry_id))
