@@ -4,7 +4,7 @@
 .settings-view { padding-bottom: calc(var(--space-6) * 2); }
 /* The library pads its top by --space-5, so stick that far above 0 to reach the scrollport edge. */
 .settings-tabs { position: sticky; top: calc(var(--space-5) * -1); z-index: var(--z-base); justify-content: center; padding: var(--space-2) var(--space-4) 0; background: var(--bg); }
-.settings-tab { padding: var(--space-2) var(--space-4); font-family: var(--font); font-size: var(--fs-mono); letter-spacing: var(--track-label); cursor: pointer; }
+.settings-tab { padding: var(--space-2) var(--space-6); font-family: var(--font); font-size: var(--fs-mono); letter-spacing: var(--track-label); cursor: pointer; }
 .settings-tab-panel[hidden] { display: none; }
 .settings-panel { display: flex; flex-direction: column; gap: var(--space-2); max-width: 56rem; margin: var(--space-4) auto 0; padding: var(--space-4); background: var(--bg-card); border: var(--border-hair) solid var(--border); border-radius: var(--radius); }
 .settings-panel-head { display: flex; flex-direction: column; gap: var(--space-1); padding-bottom: var(--space-2); }
