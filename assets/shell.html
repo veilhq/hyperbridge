@@ -34,14 +34,14 @@
       <header class="set-head find-head" id="find-head" hidden>
         <h1 class="set-head-title" id="find-head-title"></h1>
         <p class="set-head-desc" id="find-head-desc"></p>
-        <button class="action-button action-button-ghost" id="find-refresh" type="button" hidden>Refresh</button>
-        <button class="action-button action-button-ghost" id="find-exit" type="button">Back to set</button>
+        <button class="action-icon set-head-exit" id="find-exit" type="button" aria-label="Back to set" data-tooltip="Back to set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
+        <button class="action-icon set-head-aside" id="find-refresh" type="button" aria-label="Refresh" data-tooltip="Refresh" hidden><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
       </header>
       <section class="settings-view" id="settings-view" aria-labelledby="settings-title" hidden>
         <header class="set-head">
           <h1 class="set-head-title" id="settings-title">Settings</h1>
           <p class="set-head-desc">Where discovery pulls from, which sources you follow, and how your library moves between machines.</p>
-          <button class="action-button action-button-ghost" id="settings-close" type="button">Done</button>
+          <button class="action-icon set-head-exit" id="settings-close" type="button" aria-label="Back to library" data-tooltip="Back to library"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
         </header>
         <nav class="settings-tabs tab-rail" role="tablist" aria-label="Settings sections">
           <button class="nav-tab nav-tab-folder settings-tab" id="settings-tabbtn-sources" type="button" role="tab" data-tab="sources" aria-controls="settings-tab-sources">Sources</button>

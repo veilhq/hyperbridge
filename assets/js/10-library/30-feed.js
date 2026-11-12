@@ -1,5 +1,12 @@
   var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr", pinterest: "Pinterest" };
 
+  // Names the discover view's exit icon for screen readers and hover.
+  function setExitLabel(text) {
+    var exit = $("#find-exit");
+    exit.setAttribute("aria-label", text);
+    exit.setAttribute("data-tooltip", text);
+  }
+
   function feedCandidate(item) {
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
       title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, known_entry_id: null };
@@ -145,7 +152,7 @@
       $("#library").setAttribute("data-finding", "true");
       $("#find-head").hidden = false;
       $("#find-head-title").textContent = "Discover";
-      $("#find-exit").textContent = "Back to library";
+      setExitLabel("Back to library");
       $("#find-refresh").hidden = false;
     }
     showFeedLoading();
@@ -225,7 +232,7 @@
     syncMore();
     findTicket++;
     $("#find-refresh").hidden = true;
-    $("#find-exit").textContent = "Back to set";
+    setExitLabel("Back to set");
     grid.removeAttribute("data-columns");
     grid.textContent = "";
     grid.removeAttribute("aria-busy");

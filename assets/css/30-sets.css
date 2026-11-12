@@ -31,5 +31,10 @@
 html.a11y-reduce-motion .sets-item, html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .library-empty { transition: none; }
 .set-head { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: calc(var(--space-6) * 3) var(--space-5) var(--space-3); text-align: center; }
 .set-head[hidden], .set-head-desc[hidden] { display: none; }
+.set-head { position: relative; }
+.set-head-exit, .set-head-aside { position: absolute; top: var(--space-5); }
+.set-head-exit { left: var(--space-5); }
+.set-head-aside { right: var(--space-5); }
+.set-head-aside[hidden] { display: none; }
 .set-head-title { margin: 0; font-family: var(--font-body); font-size: var(--fs-display); font-weight: var(--fw-extrabold); letter-spacing: var(--track-display); line-height: var(--lh-tight); color: var(--text-bright); overflow-wrap: anywhere; }
 .set-head-desc { margin: 0; max-width: 20rem; font-family: var(--font-body); font-size: var(--fs-prose-ui); line-height: var(--lh-prose); color: var(--text-muted); }
