@@ -179,7 +179,7 @@ def discover(conn, url, fetcher=None) -> dict:
 def add_candidates(conn, urls, page_url, set_id, details=None) -> dict:
     """Queue the chosen image URLs for capture, credit the page as their source and place them in a set.
 
-    details maps an image URL to its own page_url, source_service, source_ref and collection (a Pinterest board and section).
+    details maps an image URL to its own page_url, source_service, source_ref, collection, title and creator.
     """
     added = placed = 0
     for url in urls:
@@ -192,6 +192,7 @@ def add_candidates(conn, urls, page_url, set_id, details=None) -> dict:
                 "UPDATE entries SET source_url = ?, domain = ?, source_service = ?, source_ref = ?, collection = ? WHERE id = ?",
                 (credit, capture.source_domain(credit) or capture.source_domain(url), str(own.get("source_service") or "")[:40],
                  str(own.get("source_ref") or "")[:100], str(own.get("collection") or "")[:200], result["entry_id"]))
+            capture.keep_details(conn, result["entry_id"], own.get("title"), own.get("creator"))
         if set_id and sets.place(result["entry_id"], int(set_id)):
             placed += 1
     return {"added": added, "placed": placed}

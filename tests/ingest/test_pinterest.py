@@ -106,6 +106,14 @@ class DiscoverBoardTests(LibraryCase):
         row = self.conn.execute("SELECT source_url, source_service, source_ref, collection FROM entries").fetchone()
         self.assertEqual(tuple(row), ("https://www.pinterest.com/pin/1001/", "pinterest", "1001", "Moodboard / Faces"))
 
+    def test_saved_entries_keep_the_card_title(self):
+        url = "https://i.pinimg.com/originals/aa/1.jpg"
+        details = {url: {"page_url": "https://www.pinterest.com/pin/1001/", "source_service": "pinterest",
+                         "source_ref": "1001", "collection": "Moodboard", "title": "Quiet harbor", "creator": "Sam"}}
+        discover.add_candidates(self.conn, [url], BOARD, None, details)
+        row = self.conn.execute("SELECT title, creator FROM entries").fetchone()
+        self.assertEqual(tuple(row), ("Quiet harbor", "Sam"))
+
 
 class FollowBoardTests(LibraryCase):
     def test_a_board_link_can_be_followed_and_pulled(self):

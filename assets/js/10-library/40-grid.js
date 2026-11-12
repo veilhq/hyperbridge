@@ -199,7 +199,7 @@
     });
   }
 
-  // Re-reads everything loaded so far so pending entries pick up their new state.
+  // Re-reads everything loaded so far so pending entries pick up their new state; thumbnails already held are not sent again.
   function refresh() {
     var bridge = api();
     if (!bridge || !bridge.list_entries || state.loading || candidates) return;
@@ -207,11 +207,14 @@
     var limit = Math.min(Math.max(state.entries.length, PAGE_SIZE), MAX_REFRESH);
     var tail = state.entries.slice(limit);
     var knownTotal = state.total;
+    var held = {};
+    state.entries.forEach(function (entry) { if (entry.thumb) held[entry.id] = entry.thumb; });
     state.loading = true;
-    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color, state.order).then(function (result) {
+    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color, state.order, Object.keys(held).map(Number)).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
+      result.entries.forEach(function (entry) { if (entry.keep) entry.thumb = held[entry.id] || null; });
       // Entries past the server page cap are kept as loaded unless the list changed size.
       state.entries = tail.length && result.total === knownTotal ? result.entries.concat(tail) : result.entries;
       render();

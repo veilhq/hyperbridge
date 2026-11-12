@@ -142,6 +142,13 @@ class ReviewTests(FeedCase):
         self.assertIn("https://www.are.na/me/chan", sources)
         self.assertEqual(feed.list_items(self.conn)["total"], 0)
 
+    def test_accept_keeps_the_title_the_card_showed(self):
+        ids = self.seed()
+        self.conn.execute("UPDATE feed_items SET title = 'Card title', creator = 'Pat' WHERE id = ?", (ids[0],))
+        feed.accept(self.conn, ids[:1])
+        row = self.conn.execute("SELECT title, creator FROM entries ORDER BY id DESC").fetchone()
+        self.assertEqual(tuple(row), ("Card title", "Pat"))
+
 
 if __name__ == "__main__":
     unittest.main()

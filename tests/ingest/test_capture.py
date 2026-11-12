@@ -539,6 +539,25 @@ class InstagramTests(unittest.TestCase):
         self.assertEqual(capture.instagram_media(page), ["https://cdn.example/full.jpg?a=1&b=2"])
 
 
+class KeepDetailsTests(LibraryCase):
+    def test_title_and_creator_from_a_discovery_card_survive_capture(self):
+        url = "https://example.com/files/IMG_8841.png"
+        added = capture.add_link(self.conn, url)
+        capture.keep_details(self.conn, added["entry_id"], "Study in red", "Ada")
+        job = self.conn.execute("SELECT id FROM jobs WHERE entry_id = ?", (added["entry_id"],)).fetchone()
+        fetcher = FakeFetcher({url: reply(url, png_bytes(300, 200), "image/png")})
+        capture.run_capture(self.conn, job["id"], fetcher)
+        row = self.conn.execute("SELECT title, creator, manual_fields FROM entries WHERE id = ?", (added["entry_id"],)).fetchone()
+        self.assertEqual((row["title"], row["creator"]), ("Study in red", "Ada"))
+        self.assertLessEqual({"title", "creator"}, set(json.loads(row["manual_fields"])))
+
+    def test_nothing_is_stored_or_protected_when_the_card_has_no_details(self):
+        added = capture.add_link(self.conn, "https://example.com/files/pic.png")
+        capture.keep_details(self.conn, added["entry_id"], "  ", "")
+        row = self.conn.execute("SELECT manual_fields FROM entries WHERE id = ?", (added["entry_id"],)).fetchone()
+        self.assertEqual(json.loads(row["manual_fields"] or "[]"), [])
+
+
 class FullSizeTests(LibraryCase):
     def test_known_hosts_map_to_their_full_size_url(self):
         cases = {

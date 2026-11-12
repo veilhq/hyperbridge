@@ -599,6 +599,23 @@ def _apply_metadata(conn, entry, values: dict, stamp: str) -> None:
     )
 
 
+def keep_details(conn, entry_id: int, title: str = "", creator: str = "") -> None:
+    """Store a title and creator already known from a discovery card and protect them from capture's own guesses."""
+    values = {"title": shorten_title(" ".join(str(title or "").split())), "creator": " ".join(str(creator or "").split())[:200]}
+    values = {key: value for key, value in values.items() if value}
+    if not values:
+        return
+    row = conn.execute("SELECT manual_fields FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    try:
+        manual = list(json.loads(row["manual_fields"] or "[]"))
+    except ValueError:
+        manual = []
+    manual += [key for key in values if key not in manual]
+    assignments = ", ".join(f"{key} = ?" for key in values)
+    conn.execute(f"UPDATE entries SET {assignments}, manual_fields = ? WHERE id = ?",
+                 (*values.values(), json.dumps(manual), entry_id))
+
+
 def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
     """Fetch the entry's page (or image), store assets and update its fields; screenshot when no image."""
     url = entry["source_key"] or entry["source_url"]

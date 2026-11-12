@@ -60,9 +60,13 @@ def enrich_entry(conn, row) -> bool:
 
 
 def backfill(conn) -> int:
-    """Enrich every captured entry that lacks tags or a title; returns how many changed. Edit times are left alone so sync does not churn."""
+    """Enrich each captured entry that lacks tags or a title (the rest are skipped in SQL); returns how many changed. Edit times are left alone so sync does not churn."""
     count = 0
-    for row in conn.execute("SELECT * FROM entries WHERE state != 'pending'").fetchall():
+    candidates = (
+        "SELECT * FROM entries WHERE state != 'pending' AND (trim(title) = '' OR lower(title) LIKE 'http%' OR lower(title) LIKE 'www.%'"
+        " OR NOT EXISTS (SELECT 1 FROM entry_tags WHERE entry_tags.entry_id = entries.id))"
+    )
+    for row in conn.execute(candidates).fetchall():
         count += enrich_entry(conn, row)
     conn.commit()
     return count

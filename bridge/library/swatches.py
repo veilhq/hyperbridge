@@ -1,12 +1,14 @@
 """Dominant-color swatches for entries: extraction, hue families and the one-time backfill."""
 
 import colorsys
+import functools
 import io
 import json
 
 from bridge.core import db
 
 SWATCH_COUNT = 5
+_CACHE = 65536  # per-swatch results reused by every grid page, group and color filter
 _SAMPLE_EDGE = 96
 FAMILIES = ("Red", "Orange", "Yellow", "Green", "Teal", "Blue", "Purple", "Pink", "Neutral")
 NO_COLOR = "No color"
@@ -45,6 +47,7 @@ def family(hex_color: str) -> str:
     return "Red"
 
 
+@functools.lru_cache(maxsize=_CACHE)
 def _lab(hex_color: str) -> tuple[float, float, float]:
     """Convert a hex color to OKLab."""
     channels = []
@@ -65,6 +68,7 @@ def _lab(hex_color: str) -> tuple[float, float, float]:
 NEAR_DISTANCE = 0.12
 
 
+@functools.lru_cache(maxsize=_CACHE)
 def near(raw: str, hex_color: str, limit: float = NEAR_DISTANCE) -> bool:
     """Return whether any stored swatch is a similar shade to hex_color (OKLab distance within limit)."""
     try:
@@ -75,6 +79,7 @@ def near(raw: str, hex_color: str, limit: float = NEAR_DISTANCE) -> bool:
     return any(sum((a - b) ** 2 for a, b in zip(target, value)) ** 0.5 <= limit for value in values)
 
 
+@functools.lru_cache(maxsize=_CACHE)
 def entry_family(raw: str) -> str:
     """Return the hue family of the first stored swatch, or NO_COLOR when there is none."""
     try:
@@ -87,6 +92,7 @@ def entry_family(raw: str) -> str:
 HUE_STEPS = 24
 
 
+@functools.lru_cache(maxsize=_CACHE)
 def gradient_key(raw: str) -> tuple:
     """Sort key that runs colors around the hue wheel (light to dark within a step), then greys dark to light, then no color."""
     values = parse(raw)

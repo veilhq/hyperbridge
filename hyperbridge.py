@@ -10,7 +10,6 @@ Usage:
 
 import base64
 import json
-import random
 import re
 import shutil
 import sys
@@ -43,9 +42,10 @@ from generated_html import HTML  # noqa: E402
 HTML = with_notice(HTML, _build_notice)
 
 from bridge.ingest import arena  # noqa: E402
+from bridge.ingest import backfill  # noqa: E402
+from bridge.core import thumbserver  # noqa: E402
 from bridge.ingest import capture  # noqa: E402
 from bridge.ingest import discover  # noqa: E402
-from bridge.ingest import enrich  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import feed_sources  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
@@ -53,7 +53,6 @@ from bridge.core import db  # noqa: E402
 from bridge.library import library  # noqa: E402
 from bridge.ingest import screenshot  # noqa: E402
 from bridge.library import sets  # noqa: E402
-from bridge.ingest import social  # noqa: E402
 from bridge.library import swatches  # noqa: E402
 from bridge.exchange import sync  # noqa: E402
 from bridge.exchange import lan  # noqa: E402
@@ -117,10 +116,13 @@ def _group_rank(labels: list, group: str) -> dict:
 GIF_GRID_BYTES = 1024 * 1024
 
 
-def _thumb_uri(relative: str | None) -> str | None:
-    """Return a data URI for a stored thumbnail, or None when it is missing."""
+def _thumb_ref(relative: str | None) -> str | None:
+    """Return what an img tag loads for a stored thumbnail, or None when it is missing."""
     if not relative:
         return None
+    url = thumbserver.url_for(relative)
+    if url:
+        return url
     path = db.data_dir() / relative
     try:
         raw = path.read_bytes()
@@ -167,11 +169,16 @@ class HyperbridgeAPI:
         return {"entries": entries}
 
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
-                     group: str = "", tag: str = "", color: str = "", order: str = "") -> dict:
-        """Return a page of entries, newest first unless order is oldest, title or source; filtered by text, set, tag and color, and optionally grouped."""
+                     group: str = "", tag: str = "", color: str = "", order: str = "", known: list | None = None) -> dict:
+        """Return a page of entries, newest first unless order is oldest, title or source; filtered by text, set, tag and color, and optionally grouped.
+
+        known lists entry ids whose thumbnails the caller already holds; those entries come back with keep set and no thumb.
+        """
         offset = max(0, int(offset or 0))
         limit = min(_MAX_PAGE, max(1, int(limit or 60)))
         group = group if group in _GROUPS else ""
+        color = color if re.fullmatch(r"#[0-9a-fA-F]{6}", color or "") else ""
+        kept = {int(item) for item in known or [] if str(item).isdigit()}
         match = _fts_query(query or "")
         clauses, params = [], []
         if match:
@@ -186,39 +193,54 @@ class HyperbridgeAPI:
             )
             params.append(str(tag))
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        in_sql = not (color or group or order == "color")
+        columns = ("e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type, e.created_at, e.swatches,"
+                   if not in_sql else "e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type, e.created_at,")
+        select = (
+            f"SELECT {columns} a.path AS thumb_path, a.width, a.height, o.path AS original_path, o.bytes AS original_bytes"
+            " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
+            " LEFT JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
+            f" {where} ORDER BY {_ORDERS.get(order, 'e.created_at DESC, e.id DESC')}"
+        )
         conn = db.connect()
         try:
-            rows = conn.execute(
-                "SELECT e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type, e.created_at, e.swatches,"
-                " a.path AS thumb_path, a.width, a.height, o.path AS original_path, o.bytes AS original_bytes"
-                " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
-                " LEFT JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
-                f" {where} ORDER BY {_ORDERS.get(order, 'e.created_at DESC, e.id DESC')}",
-                params,
-            ).fetchall()
+            if in_sql:
+                total = conn.execute(f"SELECT COUNT(*) FROM entries e {where}", params).fetchone()[0]
+                rows = conn.execute(f"{select} LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
+                spans = conn.execute(f"SELECT e.year, e.created_at FROM entries e {where}", params).fetchall() if set_id else []
+            else:
+                rows = conn.execute(select, params).fetchall()
         finally:
             conn.close()
-        if re.fullmatch(r"#[0-9a-fA-F]{6}", color or ""):
-            rows = [row for row in rows if swatches.near(row["swatches"], color)]
-        if order == "color":
-            rows = sorted(rows, key=lambda row: swatches.gradient_key(row["swatches"]))
-        labels = [_group_label(row, group) for row in rows] if group else [""] * len(rows)
-        order = list(range(len(rows)))
-        if group:
-            rank = _group_rank(labels, group)
-            order.sort(key=lambda index: (rank[labels[index]], index))
-        years = [year for year in (_entry_year(row) for row in rows) if year]
-        entries = [
-            {
-                "id": rows[i]["id"], "title": rows[i]["title"], "domain": rows[i]["domain"],
-                "state": rows[i]["state"], "thumb": _thumb_uri(_grid_path(rows[i])),
-                "width": rows[i]["width"], "height": rows[i]["height"], "group": labels[i],
-                "caption": [rows[i][name] for name in ("creator", "publisher", "type", "year") if rows[i][name]],
-            }
-            for i in order[offset:offset + limit]
-        ]
+        if in_sql:
+            labels = [""] * len(rows)
+            page = list(range(len(rows)))
+            years = [year for year in (_entry_year(row) for row in spans) if year]
+        else:
+            if color:
+                rows = [row for row in rows if swatches.near(row["swatches"], color)]
+            if order == "color":
+                rows = sorted(rows, key=lambda row: swatches.gradient_key(row["swatches"]))
+            labels = [_group_label(row, group) for row in rows] if group else [""] * len(rows)
+            ranked = list(range(len(rows)))
+            if group:
+                rank = _group_rank(labels, group)
+                ranked.sort(key=lambda index: (rank[labels[index]], index))
+            years = [year for year in (_entry_year(row) for row in rows) if year]
+            page = ranked[offset:offset + limit]
+            total = len(rows)
+        entries = []
+        for i in page:
+            row = rows[i]
+            keep = row["id"] in kept and bool(_grid_path(row))
+            entries.append({
+                "id": row["id"], "title": row["title"], "domain": row["domain"],
+                "state": row["state"], "thumb": None if keep else _thumb_ref(_grid_path(row)), "keep": keep,
+                "width": row["width"], "height": row["height"], "group": labels[i],
+                "caption": [row[name] for name in ("creator", "publisher", "type", "year") if row[name]],
+            })
         return {
-            "entries": entries, "total": len(rows),
+            "entries": entries, "total": total,
             "years": [min(years), max(years)] if years else [],
         }
 
@@ -698,36 +720,11 @@ def _start_theme_watcher(window, api):
     threading.Thread(target=_watch, daemon=True).start()
 
 
-def _backfill_swatches():
-    """Fill swatches for entries captured before palettes were stored."""
+def _run_backfills():
+    """Repair and fill in saved entries in one background pass: local fixes first, then outside lookups."""
     conn = db.connect()
     try:
-        capture.fix_image_types(conn)
-        capture.fix_domains(conn)
-        capture.fix_file_name_titles(conn)
-        enrich.backfill(conn)
-        swatches.backfill(conn)
-        capture.refresh_animated_thumbnails(conn)
-    except Exception:  # noqa: BLE001 - a failed backfill only leaves entries ungrouped
-        logger.exception("swatch backfill failed")
-    finally:
-        conn.close()
-
-
-def _backfill_origins():
-    """Fill source details (Are.na blocks, Tumblr post tags and dates) for saved images that lack them."""
-    time.sleep(5)
-    conn = db.connect()
-    try:
-        for name, step in (("arena", lambda: arena.backfill_origins(
-                conn, capture.default_fetcher(), random.Random(), max_channels=None, retries=arena.RETRIES)),
-                           ("tumblr", lambda: tumblr.backfill(conn, capture.default_fetcher())),
-                           ("social", lambda: social.backfill(conn, capture.default_fetcher()))):
-            try:
-                step()
-            except Exception:  # noqa: BLE001 - a failed backfill is retried at the next start
-                logger.exception("%s backfill failed", name)
-        enrich.backfill(conn)
+        backfill.run_all(conn, settle=5)
     finally:
         conn.close()
 
@@ -762,8 +759,8 @@ def main():
     conn = db.init_library()
     conn.close()
     capture.Worker(screenshotter=screenshot.capture_page).start()
-    threading.Thread(target=_backfill_swatches, daemon=True).start()
-    threading.Thread(target=_backfill_origins, daemon=True).start()
+    thumbserver.start()
+    threading.Thread(target=_run_backfills, daemon=True).start()
 
     api = HyperbridgeAPI()
     try:

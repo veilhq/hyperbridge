@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import hyperbridge  # noqa: E402
-from bridge.library import swatches  # noqa: E402
+from bridge.library import sets, swatches  # noqa: E402
 from tests.library.test_library import LibraryOpsCase  # noqa: E402
 
 
@@ -78,7 +78,10 @@ class SwatchTests(LibraryOpsCase):
         self.assertEqual(labels("color"), ["Red", "Blue"])
         self.assertEqual(labels("year"), ["2024", "2020"])
         self.assertEqual(sorted(labels("source")), ["a.com", "b.com"])
-        self.assertEqual(api.list_entries()["years"], ["2020", "2024"])
+        made = sets.create_set("Years")
+        sets.place(red, made["set"]["id"])
+        sets.place(blue, made["set"]["id"])
+        self.assertEqual(api.list_entries(set_id=made["set"]["id"])["years"], ["2020", "2024"])
         self.assertEqual(api.list_entries()["entries"][0]["group"], "")
 
     def test_near_matches_similar_shades_only(self):
