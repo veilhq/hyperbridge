@@ -226,6 +226,65 @@ class DeletionSyncTests(SyncCase):
         self.assertEqual(self.count(self.conn, self.uids[0]), 1)
 
 
+class PhoneCaptureTests(SyncCase):
+    def post(self, body, token=None):
+        headers = {"Content-Type": "application/json"}
+        if token is not None:
+            headers["X-Token"] = token
+        request = urllib.request.Request(f"http://127.0.0.1:{self.there.port}/capture", json.dumps(body).encode(), headers)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as reply:
+                return reply.status, json.loads(reply.read())
+        except urllib.error.HTTPError as err:
+            return err.code, None
+
+    def laptop_urls(self):
+        conn = sqlite3.connect(str(self.laptop / "hyperbridge.db"), isolation_level=None)
+        self.addCleanup(conn.close)
+        return {row[0] for row in conn.execute("SELECT source_key FROM entries")}
+
+    def test_token_adds_links_and_repeats_are_known(self):
+        token = self.there.store.new_phone_token()
+        status, reply = self.post({"urls": ["https://example.com/a", "https://example.com/a/", "not a link"]}, token)
+        self.assertEqual(status, 200)
+        self.assertEqual([item["status"] for item in reply["results"]], ["new", "known", "invalid"])
+        self.assertIn("https://example.com/a", self.laptop_urls())
+        self.assertEqual(self.there.received, 1)
+
+    def test_single_url_form_is_accepted(self):
+        token = self.there.store.new_phone_token()
+        status, reply = self.post({"url": "https://example.com/one"}, token)
+        self.assertEqual((status, reply["added"]), (200, 1))
+
+    def test_missing_wrong_or_revoked_token_adds_nothing(self):
+        token = self.there.store.new_phone_token()
+        before = self.laptop_urls()
+        self.assertEqual(self.post({"urls": ["https://example.com/x"]})[0], 403)
+        self.assertEqual(self.post({"urls": ["https://example.com/x"]}, "wrong")[0], 403)
+        self.there.store.clear_phone_token()
+        self.assertEqual(self.post({"urls": ["https://example.com/x"]}, token)[0], 403)
+        self.assertEqual(self.laptop_urls(), before)
+
+    def test_no_token_set_refuses_everything(self):
+        self.assertEqual(self.post({"urls": ["https://example.com/x"]}, "")[0], 403)
+
+    def test_repeated_wrong_tokens_lock_out_even_the_right_one(self):
+        token = self.there.store.new_phone_token()
+        for _ in range(sync.TOKEN_FAILURES):
+            self.post({"urls": ["https://example.com/x"]}, "wrong")
+        self.assertEqual(self.post({"urls": ["https://example.com/x"]}, token)[0], 429)
+
+    def test_empty_and_oversized_lists_are_rejected(self):
+        token = self.there.store.new_phone_token()
+        self.assertEqual(self.post({"urls": []}, token)[0], 400)
+        self.assertEqual(self.post({"urls": ["https://example.com/y"] * (sync.MAX_CAPTURE_URLS + 1)}, token)[0], 400)
+
+    def test_token_is_stored_hashed(self):
+        token = self.there.store.new_phone_token()
+        self.assertNotIn(token, (self.laptop / "sync.json").read_text(encoding="utf-8"))
+        self.assertTrue(self.there.status()["phone"]["enabled"])
+
+
 class DiscoveryTests(SyncCase):
     def test_listener_records_a_beacon(self):
         sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

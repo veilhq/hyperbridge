@@ -320,7 +320,22 @@
       }).catch(function () { toast("error", "Could not sync."); }).then(function () { busy = false; syncOverlay.local = false; paintSyncOverlay(); poll(); });
     }
 
+    var phoneInfo = $("#phone-info"), phoneCreate = $("#phone-create"), phoneOff = $("#phone-off");
+    var phoneToken = "";
+
+    // Shows the phone capture state: the address to send links to, and the token once after it is created.
+    function paintPhone(phone) {
+      var enabled = !!(phone && phone.enabled);
+      phoneCreate.textContent = enabled ? "New token" : "Create phone token";
+      phoneOff.hidden = !enabled;
+      phoneInfo.hidden = !enabled;
+      if (!enabled) { phoneToken = ""; phoneInfo.textContent = ""; return; }
+      var urls = phone.addresses.map(function (address) { return "http://" + address + ":" + phone.port + "/capture"; });
+      phoneInfo.textContent = "Send to " + urls.join(" or ") + (phoneToken ? ". Token: " + phoneToken + " (shown once; header X-Token)." : ". The token is set; make a new one to see it again.");
+    }
+
     function paint(status) {
+      paintPhone(status.phone);
       var pairing = status.pairing_seconds > 0;
       pairStart.hidden = pairing;
       pairStop.hidden = !pairing;
@@ -350,6 +365,19 @@
         if (!result || result.status !== "ok") toast("error", (result && result.error) || "Could not open pairing.");
         poll();
       });
+    });
+    phoneCreate.addEventListener("click", function () {
+      var bridge = api();
+      if (!bridge || !bridge.new_phone_token) return;
+      Promise.resolve(bridge.new_phone_token()).then(function (result) {
+        if (!result || result.status !== "ok") { toast("error", (result && result.error) || "Could not create the phone token."); return; }
+        phoneToken = result.token;
+        poll();
+      });
+    });
+    phoneOff.addEventListener("click", function () {
+      var bridge = api();
+      if (bridge && bridge.clear_phone_token) Promise.resolve(bridge.clear_phone_token()).then(function () { phoneToken = ""; poll(); });
     });
     pairStop.addEventListener("click", function () {
       var bridge = api();

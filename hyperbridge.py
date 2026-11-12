@@ -611,6 +611,23 @@ class HyperbridgeAPI:
             logger.warning("sync_with failed: %s", err)
             return {"status": "failed", "error": "Could not sync with that machine."}
 
+    def new_phone_token(self) -> dict:
+        """Create (or replace) the phone capture token and return it once."""
+        try:
+            return {"status": "ok", "token": self._sync().store.new_phone_token()}
+        except Exception as err:
+            logger.warning("new_phone_token failed: %s", err)
+            return {"status": "failed", "error": "Could not create the phone token."}
+
+    def clear_phone_token(self) -> dict:
+        """Turn phone capture off by forgetting the token."""
+        try:
+            self._sync().store.clear_phone_token()
+            return {"status": "ok"}
+        except Exception as err:
+            logger.warning("clear_phone_token failed: %s", err)
+            return {"status": "failed", "error": "Could not turn phone capture off."}
+
     def unpair(self, machine_id: str) -> dict:
         """Forget a paired machine on this side."""
         try:
@@ -772,7 +789,7 @@ def main():
 
     api = HyperbridgeAPI()
     try:
-        api.sync = sync.Sync()
+        api.sync = sync.Sync(port=sync.INBOX_PORT)
     except Exception:  # noqa: BLE001 - the library works without sync
         logger.exception("sync failed to start")
     icon_path = str(ICON_FILE) if ICON_FILE.exists() else None

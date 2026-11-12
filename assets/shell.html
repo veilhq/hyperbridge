@@ -107,6 +107,15 @@
           <div id="sync-list"></div>
           <div class="settings-source">
             <span class="settings-source-text">
+              <span class="settings-source-name">Phone capture</span>
+              <span class="settings-source-desc">Let a phone on the same network add links from its share menu. The token can only add links. Traffic is not encrypted, so use a network you trust.</span>
+              <span class="settings-share-info" id="phone-info" role="status" hidden></span>
+            </span>
+            <button class="action-button action-button-ghost" id="phone-create" type="button">Create phone token</button>
+            <button class="action-button action-button-ghost" id="phone-off" type="button" hidden>Turn off</button>
+          </div>
+          <div class="settings-source">
+            <span class="settings-source-text">
               <span class="settings-source-name">Export to a file</span>
               <span class="settings-source-desc">Images, tags, sets and followed sources in one zip.</span>
             </span>

@@ -1,6 +1,6 @@
   var GROUP_CHOICES = [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]];
   var ORDER_CHOICES = [["color", "Color"], ["newest", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]];
-  var DEFAULT_ORDER = "color";
+  var DEFAULT_ORDER = "newest";
 
   // Group and order choices persist; the radial menu reads and sets them through window.HyperbridgeView.
   function setupGroup() {

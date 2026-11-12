@@ -17,8 +17,14 @@ from pathlib import Path
 
 from bridge.core import db
 from bridge.exchange import lan
+from bridge.ingest import capture
 
 DISCOVERY_PORT = 47621
+INBOX_PORT = 47622
+MAX_CAPTURE_URLS = 200
+MAX_CAPTURE_URL_LENGTH = 4000
+TOKEN_FAILURES = 5
+TOKEN_LOCKOUT_SECONDS = 60
 BEACON_SECONDS = 3
 SEEN_SECONDS = 12
 PAIRING_SECONDS = 300
@@ -90,6 +96,28 @@ class PeerStore:
             self._data["peers"].pop(peer_id, None)
             self._write()
 
+    def new_phone_token(self) -> str:
+        """Replace the phone capture token with a fresh one and return it; only its hash is kept."""
+        token = secrets.token_urlsafe(24)
+        with self._lock:
+            self._data["phone"] = {"hash": _token_hash(token)}
+            self._write()
+        return token
+
+    def clear_phone_token(self) -> None:
+        with self._lock:
+            self._data.pop("phone", None)
+            self._write()
+
+    def has_phone_token(self) -> bool:
+        with self._lock:
+            return bool((self._data.get("phone") or {}).get("hash"))
+
+    def phone_token_ok(self, token: str) -> bool:
+        with self._lock:
+            stored = (self._data.get("phone") or {}).get("hash") or ""
+        return bool(stored and token) and hmac.compare_digest(stored.encode(), _token_hash(token).encode())
+
 
 def detect_kind() -> str:
     """Return "laptop" when this computer has a battery, else "desktop"; "computer" when that cannot be told."""
@@ -118,6 +146,10 @@ def _kind(value) -> str:
     return value if value in ("laptop", "desktop") else "computer"
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _signature(secret: str, method: str, path: str, stamp: str) -> str:
     return hmac.new(secret.encode(), f"{method}\n{path}\n{stamp}".encode(), hashlib.sha256).hexdigest()
 
@@ -126,7 +158,8 @@ class Sync:
     """Always-on while Bridge is open: serves paired machines, announces itself, and lists the others it hears."""
 
     def __init__(self, store_path: Path | None = None, name: str | None = None,
-                 discovery_port: int = DISCOVERY_PORT, broadcast: str = "255.255.255.255", kind: str | None = None):
+                 discovery_port: int = DISCOVERY_PORT, broadcast: str = "255.255.255.255", kind: str | None = None,
+                 port: int = 0):
         self.store = PeerStore(store_path, name, kind)
         self.discovery_port = discovery_port
         self.broadcast = broadcast
@@ -139,7 +172,12 @@ class Sync:
         self.found: dict[str, dict] = {}
         self._lock = threading.Lock()
         self._stopped = threading.Event()
-        self.server = ThreadingHTTPServer(("0.0.0.0", 0), lan._handler_for(self))
+        self.token_failures = 0
+        self.token_locked_until = 0.0
+        try:
+            self.server = ThreadingHTTPServer(("0.0.0.0", port), lan._handler_for(self))
+        except OSError:
+            self.server = ThreadingHTTPServer(("0.0.0.0", 0), lan._handler_for(self))
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         threading.Thread(target=self._beacon, daemon=True).start()
@@ -200,7 +238,9 @@ class Sync:
         return self._refuse(request)
 
     def post(self, request) -> bool:
-        """Handle /pair (code, creates the pairing) and /pull (signed, asks this machine to pull from the sender)."""
+        """Handle /pair (code, creates the pairing), /pull (signed, asks this machine to pull from the sender) and /capture (phone token, adds links)."""
+        if request.path == "/capture":
+            return self._on_capture(request)
         if request.path == "/pair":
             return self._on_pair(request)
         if request.path == "/pull":
@@ -220,6 +260,58 @@ class Sync:
         self.stop_pairing()
         request._reply(200, json.dumps({"id": self.store.id, "name": self.store.name, "kind": self.store.kind, "secret": secret}).encode())
         return True
+
+    def _on_capture(self, request) -> bool:
+        """Add the links a phone sends ({"urls": [...]} or {"url": "..."}); needs the phone token, reads nothing back."""
+        if not self._phone_allowed(request):
+            return True
+        body = request.json_body()
+        urls = body.get("urls") if body and "urls" in body else [body.get("url")] if body else None
+        if not isinstance(urls, list) or not urls or len(urls) > MAX_CAPTURE_URLS:
+            request._reply(400, json.dumps({"error": "Send a list of links."}).encode())
+            return True
+        results = []
+        conn = db.connect()
+        try:
+            for url in urls:
+                text = str(url or "").strip()
+                if not text or len(text) > MAX_CAPTURE_URL_LENGTH:
+                    results.append({"url": text[:200], "status": "invalid"})
+                    continue
+                try:
+                    added = capture.add_link(conn, text)
+                except ValueError:
+                    results.append({"url": text, "status": "invalid"})
+                    continue
+                results.append({"url": text, "status": "new" if added["created"] else "known"})
+        finally:
+            conn.close()
+        added = sum(1 for item in results if item["status"] == "new")
+        self.received += added
+        request._reply(200, json.dumps({"results": results, "added": added}).encode())
+        return True
+
+    def _phone_allowed(self, request) -> bool:
+        """Check the sender is on a private network and holds the phone token; repeated wrong tokens lock requests out briefly."""
+        try:
+            address = ipaddress.ip_address(request.client_address[0])
+        except ValueError:
+            address = None
+        if not address or not (address.is_private or address.is_loopback):
+            request._reply(403)
+            return False
+        if time.monotonic() < self.token_locked_until:
+            request._reply(429)
+            return False
+        if self.store.phone_token_ok(request.headers.get("X-Token", "")):
+            self.token_failures = 0
+            return True
+        self.token_failures += 1
+        if self.token_failures >= TOKEN_FAILURES:
+            self.token_failures = 0
+            self.token_locked_until = time.monotonic() + TOKEN_LOCKOUT_SECONDS
+        request._reply(403)
+        return False
 
     def _on_pull(self, request) -> bool:
         if not self._signed_ok(request):
@@ -373,7 +465,8 @@ class Sync:
         """Everything the settings view shows: this machine, the pairing window and the machines around."""
         seconds = self.pairing_seconds()
         return {"name": self.store.name, "pairing_seconds": seconds, "code": self.code if seconds else "",
-                "machines": list(self.machines().values()), "received": self.received}
+                "machines": list(self.machines().values()), "received": self.received,
+                "phone": {"enabled": self.store.has_phone_token(), "port": self.port, "addresses": lan.local_addresses()}}
 
     def stop(self) -> None:
         """Close the server and stop announcing; safe to call more than once."""
