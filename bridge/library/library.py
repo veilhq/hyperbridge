@@ -209,14 +209,16 @@ def update_entry(entry_id: int, fields: dict) -> dict | None:
 
 
 def discard_entry(entry_id: int) -> bool:
-    """Delete an entry, its queued jobs and its asset folder; returns False when it is missing."""
+    """Delete an entry, its queued jobs and its asset folder, noting the deletion for sync; returns False when it is missing."""
     conn = db.connect()
     try:
-        row = conn.execute("SELECT uid FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        row = conn.execute("SELECT uid, state FROM entries WHERE id = ?", (entry_id,)).fetchone()
         if row is None:
             return False
         conn.execute("DELETE FROM jobs WHERE entry_id = ?", (entry_id,))
         conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+        if row["state"] != "pending":
+            conn.execute("INSERT OR REPLACE INTO entry_deletions (uid, deleted_at) VALUES (?, ?)", (row["uid"], _now()))
         uid = row["uid"]
     finally:
         conn.close()

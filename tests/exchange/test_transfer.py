@@ -164,6 +164,115 @@ class EditSyncTests(TransferCase):
         self.assertGreater(conn.execute("SELECT updated_at FROM entries WHERE id = 1").fetchone()[0], "2000-01-01T00:00:00")
 
 
+class DeletionTests(TransferCase):
+    def setUp(self):
+        super().setUp()
+        self.uids, _ = self.seed_laptop()
+        self.conn = use_library(str(self.main))
+        self.addCleanup(self.conn.close)
+        transfer.import_library(self.conn, self.zip_path)
+
+    def exists(self, uid):
+        return self.conn.execute("SELECT COUNT(*) FROM entries WHERE uid = ?", (uid,)).fetchone()[0]
+
+    def test_a_deletion_removes_the_entry_its_files_and_is_remembered(self):
+        folder = storage.entry_dir(self.uids[0])
+        self.assertTrue(folder.exists())
+        removed = transfer.apply_deletions(self.conn, [{"uid": self.uids[0], "deleted_at": "2999-01-01T00:00:00"}])
+        self.assertEqual(removed, 1)
+        self.assertEqual(self.exists(self.uids[0]), 0)
+        self.assertFalse(folder.exists())
+        self.assertEqual(transfer.list_deletions(self.conn), [{"uid": self.uids[0], "deleted_at": "2999-01-01T00:00:00"}])
+
+    def test_an_entry_edited_after_the_deletion_is_kept(self):
+        self.conn.execute("UPDATE entries SET updated_at = '2999-01-01T00:00:00' WHERE uid = ?", (self.uids[0],))
+        self.assertEqual(transfer.apply_deletions(self.conn, [{"uid": self.uids[0], "deleted_at": "2998-01-01T00:00:00"}]), 0)
+        self.assertEqual(self.exists(self.uids[0]), 1)
+
+    def test_a_deletion_for_an_unknown_entry_is_passed_on_and_junk_is_ignored(self):
+        other = storage.new_uid()
+        transfer.apply_deletions(self.conn, [{"uid": other, "deleted_at": "2999-01-01T00:00:00"}, {"uid": "../x", "deleted_at": "1"}, "junk"])
+        self.assertEqual([item["uid"] for item in transfer.list_deletions(self.conn)], [other])
+
+    def test_discarding_an_entry_records_the_deletion_and_importing_it_again_clears_it(self):
+        from bridge.library import library
+        row = self.conn.execute("SELECT id FROM entries WHERE uid = ?", (self.uids[1],)).fetchone()
+        self.assertTrue(library.discard_entry(row["id"]))
+        self.assertEqual([item["uid"] for item in transfer.list_deletions(self.conn)], [self.uids[1]])
+        transfer.import_library(self.conn, self.zip_path)
+        self.assertEqual(self.exists(self.uids[1]), 1)
+        self.assertEqual(transfer.list_deletions(self.conn), [])
+
+
+class SetSyncTests(TransferCase):
+    def setUp(self):
+        super().setUp()
+        self.uids, _ = self.seed_laptop()
+        self.conn = use_library(str(self.main))
+        self.addCleanup(self.conn.close)
+        transfer.import_library(self.conn, self.zip_path)
+        self.laptop_conn = use_library(str(self.laptop))
+        self.addCleanup(self.laptop_conn.close)
+        self.conn = use_library(str(self.main))
+        self.addCleanup(self.conn.close)
+
+    def names(self, conn):
+        return [row[0] for row in conn.execute("SELECT name FROM sets ORDER BY name")]
+
+    def test_sets_get_a_stable_id_and_the_same_one_on_both_machines(self):
+        theirs = self.laptop_conn.execute("SELECT uid FROM sets").fetchone()[0]
+        self.assertEqual(self.conn.execute("SELECT uid FROM sets").fetchone()[0], theirs)
+
+    def test_a_rename_replaces_the_old_name_instead_of_adding_a_second_set(self):
+        self.laptop_conn.execute("UPDATE sets SET name = 'Prints', description = 'new', updated_at = '2999-01-01T00:00:00'")
+        changed = transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
+        self.assertEqual(changed, 1)
+        self.assertEqual(self.names(self.conn), ["Prints"])
+        self.assertEqual(self.conn.execute("SELECT description FROM sets").fetchone()[0], "new")
+        self.assertEqual(transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True), 0)
+
+    def test_a_locally_newer_rename_is_kept(self):
+        self.laptop_conn.execute("UPDATE sets SET name = 'Prints', updated_at = '2998-01-01T00:00:00'")
+        self.conn.execute("UPDATE sets SET name = 'Mine', updated_at = '2999-01-01T00:00:00'")
+        transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
+        self.assertEqual(self.names(self.conn), ["Mine"])
+
+    def test_sets_that_only_share_a_name_are_matched_and_adopt_one_id(self):
+        self.conn.execute("UPDATE sets SET uid = 'a' || substr(uid, 2)")
+        transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
+        self.assertEqual(self.names(self.conn), ["Posters"])
+        self.assertEqual(self.conn.execute("SELECT uid FROM sets").fetchone()[0], self.laptop_conn.execute("SELECT uid FROM sets").fetchone()[0])
+
+    def test_a_deleted_set_is_removed_and_not_recreated(self):
+        uid = self.conn.execute("SELECT uid FROM sets").fetchone()[0]
+        self.laptop_conn.execute("DELETE FROM sets")
+        self.laptop_conn.execute("INSERT INTO set_deletions (uid, deleted_at) VALUES (?, '2999-01-01T00:00:00')", (uid,))
+        self.assertEqual(transfer.apply_set_deletions(self.conn, transfer.list_set_deletions(self.laptop_conn)), 1)
+        self.assertEqual(self.names(self.conn), [])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0], 2)
+        old = [{"uid": uid, "name": "Posters", "description": "", "created_at": "", "updated_at": "2000-01-01T00:00:00"}]
+        transfer.merge_set_heads(self.conn, old, update=True)
+        self.assertEqual(self.names(self.conn), [])
+
+    def test_a_set_edited_after_its_deletion_comes_back(self):
+        uid = self.conn.execute("SELECT uid FROM sets").fetchone()[0]
+        self.conn.execute("DELETE FROM sets")
+        self.conn.execute("INSERT INTO set_deletions (uid, deleted_at) VALUES (?, '2000-01-01T00:00:00')", (uid,))
+        transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
+        self.assertEqual(self.names(self.conn), ["Posters"])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM set_deletions").fetchone()[0], 0)
+
+    def test_deleting_or_renaming_through_the_app_records_it(self):
+        from bridge.library import sets
+        os.environ["HYPERBRIDGE_DATA_DIR"] = str(self.main)
+        set_id, uid = self.conn.execute("SELECT id, uid FROM sets").fetchone()
+        self.conn.execute("UPDATE sets SET updated_at = '2000-01-01T00:00:00'")
+        sets.rename_set(set_id, "Renamed")
+        self.assertGreater(self.conn.execute("SELECT updated_at FROM sets").fetchone()[0], "2000-01-01T00:00:00")
+        self.assertTrue(sets.delete_set(set_id))
+        self.assertEqual([item["uid"] for item in transfer.list_set_deletions(self.conn)], [uid])
+
+
 class SafetyTests(TransferCase):
     def test_non_library_and_newer_files_are_refused(self):
         conn = use_library(str(self.main))

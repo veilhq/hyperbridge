@@ -72,11 +72,11 @@ def rename_set(set_id: int, name, description=None) -> dict:
             return {"ok": False, "error": "Set not found."}
         try:
             if description is None:
-                conn.execute("UPDATE sets SET name = ? WHERE id = ?", (name, set_id))
+                conn.execute("UPDATE sets SET name = ?, updated_at = ? WHERE id = ?", (name, _now(), set_id))
             else:
                 conn.execute(
-                    "UPDATE sets SET name = ?, description = ? WHERE id = ?",
-                    (name, _clean_description(description), set_id),
+                    "UPDATE sets SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+                    (name, _clean_description(description), _now(), set_id),
                 )
         except sqlite3.IntegrityError:
             return {"ok": False, "error": "That set exists."}
@@ -86,10 +86,15 @@ def rename_set(set_id: int, name, description=None) -> dict:
 
 
 def delete_set(set_id: int) -> bool:
-    """Delete a set; its entries stay in the library. Returns False when the set is missing."""
+    """Delete a set, noting the deletion for sync; its entries stay in the library. Returns False when the set is missing."""
     conn = db.connect()
     try:
-        return conn.execute("DELETE FROM sets WHERE id = ?", (set_id,)).rowcount > 0
+        row = conn.execute("SELECT uid FROM sets WHERE id = ?", (set_id,)).fetchone()
+        if row is None:
+            return False
+        conn.execute("DELETE FROM sets WHERE id = ?", (set_id,))
+        conn.execute("INSERT OR REPLACE INTO set_deletions (uid, deleted_at) VALUES (?, ?)", (row["uid"], _now()))
+        return True
     finally:
         conn.close()
 

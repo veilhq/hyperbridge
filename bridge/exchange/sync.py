@@ -215,7 +215,7 @@ class Sync:
         return sign
 
     def pull_from(self, peer_id: str, address: str) -> dict:
-        """Merge the entries a paired machine has that this library lacks, and the edits it made more recently; the count is added to received when anything arrived."""
+        """Merge the entries a paired machine has that this library lacks, and the edits and deletions it made more recently; the count is added to received when anything arrived."""
         host, port = lan._parse_address(address)
         lan._require_private(host)
         conn = db.connect()

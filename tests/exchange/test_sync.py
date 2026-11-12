@@ -1,6 +1,7 @@
 """Tests for pairing, signed sync and machine discovery."""
 
 import json
+import sqlite3
 import socket
 import sys
 import time
@@ -11,8 +12,10 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bridge.library import library  # noqa: E402
 from bridge.exchange import lan  # noqa: E402
 from bridge.exchange import sync  # noqa: E402
+from bridge.exchange import transfer  # noqa: E402
 from tests.exchange.test_lan import LanCase  # noqa: E402
 
 
@@ -163,6 +166,64 @@ class SyncWithTests(SyncCase):
         self.see_laptop()
         with self.assertRaises(lan.LanError):
             self.home.sync_with(self.there.store.id)
+
+
+class DeletionSyncTests(SyncCase):
+    def laptop_db(self):
+        conn = sqlite3.connect(str(self.laptop / "hyperbridge.db"), isolation_level=None)
+        self.addCleanup(conn.close)
+        return conn
+
+    def count(self, conn, uid):
+        return conn.execute("SELECT COUNT(*) FROM entries WHERE uid = ?", (uid,)).fetchone()[0]
+
+    def test_a_deletion_on_the_laptop_removes_the_entry_here(self):
+        self.pair()
+        self.home.sync_with(self.there.store.id)
+        self.assertEqual(self.count(self.conn, self.uids[0]), 1)
+        laptop = self.laptop_db()
+        laptop.execute("DELETE FROM entries WHERE uid = ?", (self.uids[0],))
+        laptop.execute("INSERT INTO entry_deletions (uid, deleted_at) VALUES (?, '2999-01-01T00:00:00')", (self.uids[0],))
+        result = self.home.sync_with(self.there.store.id)
+        self.assertEqual(result["pulled"]["deleted"], 1)
+        self.assertEqual(self.count(self.conn, self.uids[0]), 0)
+        self.assertEqual(self.count(self.conn, self.uids[1]), 1)
+        self.assertFalse((self.main / "assets" / self.uids[0]).exists() if (self.main / "assets").exists() else False)
+
+    def test_a_deletion_here_is_not_undone_and_reaches_the_laptop(self):
+        self.pair()
+        self.home.sync_with(self.there.store.id)
+        entry_id = self.conn.execute("SELECT id FROM entries WHERE uid = ?", (self.uids[0],)).fetchone()[0]
+        self.assertTrue(library.discard_entry(entry_id))
+        result = self.home.sync_with(self.there.store.id)
+        self.assertEqual(result["pulled"]["added"], 0)
+        self.assertEqual(self.count(self.conn, self.uids[0]), 0)
+        self.assertEqual([item["uid"] for item in transfer.list_deletions(self.conn)], [self.uids[0]])
+
+    def test_a_set_rename_and_delete_on_the_laptop_reach_this_machine(self):
+        self.pair()
+        self.home.sync_with(self.there.store.id)
+        laptop = self.laptop_db()
+        laptop.execute("UPDATE sets SET name = 'Prints', updated_at = '2999-01-01T00:00:00'")
+        laptop.execute("INSERT INTO sets (name, description, created_at) VALUES ('Extra', '', '2000-01-01T00:00:00')")
+        result = self.home.sync_with(self.there.store.id)
+        self.assertGreaterEqual(result["pulled"]["sets"], 1)
+        self.assertEqual([row[0] for row in self.conn.execute("SELECT name FROM sets ORDER BY name")], ["Extra", "Prints"])
+        extra = laptop.execute("SELECT uid FROM sets WHERE name = 'Extra'").fetchone()[0]
+        laptop.execute("DELETE FROM sets WHERE name = 'Extra'")
+        laptop.execute("INSERT INTO set_deletions (uid, deleted_at) VALUES (?, '2999-01-01T00:00:00')", (extra,))
+        self.home.sync_with(self.there.store.id)
+        self.assertEqual([row[0] for row in self.conn.execute("SELECT name FROM sets")], ["Prints"])
+
+    def test_an_entry_edited_after_the_deletion_survives(self):
+        self.pair()
+        self.home.sync_with(self.there.store.id)
+        laptop = self.laptop_db()
+        laptop.execute("DELETE FROM entries WHERE uid = ?", (self.uids[0],))
+        laptop.execute("INSERT INTO entry_deletions (uid, deleted_at) VALUES (?, '2000-01-01T00:00:00')", (self.uids[0],))
+        self.conn.execute("UPDATE entries SET title = 'Kept', updated_at = '2999-01-01T00:00:00' WHERE uid = ?", (self.uids[0],))
+        self.home.sync_with(self.there.store.id)
+        self.assertEqual(self.count(self.conn, self.uids[0]), 1)
 
 
 class DiscoveryTests(SyncCase):

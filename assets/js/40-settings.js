@@ -255,8 +255,9 @@
         var got = result.pulled ? result.pulled.added : 0;
         var sent = result.pushed ? result.pushed.added : 0;
         var edits = (result.pulled ? result.pulled.updated : 0) + (result.pushed ? result.pushed.updated : 0);
-        toast(result.push_error ? "error" : "success", "Received " + entries(got) + ", sent " + entries(sent) + (edits ? ", synced " + edits + (edits === 1 ? " edit" : " edits") : "") + "." + (result.push_error ? " " + result.push_error : ""));
-        if (got || (result.pulled && result.pulled.updated)) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+        var removed = (result.pulled ? result.pulled.deleted : 0) + (result.pushed ? result.pushed.deleted : 0);
+        toast(result.push_error ? "error" : "success", "Received " + entries(got) + ", sent " + entries(sent) + (edits ? ", synced " + edits + (edits === 1 ? " edit" : " edits") : "") + (removed ? ", removed " + removed : "") + "." + (result.push_error ? " " + result.push_error : ""));
+        if (got || (result.pulled && (result.pulled.updated || result.pulled.deleted || result.pulled.sets))) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
       }).catch(function () { toast("error", "Could not sync."); }).then(function () { busy = false; syncOverlay.local = false; paintSyncOverlay(); poll(); });
     }
 

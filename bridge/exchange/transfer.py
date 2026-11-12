@@ -64,7 +64,7 @@ def export_library(conn, dest, only_uids=None) -> dict:
     ]
     included = {record["uid"] for record in entries}
     sets = []
-    for row in conn.execute("SELECT id, name, description, created_at FROM sets ORDER BY id"):
+    for row in conn.execute("SELECT id, uid, name, description, created_at, updated_at FROM sets ORDER BY id"):
         placed = [
             item for item in conn.execute(
                 "SELECT e.uid, se.placed_at FROM set_entries se JOIN entries e ON e.id = se.entry_id"
@@ -73,7 +73,8 @@ def export_library(conn, dest, only_uids=None) -> dict:
         ]
         if only_uids is not None and not placed:
             continue
-        sets.append({"name": row["name"], "description": row["description"], "created_at": row["created_at"],
+        sets.append({"uid": row["uid"], "name": row["name"], "description": row["description"], "created_at": row["created_at"],
+                     "updated_at": row["updated_at"],
                      "entries": [{"uid": item["uid"], "placed_at": item["placed_at"]} for item in placed]})
     followed = [
         dict(item) for item in conn.execute("SELECT kind, url, label, created_at FROM followed_sources ORDER BY id")
@@ -135,6 +136,36 @@ def _copy_assets(archive, record: dict) -> list[dict]:
     return rows
 
 
+def list_deletions(conn) -> list[dict]:
+    """Return the uid and deletion time of every entry deleted here, for telling another library what to remove."""
+    return [{"uid": row["uid"], "deleted_at": row["deleted_at"]}
+            for row in conn.execute("SELECT uid, deleted_at FROM entry_deletions ORDER BY deleted_at")]
+
+
+def apply_deletions(conn, deletions: list) -> int:
+    """Delete entries another library deleted, unless they were edited here after that; returns how many were removed.
+
+    Every deletion is remembered so it keeps travelling to a third machine.
+    """
+    removed = 0
+    for item in deletions if isinstance(deletions, list) else []:
+        uid, when = (str(item.get("uid", "")), str(item.get("deleted_at") or "")) if isinstance(item, dict) else ("", "")
+        if not re.fullmatch(r"[0-9a-f]{32}", uid) or not when:
+            continue
+        row = conn.execute("SELECT id, updated_at FROM entries WHERE uid = ?", (uid,)).fetchone()
+        if row is not None:
+            if (row["updated_at"] or "") > when:
+                continue
+            conn.execute("DELETE FROM jobs WHERE entry_id = ?", (row["id"],))
+            conn.execute("DELETE FROM entries WHERE id = ?", (row["id"],))
+            shutil.rmtree(storage.entry_dir(uid), ignore_errors=True)
+            removed += 1
+        known = conn.execute("SELECT deleted_at FROM entry_deletions WHERE uid = ?", (uid,)).fetchone()
+        if known is None or known["deleted_at"] < when:
+            conn.execute("INSERT OR REPLACE INTO entry_deletions (uid, deleted_at) VALUES (?, ?)", (uid, when))
+    return removed
+
+
 def _insert_entry(conn, record: dict, rows: list[dict]) -> int:
     """Insert an entry with its tags and asset rows; returns the new id."""
     cursor = conn.execute(
@@ -170,6 +201,11 @@ def import_library(conn, source, update=False) -> dict:
         manifest = _read_manifest(archive)
         local = {}
         added = skipped = updated = 0
+        placed_sets = _merge_set_heads(conn, manifest.get("sets", []), update)
+        member_of = {}
+        for item, set_id in placed_sets:
+            for placed in item.get("entries", []):
+                member_of.setdefault(placed.get("uid"), set()).add(set_id)
         for record in manifest["entries"]:
             if not isinstance(record, dict) or not re.fullmatch(r"[0-9a-f]{32}", str(record.get("uid", ""))):
                 continue
@@ -178,7 +214,7 @@ def import_library(conn, source, update=False) -> dict:
                 found = conn.execute("SELECT id FROM entries WHERE source_key = ?", (record["source_key"],)).fetchone()
             if found is not None:
                 local[record["uid"]] = found["id"]
-                if update and _apply_edits(conn, found["id"], record, manifest.get("sets", [])):
+                if update and _apply_edits(conn, found["id"], record, member_of.get(record["uid"], set())):
                     updated += 1
                 else:
                     skipped += 1
@@ -189,18 +225,19 @@ def import_library(conn, source, update=False) -> dict:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 local[record["uid"]] = _insert_entry(conn, record, rows)
+                conn.execute("DELETE FROM entry_deletions WHERE uid = ?", (record["uid"],))
                 conn.execute("COMMIT")
             except Exception:
                 conn.execute("ROLLBACK")
                 shutil.rmtree(storage.entry_dir(record["uid"]), ignore_errors=True)
                 raise
             added += 1
-        sets_touched = _merge_sets(conn, manifest.get("sets", []), local)
+        sets_touched = _place_in_sets(conn, placed_sets, local)
         _merge_followed(conn, manifest.get("followed", []))
-    return {"added": added, "skipped": skipped, "updated": updated, "sets": sets_touched}
+    return {"added": added, "skipped": skipped, "updated": updated, "deleted": 0, "sets": sets_touched}
 
 
-def _apply_edits(conn, entry_id: int, record: dict, sets: list) -> bool:
+def _apply_edits(conn, entry_id: int, record: dict, set_ids: set) -> bool:
     """Replace an entry's editable fields, tags and set membership with a newer copy; returns False when this copy is as new."""
     current = conn.execute("SELECT updated_at FROM entries WHERE id = ?", (entry_id,)).fetchone()["updated_at"] or ""
     if str(record.get("updated_at") or "") <= current:
@@ -215,30 +252,95 @@ def _apply_edits(conn, entry_id: int, record: dict, sets: list) -> bool:
             conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (clean,))
             conn.execute("INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?", (entry_id, clean))
     conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM entry_tags)")
-    kept = [str(item.get("name", "")).strip() for item in sets if any(placed.get("uid") == record["uid"] for placed in item.get("entries", []))]
-    conn.execute(
-        f"DELETE FROM set_entries WHERE entry_id = ? AND set_id NOT IN (SELECT id FROM sets WHERE name IN ({','.join('?' * len(kept))}))",
-        (entry_id, *kept))
+    conn.execute(f"DELETE FROM set_entries WHERE entry_id = ? AND set_id NOT IN ({','.join('?' * len(set_ids))})", (entry_id, *set_ids))
     return True
 
 
-def _merge_sets(conn, sets: list, local: dict) -> int:
-    """Create missing sets by name and place the matching entries in them; returns how many sets were touched."""
-    touched = 0
-    for item in sets:
-        name = str(item.get("name", "")).strip()
-        if not name:
+def list_set_heads(conn) -> list[dict]:
+    """Return every set's id, name, description and last edit time, for telling another library how its sets differ."""
+    return [dict(row) for row in conn.execute("SELECT uid, name, description, created_at, updated_at FROM sets ORDER BY id")]
+
+
+def list_set_deletions(conn) -> list[dict]:
+    """Return the id and deletion time of every set deleted here."""
+    return [{"uid": row["uid"], "deleted_at": row["deleted_at"]} for row in conn.execute("SELECT uid, deleted_at FROM set_deletions")]
+
+
+def apply_set_deletions(conn, deletions: list) -> int:
+    """Delete sets another library deleted, unless they were edited here after that; returns how many were removed."""
+    removed = 0
+    for item in deletions if isinstance(deletions, list) else []:
+        uid, when = (str(item.get("uid", "")), str(item.get("deleted_at") or "")) if isinstance(item, dict) else ("", "")
+        if not re.fullmatch(r"[0-9a-f]{32}", uid) or not when:
             continue
-        conn.execute("INSERT OR IGNORE INTO sets (name, description, created_at) VALUES (?, ?, ?)",
-                     (name, str(item.get("description", "")), item.get("created_at") or datetime.now().isoformat(timespec="seconds")))
-        set_id = conn.execute("SELECT id FROM sets WHERE name = ?", (name,)).fetchone()[0]
+        row = conn.execute("SELECT id, updated_at FROM sets WHERE uid = ?", (uid,)).fetchone()
+        if row is not None:
+            if (row["updated_at"] or "") > when:
+                continue
+            conn.execute("DELETE FROM sets WHERE id = ?", (row["id"],))
+            removed += 1
+        known = conn.execute("SELECT deleted_at FROM set_deletions WHERE uid = ?", (uid,)).fetchone()
+        if known is None or known["deleted_at"] < when:
+            conn.execute("INSERT OR REPLACE INTO set_deletions (uid, deleted_at) VALUES (?, ?)", (uid, when))
+    return removed
+
+
+def merge_set_heads(conn, sets: list, update=False) -> int:
+    """Create missing sets and, with update, take a newer name and description; returns how many sets changed."""
+    return sum(1 for _, _, changed in _merge_heads(conn, sets, update) if changed)
+
+
+def _merge_set_heads(conn, sets: list, update=False) -> list:
+    """Return (set record, local set id) for every set that exists here after merging the heads."""
+    return [(item, set_id) for item, set_id, _ in _merge_heads(conn, sets, update)]
+
+
+def _merge_heads(conn, sets: list, update: bool) -> list:
+    """Match sets by id (or by name when this library has not seen the id), create the missing, rename the older."""
+    gone = {row[0]: row[1] for row in conn.execute("SELECT uid, deleted_at FROM set_deletions")}
+    merged = []
+    for item in sets:
+        if not isinstance(item, dict):
+            continue
+        name = " ".join(str(item.get("name", "")).split())[:100]
+        uid = str(item.get("uid") or "")
+        uid = uid if re.fullmatch(r"[0-9a-f]{32}", uid) else ""
+        created = str(item.get("created_at") or datetime.now().isoformat(timespec="seconds"))
+        stamp = str(item.get("updated_at") or created)
+        if not name or (uid and uid in gone and stamp <= gone[uid]):
+            continue
+        row = conn.execute("SELECT id, uid, updated_at FROM sets WHERE uid = ?", (uid,)).fetchone() if uid else None
+        if row is None:
+            row = conn.execute("SELECT id, uid, updated_at FROM sets WHERE name = ?", (name,)).fetchone()
+            if row is not None and uid:
+                conn.execute("UPDATE sets SET uid = ? WHERE id = ?", (uid, row["id"]))
+        changed = False
+        if row is None:
+            fields = (uid or storage.new_uid(), name, str(item.get("description", "")), created, stamp)
+            set_id = conn.execute("INSERT INTO sets (uid, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", fields).lastrowid
+            conn.execute("DELETE FROM set_deletions WHERE uid = ?", (fields[0],))
+            changed = True
+        else:
+            set_id = row["id"]
+            if update and stamp > (row["updated_at"] or ""):
+                taken = conn.execute("SELECT 1 FROM sets WHERE name = ? AND id != ?", (name, set_id)).fetchone()
+                if taken is None:
+                    conn.execute("UPDATE sets SET name = ? WHERE id = ?", (name, set_id))
+                conn.execute("UPDATE sets SET description = ?, updated_at = ? WHERE id = ?", (str(item.get("description", "")), stamp, set_id))
+                changed = True
+        merged.append((item, set_id, changed))
+    return merged
+
+
+def _place_in_sets(conn, placed_sets: list, local: dict) -> int:
+    """Place the matching entries in each merged set; returns how many sets were touched."""
+    for item, set_id in placed_sets:
         for placed in item.get("entries", []):
             entry_id = local.get(placed.get("uid"))
             if entry_id is not None:
                 conn.execute("INSERT OR IGNORE INTO set_entries (set_id, entry_id, placed_at) VALUES (?, ?, ?)",
                              (set_id, entry_id, placed.get("placed_at") or datetime.now().isoformat(timespec="seconds")))
-        touched += 1
-    return touched
+    return len(placed_sets)
 
 
 def _merge_followed(conn, followed: list) -> None:

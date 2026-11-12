@@ -133,7 +133,9 @@ def _handler_for(share):
                 return
             conn = db.connect()
             try:
-                manifest = {"format": transfer.FORMAT, "schema": db.schema_version(conn), "entries": transfer.list_keys(conn)}
+                manifest = {"format": transfer.FORMAT, "schema": db.schema_version(conn), "entries": transfer.list_keys(conn),
+                            "deleted": transfer.list_deletions(conn), "sets": transfer.list_set_heads(conn),
+                            "deleted_sets": transfer.list_set_deletions(conn)}
             finally:
                 conn.close()
             self._reply(200, json.dumps(manifest).encode())
@@ -216,7 +218,8 @@ def _request(opener, url: str, headers: dict, body: bytes | None = None, denied:
 def pull(conn, base: str, sign, denied: str = "Wrong code.", update=False) -> dict:
     """Download the entries this library lacks from the server at base and merge them in; sign(method, path) gives the request headers.
 
-    With update, entries edited more recently there also bring their fields, tags and sets here.
+    With update, entries edited more recently there also bring their fields, tags and sets here, and entries deleted
+    there (and not edited here since) are deleted here too; entries deleted here stay deleted unless edited there since.
     """
     opener = urllib.request.build_opener(_NoRedirect)
     with _request(opener, f"{base}/manifest", sign("GET", "/manifest"), denied=denied) as reply:
@@ -227,6 +230,12 @@ def pull(conn, base: str, sign, denied: str = "Wrong code.", update=False) -> di
             raise LanError("That machine did not send a library.") from err
     if int(manifest.get("schema") or 0) > len(db.list_migrations()):
         raise LanError("That library comes from a newer Hyperbridge. Update this copy first.")
+    deleted = transfer.apply_deletions(conn, manifest.get("deleted", [])) if update else 0
+    set_changes = 0
+    if update:
+        set_changes = transfer.apply_set_deletions(conn, manifest.get("deleted_sets", [])) + transfer.merge_set_heads(conn, manifest.get("sets", []), True)
+    gone = {row[0]: row[1] for row in conn.execute("SELECT uid, deleted_at FROM entry_deletions")} if update else {}
+    remote = [item for item in remote if not (item.get("uid") in gone and str(item.get("updated_at") or "") <= gone[item["uid"]])]
     uids = {row[0]: row[1] or "" for row in conn.execute("SELECT uid, updated_at FROM entries")}
     keys = {row[0] for row in conn.execute("SELECT source_key FROM entries WHERE source_key IS NOT NULL")}
     missing = [item["uid"] for item in remote
@@ -234,7 +243,7 @@ def pull(conn, base: str, sign, denied: str = "Wrong code.", update=False) -> di
     newer = [item["uid"] for item in remote
              if update and item.get("uid") in uids and str(item.get("updated_at") or "") > uids[item["uid"]]]
     wanted = missing + newer
-    totals = {"added": 0, "skipped": len(remote) - len(wanted), "updated": 0, "sets": 0}
+    totals = {"added": 0, "skipped": len(remote) - len(wanted), "updated": 0, "deleted": deleted, "sets": set_changes}
     for start in range(0, len(wanted), BATCH):
         batch = json.dumps({"uids": wanted[start:start + BATCH]}).encode()
         with tempfile.TemporaryDirectory() as folder:
