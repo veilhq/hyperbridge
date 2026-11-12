@@ -1,6 +1,7 @@
 """Link capture: normalize and queue URLs, extract page metadata, store images and thumbnails."""
 
 import hashlib
+import html
 import io
 import json
 import re
@@ -236,6 +237,16 @@ def _post_media(text, lead_url) -> list:
     return []
 
 
+_EMBED_IMAGE = re.compile(r'<img[^>]*class="[^"]*EmbeddedMediaImage[^"]*"[^>]*\ssrc="([^"]+)"')
+
+
+def _embed_image(text: str) -> list:
+    """Return the full-size image the embed page shows when it carries no post data (the og:image is a square crop)."""
+    match = _EMBED_IMAGE.search(text)
+    url = html.unescape(match.group(1)) if match else ""
+    return [url] if url.startswith("http") else []
+
+
 _INSTAGRAM_POST = re.compile(r"^/(?:[^/]+/)?((?:p|reel|tv)/[A-Za-z0-9_-]+)")
 
 
@@ -254,13 +265,11 @@ def instagram_media(embed_bytes) -> list:
     text = _decode(bytes(embed_bytes[:MAX_HTML_BYTES]))
     marker = '"contextJSON":'
     start = text.find(marker)
-    if start < 0:
-        return []
     try:
         literal, _ = json.JSONDecoder().raw_decode(text[start + len(marker):])
         media = json.loads(literal)["gql_data"]["shortcode_media"]
     except (ValueError, KeyError, TypeError):
-        return []
+        return _embed_image(text)
     edges = (media.get("edge_sidecar_to_children") or {}).get("edges") or []
     nodes = [edge.get("node") or {} for edge in edges] or [media]
     urls = [node.get("display_url") for node in nodes]
@@ -273,6 +282,42 @@ def _image_key(url: str) -> str:
     if (parts.hostname or "").endswith("pinimg.com"):
         return "pinimg:" + parts.path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
     return url
+
+
+_PIN_SIZE = re.compile(r"^/(?:\d+x(?:\d+)?)/")
+_WORDPRESS_SIZE = re.compile(r"-\d{2,4}x\d{2,4}(\.[A-Za-z0-9]+)$")
+_SHOPIFY_SIZE = re.compile(r"_(?:pico|icon|thumb|small|compact|medium|large|grande|\d+x\d*)(\.[A-Za-z0-9]+)$")
+
+
+def full_size_urls(url: str) -> list:
+    """Return URLs likely to serve a larger copy of the same image than url, best first (the host may refuse them)."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    found = []
+    if host.endswith("pinimg.com") and _PIN_SIZE.match(parts.path):
+        found.append(parts._replace(path=_PIN_SIZE.sub("/originals/", parts.path)).geturl())
+    elif host == "pbs.twimg.com" and parts.path.startswith("/media/"):
+        query = [pair for pair in parts.query.split("&") if pair and not pair.startswith("name=")]
+        found.append(parts._replace(path=parts.path.split(":")[0], query="&".join(query + ["name=orig"])).geturl())
+    elif host.endswith("media.tumblr.com") and re.search(r"/s\d+x\d+/", parts.path):
+        found.append(parts._replace(path=re.sub(r"/s\d+x\d+/", "/s2048x3072/", parts.path)).geturl())
+    elif host == "cdn.shopify.com" and _SHOPIFY_SIZE.search(parts.path):
+        found.append(parts._replace(path=_SHOPIFY_SIZE.sub(r"\1", parts.path), query="").geturl())
+    elif "/wp-content/uploads/" in parts.path and _WORDPRESS_SIZE.search(parts.path):
+        found.append(parts._replace(path=_WORDPRESS_SIZE.sub(r"\1", parts.path), query="").geturl())
+    return [item for item in found if item != url]
+
+
+def _fetch_full_size(fetcher, url: str, first=None):
+    """Fetch the largest copy of an image: try the full-size URLs, then url itself (first, if already fetched)."""
+    for candidate in full_size_urls(url):
+        try:
+            response = fetcher(candidate)
+            if _is_image(response):
+                return response
+        except Exception:  # noqa: BLE001 - the host may not serve that size; the listed URL still applies
+            continue
+    return first if first is not None else fetcher(url)
 
 
 def shorten_title(title: str) -> str:
@@ -559,6 +604,7 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
     url = entry["source_key"] or entry["source_url"]
     response = fetcher(url)
     if _is_image(response):
+        response = _fetch_full_size(fetcher, url, response)
         name = unquote(urlsplit(response.final_url or url).path.rsplit("/", 1)[-1])
         _apply_metadata(conn, entry, {"title": readable_name(name)}, _timestamp())
         _store_image(conn, entry, response.body)
@@ -579,7 +625,7 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
     fetched = set()
     for image_url in values["image_urls"]:
         try:
-            image = fetcher(image_url)
+            image = _fetch_full_size(fetcher, image_url)
             if not _is_image(image):
                 raise CaptureError("Preview image URL did not return an image")
             digest = hashlib.sha256(image.body).hexdigest()

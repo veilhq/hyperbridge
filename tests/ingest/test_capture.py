@@ -533,6 +533,41 @@ class InstagramTests(unittest.TestCase):
         self.assertEqual(capture.instagram_media(b"<html></html>"), [])
         self.assertEqual(capture.instagram_media(b'{"contextJSON":"not json"}'), [])
 
+    def test_media_falls_back_to_the_embed_page_image_when_post_data_is_null(self):
+        page = (b'<img class="EmbeddedMediaImage" alt="post" src="https://cdn.example/full.jpg?a=1&amp;b=2">'
+                b'<script>{"contextJSON":null}</script>')
+        self.assertEqual(capture.instagram_media(page), ["https://cdn.example/full.jpg?a=1&b=2"])
+
+
+class FullSizeTests(LibraryCase):
+    def test_known_hosts_map_to_their_full_size_url(self):
+        cases = {
+            "https://i.pinimg.com/736x/ab/cd/ef.jpg": "https://i.pinimg.com/originals/ab/cd/ef.jpg",
+            "https://pbs.twimg.com/media/AAA?format=webp&name=large": "https://pbs.twimg.com/media/AAA?format=webp&name=orig",
+            "https://64.media.tumblr.com/h/h-1/s1280x1920/h.jpg": "https://64.media.tumblr.com/h/h-1/s2048x3072/h.jpg",
+            "https://cdn.shopify.com/s/files/1/a_grande.jpg?v=3": "https://cdn.shopify.com/s/files/1/a.jpg",
+            "https://site.example/wp-content/uploads/2020/01/pic-300x200.jpg": "https://site.example/wp-content/uploads/2020/01/pic.jpg",
+        }
+        for small, full in cases.items():
+            self.assertEqual(capture.full_size_urls(small), [full], small)
+        self.assertEqual(capture.full_size_urls("https://example.com/cover.png"), [])
+        self.assertEqual(capture.full_size_urls("https://i.pinimg.com/originals/ab/cd/ef.jpg"), [])
+
+    def test_capture_stores_the_full_size_copy_and_falls_back_when_it_is_missing(self):
+        small, full = "https://i.pinimg.com/736x/ab/cd/ef.jpg", "https://i.pinimg.com/originals/ab/cd/ef.jpg"
+        page = b'<meta property="og:image" content="%s">' % small.encode()
+        for served, expected in ((reply(full, png_bytes(2000, 1000), "image/png"), 2000), (RuntimeError("404"), 400)):
+            conn_entry = capture.add_link(self.conn, "https://example.com/pin%d" % expected)
+            job = self.conn.execute("SELECT id FROM jobs WHERE entry_id = ?", (conn_entry["entry_id"],)).fetchone()
+            fetcher = FakeFetcher({
+                "https://example.com/pin%d" % expected: reply("https://example.com/pin%d" % expected, page, "text/html"),
+                small: reply(small, png_bytes(400, 200), "image/png"), full: served,
+            })
+            capture.run_capture(self.conn, job["id"], fetcher)
+            row = self.conn.execute("SELECT width FROM assets WHERE entry_id = ? AND kind = 'original'",
+                                    (conn_entry["entry_id"],)).fetchone()
+            self.assertEqual(row["width"], expected)
+
 
 class MultiImageTests(unittest.TestCase):
     def test_collects_every_image_meta_and_jsonld_in_order_without_duplicates(self):
