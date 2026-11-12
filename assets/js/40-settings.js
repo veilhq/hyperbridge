@@ -209,6 +209,13 @@
     });
   }
 
+  var MACHINE_ICONS = {
+    laptop: '<path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/>',
+    desktop: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>'
+  };
+  MACHINE_ICONS.computer = MACHINE_ICONS.desktop;
+  var MACHINE_LABELS = { laptop: "Laptop", desktop: "Desktop", computer: "Computer" };
+
   // Lists the machines found on the network and lets the Operator pair, sync or unpair; polls while Settings is open.
   function initSync() {
     var list = $("#sync-list"), info = $("#sync-info"), pairStart = $("#sync-pair-start"), pairStop = $("#sync-pair-stop");
@@ -221,6 +228,15 @@
       var item = document.createElement("div");
       item.className = "settings-source";
       item.setAttribute("data-machine", machine.id);
+      item.classList.add("settings-machine");
+      var kind = MACHINE_ICONS[machine.kind] ? machine.kind : "computer";
+      var icon = document.createElement("span");
+      icon.className = "settings-machine-icon";
+      icon.setAttribute("role", "img");
+      icon.setAttribute("aria-label", MACHINE_LABELS[kind]);
+      icon.setAttribute("data-online", machine.online ? "true" : "false");
+      icon.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + MACHINE_ICONS[kind] + "</svg>";
+      item.appendChild(icon);
       var text = document.createElement("span");
       text.className = "settings-source-text";
       var name = document.createElement("span");

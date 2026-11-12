@@ -6,6 +6,8 @@ import ipaddress
 import json
 import secrets
 import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -29,7 +31,8 @@ DENIED = "That machine does not recognize this one. Pair the two again."
 class PeerStore:
     """This machine's identity and the secrets it shares with paired machines, kept in one small file."""
 
-    def __init__(self, path: Path | None = None, name: str | None = None):
+    def __init__(self, path: Path | None = None, name: str | None = None, kind: str | None = None):
+        self.kind = _kind(kind or detect_kind())
         self.path = Path(path) if path else db.data_dir() / "sync.json"
         self._lock = threading.Lock()
         self._data = self._read()
@@ -69,15 +72,50 @@ class PeerStore:
             peer = self._data["peers"].get(peer_id)
             return peer["secret"] if peer else None
 
-    def add(self, peer_id: str, name: str, secret: str) -> None:
+    def add(self, peer_id: str, name: str, secret: str, kind: str = "computer") -> None:
         with self._lock:
-            self._data["peers"][peer_id] = {"name": name, "secret": secret}
+            self._data["peers"][peer_id] = {"name": name, "secret": secret, "kind": _kind(kind)}
             self._write()
+
+    def set_kind(self, peer_id: str, kind: str) -> None:
+        """Remember what kind of computer a paired machine is, so it still shows while offline."""
+        with self._lock:
+            peer = self._data["peers"].get(peer_id)
+            if peer and peer.get("kind") != _kind(kind):
+                peer["kind"] = _kind(kind)
+                self._write()
 
     def remove(self, peer_id: str) -> None:
         with self._lock:
             self._data["peers"].pop(peer_id, None)
             self._write()
+
+
+def detect_kind() -> str:
+    """Return "laptop" when this computer has a battery, else "desktop"; "computer" when that cannot be told."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Power(ctypes.Structure):
+                _fields_ = [("ac", ctypes.c_ubyte), ("flag", ctypes.c_ubyte), ("percent", ctypes.c_ubyte),
+                            ("saver", ctypes.c_ubyte), ("life", ctypes.c_ulong), ("full", ctypes.c_ulong)]
+            status = Power()
+            if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)) or status.flag == 255:
+                return "computer"
+            return "desktop" if status.flag & 128 else "laptop"
+        if sys.platform.startswith("linux"):
+            return "laptop" if list(Path("/sys/class/power_supply").glob("BAT*")) else "desktop"
+        if sys.platform == "darwin":
+            model = subprocess.run(["sysctl", "-n", "hw.model"], capture_output=True, text=True, timeout=5).stdout
+            return "laptop" if "book" in model.lower() else "desktop"
+    except Exception:  # noqa: BLE001 - an unknown kind only changes the icon
+        pass
+    return "computer"
+
+
+def _kind(value) -> str:
+    return value if value in ("laptop", "desktop") else "computer"
 
 
 def _signature(secret: str, method: str, path: str, stamp: str) -> str:
@@ -88,8 +126,8 @@ class Sync:
     """Always-on while Bridge is open: serves paired machines, announces itself, and lists the others it hears."""
 
     def __init__(self, store_path: Path | None = None, name: str | None = None,
-                 discovery_port: int = DISCOVERY_PORT, broadcast: str = "255.255.255.255"):
-        self.store = PeerStore(store_path, name)
+                 discovery_port: int = DISCOVERY_PORT, broadcast: str = "255.255.255.255", kind: str | None = None):
+        self.store = PeerStore(store_path, name, kind)
         self.discovery_port = discovery_port
         self.broadcast = broadcast
         self.received = 0
@@ -178,9 +216,9 @@ class Sync:
             request._reply(400)
             return True
         secret = secrets.token_hex(32)
-        self.store.add(peer_id, name or "Another machine", secret)
+        self.store.add(peer_id, name or "Another machine", secret, str(body.get("kind") or ""))
         self.stop_pairing()
-        request._reply(200, json.dumps({"id": self.store.id, "name": self.store.name, "secret": secret}).encode())
+        request._reply(200, json.dumps({"id": self.store.id, "name": self.store.name, "kind": self.store.kind, "secret": secret}).encode())
         return True
 
     def _on_pull(self, request) -> bool:
@@ -233,12 +271,12 @@ class Sync:
             raise lan.LanError("That machine is no longer visible. Check that it is open on the same network.")
         host, port = lan._parse_address(machine["address"])
         lan._require_private(host)
-        body = json.dumps({"id": self.store.id, "name": self.store.name}).encode()
+        body = json.dumps({"id": self.store.id, "name": self.store.name, "kind": self.store.kind}).encode()
         opener = urllib.request.build_opener(lan._NoRedirect)
         with lan._request(opener, f"http://{host}:{port}/pair", {"X-Code": str(code or "").strip()}, body) as reply:
             try:
                 answer = json.loads(reply.read(100_000))
-                self.store.add(str(answer["id"]), str(answer["name"])[:100], str(answer["secret"]))
+                self.store.add(str(answer["id"]), str(answer["name"])[:100], str(answer["secret"]), str(answer.get("kind") or ""))
             except (ValueError, KeyError, TypeError) as err:
                 raise lan.LanError("That machine did not complete pairing.") from err
         return {"id": answer["id"], "name": answer["name"]}
@@ -272,7 +310,7 @@ class Sync:
     # ---- discovery ----------------------------------------------------------
     def _beacon(self) -> None:
         while not self._stopped.is_set():
-            payload = json.dumps({"app": APP_TAG, "id": self.store.id, "name": self.store.name,
+            payload = json.dumps({"app": APP_TAG, "id": self.store.id, "name": self.store.name, "kind": self.store.kind,
                                   "port": self.port, "pairing": bool(self.pairing_seconds())}).encode()
             for ip in lan.local_addresses():
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -309,7 +347,9 @@ class Sync:
                     continue
                 with self._lock:
                     self.found[str(info["id"])] = {"name": str(info.get("name") or "")[:100], "address": f"{ip}:{info['port']}",
+                                                   "kind": _kind(info.get("kind")),
                                                    "pairing": bool(info.get("pairing")), "seen": time.monotonic()}
+                self.store.set_kind(str(info["id"]), info.get("kind"))
         finally:
             sock.close()
 
@@ -322,11 +362,11 @@ class Sync:
         for peer_id, peer in self.store.peers().items():
             seen = live.get(peer_id)
             result[peer_id] = {"id": peer_id, "name": peer["name"], "paired": True, "online": bool(seen),
-                               "address": seen["address"] if seen else "", "pairing": False}
+                               "kind": _kind(seen.get("kind") if seen else peer.get("kind")), "address": seen["address"] if seen else "", "pairing": False}
         for peer_id, seen in live.items():
             if peer_id not in result and seen["pairing"]:
                 result[peer_id] = {"id": peer_id, "name": seen["name"], "paired": False, "online": True,
-                                   "address": seen["address"], "pairing": True}
+                                   "kind": _kind(seen.get("kind")), "address": seen["address"], "pairing": True}
         return result
 
     def status(self) -> dict:

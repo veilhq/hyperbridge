@@ -250,6 +250,17 @@ class DiscoveryTests(SyncCase):
         self.home.found["old"] = {"name": "old", "address": "127.0.0.1:1", "pairing": True, "seen": time.monotonic() - sync.SEEN_SECONDS - 1}
         self.assertNotIn("old", self.home.machines())
 
+    def test_machine_kind_is_shared_when_pairing_and_remembered_offline(self):
+        self.there.store.kind = "laptop"
+        self.pair()
+        self.assertEqual(self.home.store.peers()[self.there.store.id]["kind"], "laptop")
+        self.assertEqual(self.home.machines()[self.there.store.id]["kind"], "computer")
+        self.home.found.clear()
+        self.assertEqual(self.home.machines()[self.there.store.id]["kind"], "laptop")
+
+    def test_detected_kind_is_one_of_the_known_kinds(self):
+        self.assertIn(sync.detect_kind(), ("laptop", "desktop", "computer"))
+
     def test_paired_machine_stays_listed_offline(self):
         self.pair()
         self.home.found.clear()
