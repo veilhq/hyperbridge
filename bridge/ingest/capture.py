@@ -250,7 +250,7 @@ def instagram_embed_url(url) -> str:
 
 
 def instagram_media(embed_bytes) -> list:
-    """Return the full-size image URLs of an Instagram post from its embed page, in carousel order."""
+    """Return the full-size image URLs of an Instagram post from its embed page, in carousel order (videos give their poster frame)."""
     text = _decode(bytes(embed_bytes[:MAX_HTML_BYTES]))
     marker = '"contextJSON":'
     start = text.find(marker)
@@ -263,7 +263,7 @@ def instagram_media(embed_bytes) -> list:
         return []
     edges = (media.get("edge_sidecar_to_children") or {}).get("edges") or []
     nodes = [edge.get("node") or {} for edge in edges] or [media]
-    urls = [node.get("display_url") for node in nodes if not node.get("is_video")]
+    urls = [node.get("display_url") for node in nodes]
     return list(dict.fromkeys(url for url in urls if isinstance(url, str) and url.startswith("http")))
 
 
@@ -727,6 +727,9 @@ def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
         error = f"{type(exc).__name__}: {exc}"[:500]
     stamp = _timestamp()
     entry_state, job_state = ("failed", "failed") if error else ("captured", "done")
+    if not error and job["entry_id"] is not None:
+        from bridge.ingest import enrich
+        enrich.enrich_entry(conn, conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone())
     if job["entry_id"] is not None:
         conn.execute(
             "UPDATE entries SET state = ?, updated_at = ? WHERE id = ?",

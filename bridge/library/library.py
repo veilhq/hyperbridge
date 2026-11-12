@@ -171,6 +171,82 @@ def add_tags(entry_ids, raw_tags) -> int:
     return len(ids)
 
 
+def _retag(conn, entry_ids) -> None:
+    """Stamp entries whose tags just changed so a sync carries the change, and mark their tags as hand-managed."""
+    now = _now()
+    for entry_id in entry_ids:
+        row = conn.execute("SELECT manual_fields FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        manual = _manual(row["manual_fields"])
+        if "tags" not in manual:
+            manual.append("tags")
+        conn.execute("UPDATE entries SET manual_fields = ?, updated_at = ? WHERE id = ?", (json.dumps(manual), now, entry_id))
+
+
+def _tag_entries(conn, tag_id) -> list[int]:
+    """Return the ids of the entries carrying a tag."""
+    return [row[0] for row in conn.execute("SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,))]
+
+
+def rename_tag(old: str, new: str) -> dict:
+    """Rename a tag everywhere; when the new name is another existing tag the two merge into it."""
+    names = parse_tags([new])
+    if not names:
+        return {"ok": False, "error": "Enter a tag name."}
+    name = names[0]
+    conn = db.connect()
+    try:
+        source = conn.execute("SELECT id, name FROM tags WHERE name = ?", (str(old),)).fetchone()
+        if source is None:
+            return {"ok": False, "error": "That tag no longer exists."}
+        target = conn.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()
+        entry_ids = _tag_entries(conn, source["id"])
+        merged = target is not None and target["id"] != source["id"]
+        if merged:
+            conn.execute(
+                "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT entry_id, ? FROM entry_tags WHERE tag_id = ?",
+                (target["id"], source["id"]))
+            conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (source["id"],))
+            conn.execute("DELETE FROM tags WHERE id = ?", (source["id"],))
+        elif source["name"] != name:
+            conn.execute("UPDATE tags SET name = ? WHERE id = ?", (name, source["id"]))
+        _retag(conn, entry_ids)
+    finally:
+        conn.close()
+    return {"ok": True, "merged": merged, "count": len(entry_ids)}
+
+
+def delete_tag(name: str) -> int:
+    """Remove a tag from every entry and return how many entries had it."""
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT id FROM tags WHERE name = ?", (str(name),)).fetchone()
+        if row is None:
+            return 0
+        entry_ids = _tag_entries(conn, row["id"])
+        conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (row["id"],))
+        conn.execute("DELETE FROM tags WHERE id = ?", (row["id"],))
+        _retag(conn, entry_ids)
+    finally:
+        conn.close()
+    return len(entry_ids)
+
+
+def delete_single_use_tags() -> int:
+    """Remove every tag that only one entry carries and return how many tags went."""
+    conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT tag_id FROM entry_tags GROUP BY tag_id HAVING COUNT(*) = 1").fetchall()
+        for row in rows:
+            entry_ids = _tag_entries(conn, row["tag_id"])
+            conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (row["tag_id"],))
+            conn.execute("DELETE FROM tags WHERE id = ?", (row["tag_id"],))
+            _retag(conn, entry_ids)
+    finally:
+        conn.close()
+    return len(rows)
+
+
 def update_entry(entry_id: int, fields: dict) -> dict | None:
     """Save edited fields, mark changed ones manual, and lift a failed entry to captured."""
     conn = db.connect()
@@ -194,6 +270,8 @@ def update_entry(entry_id: int, fields: dict) -> dict | None:
                 "SELECT t.name FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE et.entry_id = ?", (entry_id,))}
             wanted = parse_tags(fields["tags"])
             tags_changed = before != set(wanted)
+            if tags_changed and "tags" not in manual:
+                manual.append("tags")
             _set_tags(conn, entry_id, wanted)
         state = "captured" if row["state"] == "failed" else row["state"]
         if changes or tags_changed or state != row["state"]:

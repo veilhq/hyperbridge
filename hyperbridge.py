@@ -45,6 +45,7 @@ HTML = with_notice(HTML, _build_notice)
 from bridge.ingest import arena  # noqa: E402
 from bridge.ingest import capture  # noqa: E402
 from bridge.ingest import discover  # noqa: E402
+from bridge.ingest import enrich  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import feed_sources  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
@@ -350,6 +351,30 @@ class HyperbridgeAPI:
             return library.add_tags(list(entry_ids or [])[:_MAX_BULK], tags)
         except Exception as err:
             logger.warning("add_tags failed: %s", err)
+            return 0
+
+    def rename_tag(self, old: str, new: str) -> dict:
+        """Rename a tag everywhere, merging it into another tag when the new name already exists."""
+        try:
+            return library.rename_tag(old, new)
+        except Exception as err:
+            logger.warning("rename_tag failed: %s", err)
+            return {"ok": False, "error": "Could not rename the tag."}
+
+    def delete_tag(self, name: str) -> int:
+        """Remove a tag from every entry and return how many entries had it."""
+        try:
+            return library.delete_tag(name)
+        except Exception as err:
+            logger.warning("delete_tag failed: %s", err)
+            return 0
+
+    def delete_single_use_tags(self) -> int:
+        """Remove every tag only one entry carries and return how many tags were removed."""
+        try:
+            return library.delete_single_use_tags()
+        except Exception as err:
+            logger.warning("delete_single_use_tags failed: %s", err)
             return 0
 
     def list_sets(self) -> list:
@@ -680,6 +705,7 @@ def _backfill_swatches():
         capture.fix_image_types(conn)
         capture.fix_domains(conn)
         capture.fix_file_name_titles(conn)
+        enrich.backfill(conn)
         swatches.backfill(conn)
         capture.refresh_animated_thumbnails(conn)
     except Exception:  # noqa: BLE001 - a failed backfill only leaves entries ungrouped
@@ -701,6 +727,7 @@ def _backfill_origins():
                 step()
             except Exception:  # noqa: BLE001 - a failed backfill is retried at the next start
                 logger.exception("%s backfill failed", name)
+        enrich.backfill(conn)
     finally:
         conn.close()
 

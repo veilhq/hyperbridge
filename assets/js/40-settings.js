@@ -6,6 +6,10 @@
   var sources = [];
   var view, list, library, opener, followList, followInput, followError;
   var followed = [];
+  var FOLLOW_PAGE = 48;
+  var KIND_LABELS = { channel: "Channels", user: "Users", pinterest: "Boards", tumblr: "Blogs" };
+  var followKind = "";
+  var followShown = FOLLOW_PAGE;
 
   function api() { return window.pywebview && window.pywebview.api; }
 
@@ -42,9 +46,48 @@
     followError.hidden = !message;
   }
 
+  function kindOf(item) { return KIND_LABELS[item.kind] ? item.kind : "channel"; }
+
+  // Returns the followed sources matching the type chips and filter box, grouped by type then label.
+  function visibleFollowed() {
+    var needle = $("#follow-filter").value.trim().toLowerCase();
+    return followed.filter(function (item) {
+      if (followKind && kindOf(item) !== followKind) return false;
+      return !needle || (item.label || "").toLowerCase().indexOf(needle) !== -1 || (item.url || "").toLowerCase().indexOf(needle) !== -1;
+    }).sort(function (a, b) {
+      var order = Object.keys(KIND_LABELS);
+      return order.indexOf(kindOf(a)) - order.indexOf(kindOf(b)) || (a.label || a.url).toLowerCase().localeCompare((b.label || b.url).toLowerCase());
+    });
+  }
+
+  // Paints the type chips with counts; hidden until a second type exists.
+  function renderFollowKinds() {
+    var box = $("#follow-kinds");
+    box.textContent = "";
+    var counts = {};
+    followed.forEach(function (item) { counts[kindOf(item)] = (counts[kindOf(item)] || 0) + 1; });
+    var kinds = Object.keys(KIND_LABELS).filter(function (kind) { return counts[kind]; });
+    if (followKind && !counts[followKind]) followKind = "";
+    [["", "All", followed.length]].concat(kinds.map(function (kind) { return [kind, KIND_LABELS[kind], counts[kind]]; })).forEach(function (entry) {
+      var chip = makeEl("button", "nav-tab", entry[1] + " " + entry[2]);
+      chip.type = "button";
+      chip.setAttribute("aria-pressed", entry[0] === followKind ? "true" : "false");
+      chip.classList.toggle("nav-tab-active", entry[0] === followKind);
+      chip.addEventListener("click", function () { followKind = entry[0]; followShown = FOLLOW_PAGE; renderFollowed(); });
+      box.appendChild(chip);
+    });
+  }
+
   function renderFollowed() {
     followList.textContent = "";
-    followed.forEach(function (item) {
+    $("#follow-tools").hidden = followed.length < 2;
+    renderFollowKinds();
+    var found = visibleFollowed();
+    var more = $("#follow-more");
+    more.hidden = found.length <= followShown;
+    more.textContent = "Show more (" + (found.length - followShown) + " left)";
+    if (followed.length && !found.length) followList.appendChild(makeEl("span", "settings-source-desc", "No followed sources match."));
+    found.slice(0, followShown).forEach(function (item) {
       var row = makeEl("div", "settings-source");
       var text = makeEl("span", "settings-source-text");
       text.appendChild(makeEl("span", "settings-source-name", item.label || item.url));
@@ -325,6 +368,37 @@
 
   function isOpen() { return library.hasAttribute("data-settings"); }
 
+  // Shows one settings section at a time, remembers the choice, and moves between tabs with the arrow keys.
+  function initTabs() {
+    var tabs = Array.prototype.slice.call(view.querySelectorAll(".settings-tab"));
+    if (!tabs.length) return;
+    function show(name, focus) {
+      var known = tabs.some(function (tab) { return tab.getAttribute("data-tab") === name; });
+      if (!known) name = tabs[0].getAttribute("data-tab");
+      tabs.forEach(function (tab) {
+        var on = tab.getAttribute("data-tab") === name;
+        tab.classList.toggle("nav-tab-active", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+        tab.tabIndex = on ? 0 : -1;
+        $("#settings-tab-" + tab.getAttribute("data-tab")).hidden = !on;
+        if (on && focus) tab.focus();
+      });
+      try { localStorage.setItem("hyperbridge-settings-tab", name); } catch (err) { /* ignore */ }
+    }
+    tabs.forEach(function (tab, index) {
+      tab.addEventListener("click", function () { show(tab.getAttribute("data-tab")); });
+      tab.addEventListener("keydown", function (event) {
+        var step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+        if (!step) return;
+        event.preventDefault();
+        show(tabs[(index + step + tabs.length) % tabs.length].getAttribute("data-tab"), true);
+      });
+    });
+    var saved = "";
+    try { saved = localStorage.getItem("hyperbridge-settings-tab") || ""; } catch (err) { saved = ""; }
+    show(saved);
+  }
+
   function setOpen(open) {
     if (open === isOpen()) return;
     if (open) library.setAttribute("data-settings", "true");
@@ -340,8 +414,11 @@
     view = $("#settings-view");
     if (!view) return;
     list = $("#settings-list");
+    initTabs();
     followList = $("#follow-list");
     followInput = $("#follow-input");
+    $("#follow-filter").addEventListener("input", function () { followShown = FOLLOW_PAGE; renderFollowed(); });
+    $("#follow-more").addEventListener("click", function () { followShown += FOLLOW_PAGE; renderFollowed(); });
     followError = $("#follow-error");
     $("#follow-form").addEventListener("submit", follow);
     followInput.addEventListener("input", function () { showFollowError(""); });

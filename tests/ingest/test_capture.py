@@ -518,7 +518,7 @@ class InstagramTests(unittest.TestCase):
         self.assertEqual(capture.instagram_embed_url("https://instagram.com/user/"), "")
         self.assertEqual(capture.instagram_embed_url("https://example.com/p/ABC/"), "")
 
-    def test_media_lists_carousel_images_in_order_and_skips_video(self):
+    def test_media_lists_carousel_images_in_order_with_video_poster_frames(self):
         nodes = [
             {"display_url": "https://cdn.example/1.jpg", "is_video": False},
             {"display_url": "https://cdn.example/2.jpg", "is_video": True},
@@ -526,7 +526,7 @@ class InstagramTests(unittest.TestCase):
         ]
         self.assertEqual(
             capture.instagram_media(self._embed(nodes)),
-            ["https://cdn.example/1.jpg", "https://cdn.example/3.jpg"],
+            ["https://cdn.example/1.jpg", "https://cdn.example/2.jpg", "https://cdn.example/3.jpg"],
         )
 
     def test_media_is_empty_without_embedded_data(self):

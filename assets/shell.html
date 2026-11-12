@@ -43,6 +43,12 @@
           <p class="set-head-desc">Where discovery pulls from, which sources you follow, and how your library moves between machines.</p>
           <button class="action-button action-button-ghost" id="settings-close" type="button">Done</button>
         </header>
+        <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+          <button class="nav-tab settings-tab" id="settings-tabbtn-sources" type="button" role="tab" data-tab="sources" aria-controls="settings-tab-sources">Sources</button>
+          <button class="nav-tab settings-tab" id="settings-tabbtn-tags" type="button" role="tab" data-tab="tags" aria-controls="settings-tab-tags">Tags</button>
+          <button class="nav-tab settings-tab" id="settings-tabbtn-library" type="button" role="tab" data-tab="library" aria-controls="settings-tab-library">Library</button>
+        </nav>
+        <div class="settings-tab-panel" id="settings-tab-sources" role="tabpanel" aria-labelledby="settings-tabbtn-sources">
         <section class="settings-panel" aria-labelledby="sources-title">
           <header class="settings-panel-head">
             <h2 class="settings-subhead" id="sources-title">Discovery sources</h2>
@@ -60,8 +66,30 @@
             <button class="action-button action-button-ghost" id="follow-add" type="submit">Follow</button>
           </form>
           <span class="settings-follow-error" id="follow-error" role="alert" hidden></span>
-          <div class="settings-followed" id="follow-list"></div>
+          <div class="settings-follow-tools" id="follow-tools" hidden>
+            <input class="form-input" id="follow-filter" placeholder="Filter followed sources" maxlength="100" aria-label="Filter followed sources" autocomplete="off">
+            <div class="settings-follow-kinds" id="follow-kinds" role="group" aria-label="Source type"></div>
+          </div>
+          <div class="settings-followed settings-followed-grid" id="follow-list"></div>
+          <button class="action-button action-button-ghost" id="follow-more" type="button" hidden></button>
         </section>
+        </div>
+        <div class="settings-tab-panel" id="settings-tab-tags" role="tabpanel" aria-labelledby="settings-tabbtn-tags" hidden>
+        <section class="settings-panel" aria-labelledby="tags-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="tags-title">Tags</h2>
+            <p class="settings-source-desc">Rename, merge or delete tags. A change applies to every entry that carries the tag and reaches your other machines on the next sync. Renaming a tag to the name of another tag merges them.</p>
+          </header>
+          <div class="settings-follow-form">
+            <input class="form-input" id="tags-filter" placeholder="Filter tags" maxlength="40" aria-label="Filter tags" autocomplete="off">
+            <button class="action-button action-button-ghost" id="tags-sort" type="button">Most used</button>
+            <button class="action-button action-button-ghost" id="tags-prune" type="button">Delete single-use</button>
+          </div>
+          <span class="settings-follow-error" id="tags-error" role="alert" hidden></span>
+          <div class="settings-followed settings-tags" id="tags-list"></div>
+        </section>
+        </div>
+        <div class="settings-tab-panel" id="settings-tab-library" role="tabpanel" aria-labelledby="settings-tabbtn-library" hidden>
         <section class="settings-panel" aria-labelledby="transfer-title">
           <header class="settings-panel-head">
             <h2 class="settings-subhead" id="transfer-title">Library</h2>
@@ -112,6 +140,7 @@
             </form>
           </div>
         </section>
+        </div>
       </section>
       <p class="library-filter" id="library-filter" hidden><button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-chip" type="button" data-tooltip="Clear tag filter"></button> <button class="status-chip status-chip-outlined-accent library-filter-chip" id="library-filter-color" type="button" data-tooltip="Clear color filter" hidden></button></p>
       <p class="library-meta" id="library-meta" hidden></p>
