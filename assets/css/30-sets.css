@@ -17,7 +17,6 @@
 .sets-view[hidden] { display: none; }
 .sets-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .sets-search { flex: 0 1 18rem; min-width: 0; box-sizing: border-box; }
-.sets-sort { display: flex; gap: var(--space-1); }
 .sets-tally { margin-left: auto; color: var(--text-dim); }
 .sets-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: var(--space-4); }
 .sets-card-fill { background: linear-gradient(var(--bg-raised), var(--bg)); }

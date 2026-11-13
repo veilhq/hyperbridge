@@ -90,8 +90,8 @@ function renderCards() {
   $("#sets-none").hidden = list.length > 0 || !searching;
   Array.prototype.forEach.call(document.querySelectorAll("#sets-sort [data-sort]"), function (button) {
     var active = button.getAttribute("data-sort") === sortKey;
-    button.classList.toggle("nav-tab-active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
+    if (active) $("#sets-sort").style.setProperty("--segment-index", SORTS.indexOf(sortKey));
   });
   var field = cardsEl.querySelector("form input");
   if (field) {
