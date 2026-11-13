@@ -4,7 +4,7 @@
   var CASCADE_MAX = 12;
   var SEARCH_DEBOUNCE_MS = 250;
 
-  var state = { query: "", tag: "", color: "", setId: null, group: "", order: "color", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false };
+  var state = { query: "", tag: "", color: "", setId: null, group: "", order: "color", years: [], entries: [], total: 0, loading: false, ticket: 0, signature: "", pendingIds: {}, cascade: false, refreshQueued: false };
   var grid, emptyEl, sentinel, searchInput, urlInput, submitBtn, errorEl;
   var setsCache = [];
   var tagsCache = [];

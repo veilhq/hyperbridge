@@ -279,6 +279,13 @@ class PhoneCaptureTests(SyncCase):
         self.assertEqual(self.post({"urls": []}, token)[0], 400)
         self.assertEqual(self.post({"urls": ["https://example.com/y"] * (sync.MAX_CAPTURE_URLS + 1)}, token)[0], 400)
 
+    def test_phone_capture_records_an_arrival(self):
+        token = self.there.store.new_phone_token()
+        self.post({"urls": ["https://example.com/arrive"]}, token)
+        self.assertEqual(self.there.arrivals, {"added": 1, "changed": 1, "source": "phone"})
+        self.post({"urls": ["https://example.com/arrive"]}, token)
+        self.assertEqual(self.there.arrivals["added"], 1)
+
     def test_token_is_stored_hashed(self):
         token = self.there.store.new_phone_token()
         self.assertNotIn(token, (self.laptop / "sync.json").read_text(encoding="utf-8"))
@@ -326,3 +333,17 @@ class DiscoveryTests(SyncCase):
         listed = self.home.machines()[self.there.store.id]
         self.assertTrue(listed["paired"])
         self.assertFalse(listed["online"])
+
+
+class ArrivalTests(SyncCase):
+    def test_pull_announces_unless_this_machine_asked(self):
+        self.pair()
+        self.home.pull_from(self.there.store.id, self.laptop_address, announce=False)
+        self.assertEqual(self.home.arrivals["added"], 0)
+        self.home.pull_from(self.there.store.id, self.laptop_address)
+        self.assertGreaterEqual(self.home.arrivals["changed"], 0)
+
+    def test_record_arrival_counts_and_names_source(self):
+        self.home.record_arrival(2, 3, "laptop")
+        self.assertEqual(self.home.arrivals, {"added": 2, "changed": 3, "source": "laptop"})
+

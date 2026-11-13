@@ -321,7 +321,28 @@
     }
 
     var phoneInfo = $("#phone-info"), phoneCreate = $("#phone-create"), phoneOff = $("#phone-off");
-    var phoneToken = "";
+    var phoneCopyToken = $("#phone-copy-token"), phoneCopyAddress = $("#phone-copy-address");
+    var phoneToken = "", phoneAddress = "";
+
+    // Copies text to the clipboard, falling back to a hidden field where the clipboard API is unavailable.
+    function copyText(text, label) {
+      function done() { toast("success", label + " copied."); }
+      function fallback() {
+        var field = document.createElement("textarea");
+        field.value = text;
+        field.setAttribute("readonly", "");
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        document.body.appendChild(field);
+        field.select();
+        var ok = false;
+        try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+        document.body.removeChild(field);
+        if (ok) done(); else toast("error", "Could not copy.");
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+      else fallback();
+    }
 
     // Shows the phone capture state: the address to send links to, and the token once after it is created.
     function paintPhone(phone) {
@@ -329,8 +350,11 @@
       phoneCreate.textContent = enabled ? "New token" : "Create phone token";
       phoneOff.hidden = !enabled;
       phoneInfo.hidden = !enabled;
-      if (!enabled) { phoneToken = ""; phoneInfo.textContent = ""; return; }
+      phoneCopyToken.hidden = !(enabled && phoneToken);
+      phoneCopyAddress.hidden = !enabled;
+      if (!enabled) { phoneToken = ""; phoneAddress = ""; phoneInfo.textContent = ""; return; }
       var urls = phone.addresses.map(function (address) { return "http://" + address + ":" + phone.port + "/capture"; });
+      phoneAddress = urls[0] || "";
       phoneInfo.textContent = "Send to " + urls.join(" or ") + (phoneToken ? ". Token: " + phoneToken + " (shown once; header X-Token)." : ". The token is set; make a new one to see it again.");
     }
 
@@ -375,6 +399,8 @@
         poll();
       });
     });
+    phoneCopyToken.addEventListener("click", function () { if (phoneToken) copyText(phoneToken, "Token"); });
+    phoneCopyAddress.addEventListener("click", function () { if (phoneAddress) copyText(phoneAddress, "Address"); });
     phoneOff.addEventListener("click", function () {
       var bridge = api();
       if (bridge && bridge.clear_phone_token) Promise.resolve(bridge.clear_phone_token()).then(function () { phoneToken = ""; poll(); });
@@ -399,6 +425,21 @@
     if (overlay) overlay.hidden = !(syncOverlay.local || syncOverlay.remote);
   }
 
+  // Announces links that arrived from a phone or another machine; the first reading only sets the baseline.
+  var seenArrivals = null;
+  function showArrivals(arrivals) {
+    if (!arrivals) return;
+    var previous = seenArrivals;
+    seenArrivals = { added: arrivals.added, changed: arrivals.changed };
+    if (!previous) return;
+    if (arrivals.changed > previous.changed) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+    var added = arrivals.added - previous.added;
+    if (added > 0) {
+      var from = arrivals.source === "phone" ? "your phone" : arrivals.source || "another machine";
+      toast("success", (added === 1 ? "1 new entry" : added + " new entries") + " from " + from + ".");
+    }
+  }
+
   function watchSyncActivity() {
     setInterval(function () {
       var bridge = api();
@@ -406,6 +447,7 @@
       Promise.resolve(bridge.sync_busy()).then(function (state) {
         syncOverlay.remote = !!(state && state.syncing);
         paintSyncOverlay();
+        showArrivals(state && state.arrivals);
       }).catch(function () {});
     }, 1500);
   }

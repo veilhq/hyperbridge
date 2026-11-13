@@ -202,7 +202,8 @@
   // Re-reads everything loaded so far so pending entries pick up their new state; thumbnails already held are not sent again.
   function refresh() {
     var bridge = api();
-    if (!bridge || !bridge.list_entries || state.loading || candidates) return;
+    if (!bridge || !bridge.list_entries || candidates) return;
+    if (state.loading) { state.refreshQueued = true; return; }
     var ticket = ++state.ticket;
     var limit = Math.min(Math.max(state.entries.length, PAGE_SIZE), MAX_REFRESH);
     var tail = state.entries.slice(limit);
@@ -220,6 +221,7 @@
       render();
     }).catch(function () {}).then(function () {
       if (ticket === state.ticket) state.loading = false;
+      if (state.refreshQueued && !state.loading) { state.refreshQueued = false; refresh(); }
     });
   }
 

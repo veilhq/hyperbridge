@@ -174,6 +174,7 @@ class Sync:
         self._stopped = threading.Event()
         self.token_failures = 0
         self.token_locked_until = 0.0
+        self.arrivals = {"added": 0, "changed": 0, "source": ""}
         try:
             self.server = ThreadingHTTPServer(("0.0.0.0", port), lan._handler_for(self))
         except OSError:
@@ -288,6 +289,8 @@ class Sync:
             conn.close()
         added = sum(1 for item in results if item["status"] == "new")
         self.received += added
+        if added:
+            self.record_arrival(added, added, "phone")
         request._reply(200, json.dumps({"results": results, "added": added}).encode())
         return True
 
@@ -344,8 +347,16 @@ class Sync:
             return {"X-Peer": self.store.id, "X-Time": stamp, "X-Sig": _signature(secret, method, path, stamp)}
         return sign
 
-    def pull_from(self, peer_id: str, address: str) -> dict:
-        """Merge the entries a paired machine has that this library lacks, and the edits and deletions it made more recently; the count is added to received when anything arrived."""
+    def record_arrival(self, added: int, changed: int, source: str) -> None:
+        """Note entries that reached this library from elsewhere, so the open window can refresh and announce them."""
+        with self._lock:
+            self.arrivals["added"] += added
+            self.arrivals["changed"] += max(changed, added)
+            if added:
+                self.arrivals["source"] = source
+
+    def pull_from(self, peer_id: str, address: str, announce: bool = True) -> dict:
+        """Merge the entries a paired machine has that this library lacks, and the edits and deletions it made more recently; the count is added to received when anything arrived, and announced unless this machine asked for the sync."""
         host, port = lan._parse_address(address)
         lan._require_private(host)
         conn = db.connect()
@@ -354,6 +365,10 @@ class Sync:
         finally:
             conn.close()
         self.received += result["added"]
+        if announce:
+            peer = self.store.peers().get(peer_id) or {}
+            changes = result["added"] + result.get("updated", 0) + result.get("deleted", 0) + result.get("sets", 0)
+            self.record_arrival(result["added"], changes, peer.get("name") or "another machine")
         return result
 
     def pair(self, machine_id: str, code: str) -> dict:
@@ -386,7 +401,7 @@ class Sync:
         machine = self.machines().get(machine_id)
         if not machine or not machine["paired"]:
             raise lan.LanError("That machine is not visible right now. Check that it is open on the same network.")
-        pulled = self.pull_from(machine_id, machine["address"])
+        pulled = self.pull_from(machine_id, machine["address"], announce=False)
         pushed, push_error = None, ""
         host, port = lan._parse_address(machine["address"])
         sign = self._signer(machine_id)

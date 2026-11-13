@@ -564,7 +564,8 @@ class HyperbridgeAPI:
     def sync_busy(self) -> dict:
         """Whether this machine is syncing now, as the initiator or as the machine being read from."""
         machines = getattr(self, "sync", None)
-        return {"status": "ok", "syncing": bool(machines and machines.syncing())}
+        arrivals = dict(machines.arrivals) if machines else {"added": 0, "changed": 0, "source": ""}
+        return {"status": "ok", "syncing": bool(machines and machines.syncing()), "arrivals": arrivals}
 
     def sync_status(self) -> dict:
         """This machine, its pairing window and the machines found on the network."""
