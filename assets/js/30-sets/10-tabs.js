@@ -50,6 +50,18 @@ function renderHead() {
   pin.setAttribute("data-tooltip", label);
 }
 
+// Collapses the tab strip into an auto-hide bar, or restores it.
+function setCollapsed(value) {
+  tabsCollapsed = value;
+  var label = value ? "Keep tabs visible" : "Auto-hide tabs";
+  var button = $("#sets-collapse");
+  $("#sets-tabs").toggleAttribute("data-collapsed", value);
+  button.setAttribute("aria-pressed", value ? "true" : "false");
+  button.setAttribute("aria-label", label);
+  button.setAttribute("data-tooltip", label);
+  saveViewPrefs();
+}
+
 // Redraws every sets surface; the cards are left alone while one is being edited.
 function renderAll() {
   renderTabs();

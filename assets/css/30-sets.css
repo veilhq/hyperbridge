@@ -8,6 +8,21 @@
 .sets-tabs-scroll { display: contents; }
 .sets-tabs-spacer { flex: 1; }
 .sets-tabs > .action-icon { align-self: center; margin-left: var(--space-3); }
+.sets-tabs > .action-icon + .action-icon { margin-left: 0; }
+.sets-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
+.sets-collapse[aria-pressed="true"] .icon-glyph { rotate: 180deg; }
+
+/* Auto-hide: the strip floats off the top and drops back in on hover or focus at the top edge. */
+.sets-tabs-edge { display: none; }
+.sets-tabs { background: var(--bg); transition: translate var(--motion-base) var(--ease); }
+.sets-tabs[data-collapsed] { position: absolute; inset: 0 0 auto 0; z-index: var(--z-topbar); translate: 0 -100%; }
+.sets-tabs[data-collapsed]:hover, .sets-tabs[data-collapsed]:focus-within { translate: none; }
+.sets-tabs-edge:has(~ .sets-tabs[data-collapsed]) { display: block; position: absolute; inset: 0 0 auto 0; height: var(--space-2); z-index: var(--z-topbar); border-bottom: var(--border-hair) solid var(--border-strong); }
+.sets-tabs-edge:hover ~ .sets-tabs[data-collapsed], .sets-tabs-edge:focus-within ~ .sets-tabs[data-collapsed] { translate: none; }
+/* The handle is a filled folder tab turned upside down, hanging from the top edge. */
+.sets-tabs-handle { position: absolute; top: 0; left: 50%; translate: -50% 0; rotate: 180deg; padding: var(--space-2) var(--space-5); }
+@media (prefers-reduced-motion: reduce) { .sets-tabs, .sets-collapse .icon-glyph { transition: none; } }
+html.a11y-reduce-motion .sets-tabs, html.a11y-reduce-motion .sets-collapse .icon-glyph { transition: none; }
 .sets-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); font-family: var(--font); font-size: var(--fs-mono); letter-spacing: var(--track-label); white-space: nowrap; }
 .sets-tab-count { opacity: 0.6; }
 
