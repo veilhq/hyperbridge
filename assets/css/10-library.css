@@ -13,7 +13,7 @@
 .find-head[hidden] { display: none; }
 #dock-find[data-active] { color: var(--interactive); }
 .capture-form[data-mode="link"] .capture-submit { color: var(--interactive); }
-.capture-error { position: absolute; bottom: 100%; left: 0; margin-bottom: var(--space-3); color: var(--error); font-size: var(--fs-mono); }
+.capture-error { position: absolute; top: calc(100% + var(--space-2)); left: 0; color: var(--error); font-size: var(--fs-mono); }
 .capture-error[hidden] { display: none; }
 
 .library-grid { margin: var(--space-4) 0 var(--space-6); columns: 18rem; column-gap: var(--space-3); }
@@ -131,3 +131,19 @@ html.a11y-reduce-motion .library-card-details { transition: none; }
 .library-meta { margin: var(--space-3) 0 0; text-align: right; font-size: var(--fs-mono); color: var(--text-dim); }
 .library-meta[hidden] { display: none; }
 /* The view menu floats above the dock button: a floating panel of radio rows in two labeled sections. */
+
+/* Capture overlay: a centered input over the blurred app; Ctrl+L, a pasted link or Find more raise it. */
+.capture-overlay { -webkit-backdrop-filter: blur(var(--space-2)); backdrop-filter: blur(var(--space-2)); }
+.capture-card { position: relative; display: flex; flex-direction: column; gap: var(--space-3); width: min(36rem, 90vw); }
+.capture-card .capture-panel { display: flex; }
+.capture-card .capture-form {
+  flex: 1; padding: var(--space-2) var(--space-3); background: var(--bg-card);
+  border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius);
+  transition: border-color var(--motion-base) var(--ease);
+}
+.capture-card .capture-form:focus-within { border-color: var(--interactive); }
+.capture-hint { margin: 0; text-align: center; color: var(--text-dim); font-size: var(--fs-mono); letter-spacing: var(--track-label); }
+.capture-card:has(.capture-error:not([hidden])) .capture-hint { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .capture-card .capture-form { transition: none; } }
+html.a11y-reduce-motion .capture-card .capture-form { transition: none; }
+

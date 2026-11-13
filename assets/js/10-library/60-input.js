@@ -35,7 +35,11 @@
     event.preventDefault();
     var bridge = api();
     var url = urlInput.value.trim();
-    if (!bridge || !bridge.add_link || !isLink(url) || submitBtn.disabled) return;
+    if (!isLink(url)) {
+      document.dispatchEvent(new CustomEvent("hyperbridge:capture-close"));
+      return;
+    }
+    if (!bridge || !bridge.add_link || submitBtn.disabled) return;
     showError("");
     if (finding && bridge.discover_images) {
       discoverPage(url);
@@ -48,6 +52,7 @@
         return;
       }
       urlInput.value = "";
+      document.dispatchEvent(new CustomEvent("hyperbridge:capture-close"));
       toast(result.already_captured ? "info" : "success", result.already_captured ? "Already captured." : "Captured.");
       if (!result.already_captured) {
         load(true);

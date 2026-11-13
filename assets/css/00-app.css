@@ -19,7 +19,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 @media (prefers-reduced-motion: reduce) { .dock, .dock-toggle, .dock-panel, .action-icon { transition: none; } }
 html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-reduce-motion .dock-panel, html.a11y-reduce-motion .action-icon { transition: none; }
 
-.library { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-5) calc(var(--space-6) * 3); }
+.library { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-5) calc(var(--space-6) * 3); }
 .library-empty {
   position: fixed; inset: 0; margin: 0; display: grid; place-items: center; pointer-events: none;
   font-family: var(--font-body); font-size: var(--fs-prose-ui); color: var(--text-dim);
@@ -38,7 +38,7 @@ html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-r
 html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-filter, html.a11y-reduce-motion .library-meta,
 html.a11y-reduce-motion .capture-error, html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .sets-view,
 html.a11y-reduce-motion .library-empty { animation: none !important; }
-.workspace { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.workspace { position: relative; flex: 1; min-height: 0; display: flex; }
 /* Accent cursors everywhere, as in the sibling apps: arrow by default, filled arrow on clickables, I-beam in text fields. */
 body, body * {
   cursor: var(--cursor-default, url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2300ff41' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z'/></svg>") 2 2, auto) !important;
@@ -53,6 +53,6 @@ input[type="text"], input[type="search"], input[type="url"], input[type="number"
 button:disabled, button:disabled * { cursor: not-allowed !important; }
 .context-menu { z-index: calc(var(--z-modal) + 2); }
 
-/* Launch sequence: the tab and capture bar rises in, then the grid cascades in as its first page lands. */
-@keyframes appLaunchRise { from { opacity: 0; translate: 0 var(--space-5); } to { opacity: 1; translate: none; } }
-.sets-tabs { animation: appLaunchRise var(--motion-linger) var(--ease) backwards; }
+/* Launch sequence: the sidebar slides in, then the grid cascades in as its first page lands. */
+@keyframes appLaunchSide { from { opacity: 0; translate: calc(var(--space-4) * -1) 0; } to { opacity: 1; translate: none; } }
+.sets-rail { animation: appLaunchSide var(--motion-linger) var(--ease) backwards; }

@@ -252,7 +252,7 @@
     $("#dock-find").toggleAttribute("data-active", on);
     searchInput.placeholder = on ? "Paste a page link to browse its images" : "Paste a link or search";
     $("#capture-form").setAttribute("data-mode", on ? "link" : "search");
-    if (on) searchInput.focus();
+    if (on) document.dispatchEvent(new CustomEvent("hyperbridge:capture-open"));
   }
 
   function discoverPage(url) {
@@ -261,6 +261,7 @@
     var ticket = ++findTicket;
     urlInput.value = "";
     setFinding(false);
+    document.dispatchEvent(new CustomEvent("hyperbridge:capture-close"));
     showFinding(url);
     function fail(message) {
       if (ticket !== findTicket) return;

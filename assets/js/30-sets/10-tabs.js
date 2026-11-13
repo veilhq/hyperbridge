@@ -14,17 +14,19 @@ function markTab(button, active) {
   else button.removeAttribute("aria-current");
 }
 
-// Redraws the pinned tabs (every set until one is pinned, plus the open set when it is not pinned) and marks the active tab.
+// Redraws the pinned tabs below the fixed ones (every set until one is pinned, plus the open set when it is not pinned) and marks the active tab.
 function renderTabs() {
   var open = selectedSet();
   var shown = pinnedSets();
   if (!shown.length) shown = sets.slice();
   if (open && shown.indexOf(open) < 0) shown = shown.concat([open]);
-  $("#sets-pinned").innerHTML = shown.map(function (item) {
+  var stack = $("#sets-stack");
+  Array.prototype.slice.call(stack.querySelectorAll("[data-set]")).forEach(function (tab) { tab.remove(); });
+  stack.insertAdjacentHTML("beforeend", shown.map(function (item) {
     var active = !browsing && item.id === selectedId;
     return '<button class="nav-tab nav-tab-folder sets-tab' + (active ? " nav-tab-active" : "") + '" type="button" data-set="' + item.id + '"' +
-      (active ? ' aria-current="true"' : "") + ">" + esc(item.name) + '<span class="sets-tab-count">' + item.count + "</span></button>";
-  }).join("");
+      (active ? ' aria-current="true"' : "") + ">" + '<span class="sets-tab-name">' + esc(item.name) + '</span><span class="sets-tab-count">' + item.count + "</span></button>";
+  }).join(""));
   markTab($("#sets-discover"), feedOpen && !browsing);
   markTab($("#sets-all"), selectedId === null && !feedOpen && !browsing);
   markTab($("#sets-browse"), browsing);
@@ -50,12 +52,12 @@ function renderHead() {
   pin.setAttribute("data-tooltip", label);
 }
 
-// Collapses the tab strip into an auto-hide bar, or restores it.
+// Collapses the sidebar into an auto-hide drawer, or restores it.
 function setCollapsed(value) {
   tabsCollapsed = value;
-  var label = value ? "Keep tabs visible" : "Auto-hide tabs";
+  var label = value ? "Keep sidebar visible" : "Auto-hide sidebar";
   var button = $("#sets-collapse");
-  $("#sets-tabs").toggleAttribute("data-collapsed", value);
+  $("#sets-rail").toggleAttribute("data-collapsed", value);
   button.setAttribute("aria-pressed", value ? "true" : "false");
   button.setAttribute("aria-label", label);
   button.setAttribute("data-tooltip", label);

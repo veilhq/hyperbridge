@@ -15,10 +15,9 @@
     if (button && !button.hidden) button.click();
   }
 
-  // Focuses the capture input; the drawer rises while it has focus.
+  // Opens the capture overlay with its input focused.
   function focusInput() {
-    var input = byId("dock-input");
-    if (input) input.focus();
+    document.dispatchEvent(new CustomEvent("hyperbridge:capture-open"));
   }
 
   var GLYPHS = {

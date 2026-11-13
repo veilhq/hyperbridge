@@ -58,7 +58,6 @@ function initSets() {
   $("#sets-all").addEventListener("click", function () { select(null); });
   $("#sets-browse").addEventListener("click", openBrowse);
   $("#sets-new").addEventListener("click", startNew);
-  $("#sets-handle").addEventListener("click", function () { $("#dock-input").focus(); });
   $("#sets-collapse").addEventListener("click", function () { setCollapsed(!tabsCollapsed); });
   document.addEventListener("keydown", function (event) {
     var backslash = event.key === "\\" || event.code === "Backslash";
@@ -67,7 +66,7 @@ function initSets() {
     setCollapsed(!tabsCollapsed);
   }, true);
   setCollapsed(tabsCollapsed);
-  $("#sets-pinned").addEventListener("click", function (event) {
+  $("#sets-stack").addEventListener("click", function (event) {
     var tab = event.target.closest("[data-set]");
     if (tab) select(Number(tab.getAttribute("data-set")));
   });

@@ -25,7 +25,7 @@ var armTimer = null;
 var query = "";
 var sortKey = "recent";
 var cardsEl;
-var tabsCollapsed = true;
+var tabsCollapsed = false;
 
 function api() { return window.pywebview && window.pywebview.api; }
 
@@ -75,10 +75,10 @@ function loadViewPrefs() {
   try {
     var saved = JSON.parse(localStorage.getItem(SETS_VIEW_KEY) || "{}");
     if (SORTS.indexOf(saved.sort) >= 0) sortKey = saved.sort;
-    if (typeof saved.collapsed === "boolean") tabsCollapsed = saved.collapsed;
+    if (typeof saved.rail === "boolean") tabsCollapsed = saved.rail;
   } catch (err) { /* ignore */ }
 }
 
 function saveViewPrefs() {
-  try { localStorage.setItem(SETS_VIEW_KEY, JSON.stringify({ sort: sortKey, collapsed: tabsCollapsed })); } catch (err) { /* ignore */ }
+  try { localStorage.setItem(SETS_VIEW_KEY, JSON.stringify({ sort: sortKey, rail: tabsCollapsed })); } catch (err) { /* ignore */ }
 }

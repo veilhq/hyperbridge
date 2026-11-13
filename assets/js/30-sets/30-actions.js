@@ -117,6 +117,6 @@ function setupMenus() {
       fresh,
     ];
   });
-  window.HvContextMenu.register("#sets-tabs", function () { return [fresh]; });
+  window.HvContextMenu.register("#sets-rail", function () { return [fresh]; });
   window.HvContextMenu.register("#sets-view", function () { return [fresh]; });
 }
