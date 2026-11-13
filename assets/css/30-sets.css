@@ -17,7 +17,7 @@
 .sets-tabs { background: var(--bg); transition: translate var(--motion-base) var(--ease); }
 .sets-tabs[data-collapsed] { position: absolute; inset: 0 0 auto 0; z-index: var(--z-topbar); translate: 0 -100%; }
 .sets-tabs[data-collapsed]:hover, .sets-tabs[data-collapsed]:focus-within { translate: none; }
-.sets-tabs-edge:has(~ .sets-tabs[data-collapsed]) { display: block; position: absolute; inset: 0 0 auto 0; height: var(--space-2); z-index: var(--z-topbar); border-bottom: var(--border-hair) solid var(--border-strong); }
+.sets-tabs-edge:has(~ .sets-tabs[data-collapsed]) { display: block; position: absolute; inset: 0 0 auto 0; height: var(--space-2); z-index: var(--z-topbar); }
 .sets-tabs-edge:hover ~ .sets-tabs[data-collapsed], .sets-tabs-edge:focus-within ~ .sets-tabs[data-collapsed] { translate: none; }
 /* The handle is a filled folder tab turned upside down, hanging from the top edge. */
 .sets-tabs-handle { position: absolute; top: 0; left: 50%; translate: -50% 0; rotate: 180deg; padding: 0 var(--space-5); opacity: 0.5; transition: opacity var(--motion-fast) var(--ease); }
