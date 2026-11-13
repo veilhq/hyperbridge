@@ -11,26 +11,41 @@
 <div class="sync-overlay" id="sync-overlay" role="status" aria-label="Syncing" hidden><p class="sync-overlay-word" aria-hidden="true">SYNC</p></div>
 <div id="app">
   <div class="workspace">
-    <aside class="sets-rail" id="sets-rail" aria-label="Sets">
-      <div class="sets-feed">
-        <button class="sets-item" id="sets-discover" type="button"><span class="sets-text"><span class="sets-name">Discover</span><span class="sets-desc">New images from your sources</span></span></button>
-      </div>
-      <div class="sets-list" id="sets-list">
-        <button class="sets-item" id="sets-all" type="button" data-set="" aria-current="true"><span class="sets-text"><span class="sets-name">All</span><span class="sets-desc">Everything captured</span></span><span class="sets-count" id="all-count"></span></button>
-      </div>
-      <div class="sets-more" id="sets-more"></div>
-      <form class="sets-form" id="sets-form" novalidate hidden>
-        <input class="form-input" id="sets-name" placeholder="Set name" maxlength="100" aria-label="Set name" autocomplete="off">
-        <input class="form-input" id="sets-desc" placeholder="Description (optional)" maxlength="200" aria-label="Set description" autocomplete="off">
-        <button class="sets-form-submit" type="submit" hidden></button>
-      </form>
-      <span class="sets-error" id="sets-error" role="alert" hidden></span>
-    </aside>
+    <nav class="sets-tabs" id="sets-tabs" aria-label="Sets">
+      <button class="nav-tab sets-tab sets-tab-feed" id="sets-discover" type="button"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/></svg>Discover</button>
+      <button class="nav-tab sets-tab nav-tab-active" id="sets-all" type="button" aria-current="true">All<span class="sets-tab-count" id="all-count"></span></button>
+      <span class="sets-tab-sep" id="sets-pinned-sep" aria-hidden="true" hidden></span>
+      <div class="sets-tabs-scroll" id="sets-pinned"></div>
+      <span class="sets-tab-sep" aria-hidden="true"></span>
+      <button class="nav-tab sets-tab" id="sets-browse" type="button"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>Sets<span class="sets-tab-count" id="sets-count"></span></button>
+      <span class="sets-tabs-spacer"></span>
+      <button class="action-icon" id="sets-new" type="button" aria-label="New set" data-tooltip="New set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+    </nav>
     <main class="library" id="library">
       <header class="set-head" id="set-head" hidden>
         <h1 class="set-head-title" id="set-head-title"></h1>
         <p class="set-head-desc" id="set-head-desc" hidden></p>
+        <p class="set-head-meta" id="set-head-meta"></p>
+        <button class="action-icon set-head-exit" id="set-head-back" type="button" aria-label="All sets" data-tooltip="All sets"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
+        <button class="action-icon set-head-aside" id="set-head-pin" type="button" aria-label="Pin to tabs" data-tooltip="Pin to tabs" aria-pressed="false"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></button>
       </header>
+      <section class="sets-view" id="sets-view" aria-labelledby="sets-view-title" hidden>
+        <header class="set-head">
+          <h1 class="set-head-title" id="sets-view-title">Sets</h1>
+          <p class="set-head-desc">Every set you have made. Pin the ones you reach for to the tab strip.</p>
+        </header>
+        <div class="sets-bar">
+          <input class="form-input sets-search" id="sets-search" type="text" placeholder="Search sets" maxlength="100" aria-label="Search sets" autocomplete="off">
+          <div class="sets-sort" id="sets-sort" role="group" aria-label="Sort sets">
+            <button class="nav-tab" type="button" data-sort="recent">Recent</button>
+            <button class="nav-tab" type="button" data-sort="name">Name</button>
+            <button class="nav-tab" type="button" data-sort="size">Size</button>
+          </div>
+          <span class="sets-tally" id="sets-tally" role="status"></span>
+        </div>
+        <div class="sets-cards" id="sets-cards"></div>
+        <p class="sets-none" id="sets-none" hidden>No sets match.</p>
+      </section>
       <header class="set-head find-head" id="find-head" hidden>
         <h1 class="set-head-title" id="find-head-title"></h1>
         <p class="set-head-desc" id="find-head-desc"></p>

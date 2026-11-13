@@ -4,9 +4,11 @@ import sqlite3
 from datetime import datetime
 
 from bridge.core import db
+from bridge.library import swatches
 
 MAX_NAME = 100
 MAX_DESCRIPTION = 200
+PALETTE_SIZE = 5
 
 
 def _now() -> str:
@@ -23,21 +25,49 @@ def _clean_description(text) -> str:
 
 def _row(conn, set_id: int) -> dict | None:
     row = conn.execute(
-        "SELECT s.id, s.name, s.description, (SELECT COUNT(*) FROM set_entries se WHERE se.set_id = s.id) AS count"
+        "SELECT s.id, s.name, s.description, s.pinned, (SELECT COUNT(*) FROM set_entries se WHERE se.set_id = s.id) AS count"
         " FROM sets s WHERE s.id = ?", (set_id,)
     ).fetchone()
     return dict(row) if row else None
 
 
+def _palette(rows) -> list[str]:
+    """Pick up to PALETTE_SIZE colors: the lead swatch of each newest entry, topped up from the newest entry's own."""
+    colors: list[str] = []
+    for row in rows:
+        values = swatches.parse(row["swatches"])
+        if values and values[0] not in colors:
+            colors.append(values[0])
+    if rows and len(colors) < PALETTE_SIZE:
+        for value in swatches.parse(rows[0]["swatches"]):
+            if value not in colors:
+                colors.append(value)
+    return colors[:PALETTE_SIZE]
+
+
 def list_sets() -> list[dict]:
-    """Return every set with its entry count, ordered by name."""
+    """Return every set, ordered by name, with its entry count, pin, last-change time, cover thumbnail path and palette."""
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT s.id, s.name, s.description, COUNT(se.entry_id) AS count FROM sets s"
+            "SELECT s.id, s.name, s.description, s.pinned, s.updated_at, COUNT(se.entry_id) AS count,"
+            " MAX(se.placed_at) AS placed_at FROM sets s"
             " LEFT JOIN set_entries se ON se.set_id = s.id GROUP BY s.id ORDER BY s.name COLLATE NOCASE"
         ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            newest = conn.execute(
+                "SELECT e.swatches, a.path AS thumb_path FROM set_entries se JOIN entries e ON e.id = se.entry_id"
+                " LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
+                " WHERE se.set_id = ? ORDER BY se.placed_at DESC, e.id DESC LIMIT ?", (row["id"], PALETTE_SIZE)
+            ).fetchall()
+            cover = next((item["thumb_path"] for item in newest if item["thumb_path"]), None)
+            result.append({
+                "id": row["id"], "name": row["name"], "description": row["description"], "count": row["count"],
+                "pinned": bool(row["pinned"]), "updated": max(row["updated_at"] or "", row["placed_at"] or ""),
+                "cover_path": cover, "palette": _palette(newest),
+            })
+        return result
     finally:
         conn.close()
 
@@ -81,6 +111,15 @@ def rename_set(set_id: int, name, description=None) -> dict:
         except sqlite3.IntegrityError:
             return {"ok": False, "error": "That set exists."}
         return {"ok": True, "set": _row(conn, set_id)}
+    finally:
+        conn.close()
+
+
+def set_pinned(set_id: int, pinned: bool) -> bool:
+    """Pin or unpin a set as a tab on this machine. Returns False when the set is missing."""
+    conn = db.connect()
+    try:
+        return conn.execute("UPDATE sets SET pinned = ? WHERE id = ?", (1 if pinned else 0, set_id)).rowcount > 0
     finally:
         conn.close()
 

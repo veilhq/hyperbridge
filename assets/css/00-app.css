@@ -45,26 +45,24 @@ html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-r
 
 .library { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-5) calc(var(--space-6) * 3); }
 .library-empty {
-  position: fixed; inset: 0 0 0 14rem; margin: 0; display: grid; place-items: center; pointer-events: none;
+  position: fixed; inset: 0; margin: 0; display: grid; place-items: center; pointer-events: none;
   font-family: var(--font-body); font-size: var(--fs-prose-ui); color: var(--text-dim);
-  transition: left var(--motion-slow) var(--ease);
 }
-.sets-rail[data-hidden="true"] ~ .library .library-empty { left: 0; }
 .library-empty[hidden] { display: none; }
 
 /* Elements revealed by removing [hidden] ease in instead of popping. */
 @keyframes appEnter { from { opacity: 0; translate: 0 var(--space-2); } to { opacity: 1; translate: none; } }
 .select-bar:not([hidden]), .library-filter:not([hidden]), .library-meta:not([hidden]), .capture-error:not([hidden]),
-.set-head:not([hidden]), .sets-form:not([hidden]), .sets-error:not([hidden]), .library-empty:not([hidden]) {
+.set-head:not([hidden]), .sets-view:not([hidden]), .library-empty:not([hidden]) {
   animation: appEnter var(--motion-enter) var(--ease) both;
 }
 @media (prefers-reduced-motion: reduce) {
-  .select-bar, .library-filter, .library-meta, .capture-error, .set-head, .sets-form, .sets-error, .library-empty { animation: none !important; }
+  .select-bar, .library-filter, .library-meta, .capture-error, .set-head, .sets-view, .library-empty { animation: none !important; }
 }
 html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-filter, html.a11y-reduce-motion .library-meta,
-html.a11y-reduce-motion .capture-error, html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .sets-form,
-html.a11y-reduce-motion .sets-error, html.a11y-reduce-motion .library-empty { animation: none !important; }
-.workspace { flex: 1; min-height: 0; display: flex; }
+html.a11y-reduce-motion .capture-error, html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .sets-view,
+html.a11y-reduce-motion .library-empty { animation: none !important; }
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* Accent cursors everywhere, as in the sibling apps: arrow by default, filled arrow on clickables, I-beam in text fields. */
 body, body * {
   cursor: var(--cursor-default, url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2300ff41' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z'/></svg>") 2 2, auto) !important;
@@ -79,8 +77,8 @@ input[type="text"], input[type="search"], input[type="url"], input[type="number"
 button:disabled, button:disabled * { cursor: not-allowed !important; }
 .context-menu { z-index: calc(var(--z-modal) + 2); }
 
-/* Launch sequence: the sets rail slides in, then the dock rises; the grid cascades in as its first page lands. */
-@keyframes appLaunchSide { from { opacity: 0; translate: calc(var(--space-4) * -1) 0; } to { opacity: 1; translate: none; } }
+/* Launch sequence: the sets tab strip drops in, then the dock rises; the grid cascades in as its first page lands. */
+@keyframes appLaunchDrop { from { opacity: 0; translate: 0 calc(var(--space-4) * -1); } to { opacity: 1; translate: none; } }
 @keyframes appLaunchRise { from { opacity: 0; translate: 0 var(--space-5); } to { opacity: 1; translate: none; } }
-.sets-rail { animation: appLaunchSide var(--motion-linger) var(--ease) backwards; }
+.sets-tabs { animation: appLaunchDrop var(--motion-linger) var(--ease) backwards; }
 .dock { animation: appLaunchRise var(--motion-linger) var(--ease) calc(var(--motion-stagger) * 8) backwards; }

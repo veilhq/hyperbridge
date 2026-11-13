@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bridge.core import db  # noqa: E402
 from bridge.library import library  # noqa: E402
 from bridge.library import sets  # noqa: E402
 from tests.library.test_library import LibraryOpsCase  # noqa: E402
@@ -34,6 +35,29 @@ class SetTests(LibraryOpsCase):
         sets.place(b, zed)
         self.assertEqual([(s["name"], s["count"]) for s in sets.list_sets()], [("alpha", 0), ("Zed", 2)])
         self.assertEqual(alpha, 2)
+
+    def test_list_carries_pin_palette_and_change_time(self):
+        entry = self.add_entry("A")
+        target = sets.create_set("S")["set"]["id"]
+        empty = sets.list_sets()[0]
+        self.assertEqual((empty["pinned"], empty["palette"], empty["cover_path"]), (False, [], None))
+        sets.place(entry, target)
+        conn = db.connect()
+        try:
+            conn.execute("UPDATE entries SET swatches = ? WHERE id = ?", ('["#112233", "#445566"]', entry))
+        finally:
+            conn.close()
+        placed = sets.list_sets()[0]
+        self.assertEqual(placed["palette"], ["#112233", "#445566"])
+        self.assertGreaterEqual(placed["updated"], empty["updated"])
+
+    def test_pin_toggles_and_checks_id(self):
+        target = sets.create_set("S")["set"]["id"]
+        self.assertTrue(sets.set_pinned(target, True))
+        self.assertTrue(sets.list_sets()[0]["pinned"])
+        self.assertTrue(sets.set_pinned(target, False))
+        self.assertFalse(sets.list_sets()[0]["pinned"])
+        self.assertFalse(sets.set_pinned(999, True))
 
     def test_place_is_idempotent_and_checks_ids(self):
         entry = self.add_entry()

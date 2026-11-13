@@ -408,8 +408,15 @@ class HyperbridgeAPI:
             return 0
 
     def list_sets(self) -> list:
-        """Return every set with its entry count."""
-        return sets.list_sets()
+        """Return every set with its count, pin, last-change time, cover image and palette."""
+        result = sets.list_sets()
+        for item in result:
+            item["cover"] = _thumb_ref(item.pop("cover_path"))
+        return result
+
+    def pin_set(self, set_id: int, pinned: bool) -> bool:
+        """Pin or unpin a set as a tab."""
+        return sets.set_pinned(int(set_id), bool(pinned))
 
     def create_set(self, name: str, description: str = "") -> dict:
         """Create a set."""

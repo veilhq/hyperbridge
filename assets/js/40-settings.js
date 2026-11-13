@@ -534,6 +534,7 @@
     });
     document.addEventListener("hyperbridge:filter", function () { setOpen(false); });
     document.addEventListener("hyperbridge:feed", function () { setOpen(false); });
+    document.addEventListener("hyperbridge:sets", function () { setOpen(false); });
   }
 
   init();
