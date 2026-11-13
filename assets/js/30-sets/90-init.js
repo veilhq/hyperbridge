@@ -58,14 +58,13 @@ function initSets() {
   $("#sets-all").addEventListener("click", function () { select(null); });
   $("#sets-browse").addEventListener("click", openBrowse);
   $("#sets-new").addEventListener("click", startNew);
-  $("#sets-handle").addEventListener("click", function () { setCollapsed(false); });
+  $("#sets-handle").addEventListener("click", function () { $("#dock-input").focus(); });
   $("#sets-collapse").addEventListener("click", function () { setCollapsed(!tabsCollapsed); });
   document.addEventListener("keydown", function (event) {
     var backslash = event.key === "\\" || event.code === "Backslash";
     if (!backslash || !(event.ctrlKey || event.metaKey) || event.repeat || $("#app").inert) return;
     event.preventDefault();
     setCollapsed(!tabsCollapsed);
-    document.dispatchEvent(new CustomEvent("hyperbridge:chrome", { detail: { collapsed: tabsCollapsed } }));
   }, true);
   setCollapsed(tabsCollapsed);
   $("#sets-pinned").addEventListener("click", function (event) {

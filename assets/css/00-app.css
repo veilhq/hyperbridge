@@ -3,32 +3,6 @@ html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-mono); line-height: var(--lh-ui); }
 #app { display: flex; flex-direction: column; height: 100%; }
 
-/* Capture drawer: a bottom strip holding the capture bar; it rests below the window and rises on hover, focus or paste. */
-.capture-edge { display: none; }
-.capture-drawer {
-  position: fixed; inset: auto 0 0 0; z-index: var(--z-dropdown);
-  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
-  background: var(--bg); border-top: var(--border-hair) solid var(--border);
-  transition: translate var(--motion-base) var(--ease);
-}
-.capture-drawer[data-collapsed] { translate: 0 100%; }
-.capture-drawer[data-collapsed]:hover, .capture-drawer[data-collapsed]:focus-within { translate: none; }
-.capture-edge:has(~ .capture-drawer[data-collapsed]) { display: block; position: fixed; inset: auto 0 0 0; height: var(--space-2); z-index: var(--z-dropdown); }
-.capture-edge:hover ~ .capture-drawer[data-collapsed], .capture-edge:focus-within ~ .capture-drawer[data-collapsed] { translate: none; }
-/* The handle is the filled folder tab, upright, standing on the bottom edge. */
-.capture-handle { position: absolute; bottom: calc(var(--border-hair) * -1); left: 50%; translate: -50% 0; padding: 0 var(--space-5); border-bottom-width: 0; }
-.capture-handle .icon-glyph { width: var(--icon-sm); height: var(--icon-sm); }
-.capture-panel { flex: 1; min-width: 0; display: flex; justify-content: center; }
-.capture-panel .capture-form {
-  flex: 0 1 40rem; padding: 0 var(--space-2); border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius);
-  transition: border-color var(--motion-base) var(--ease);
-}
-.capture-panel .capture-form:focus-within { border-color: var(--interactive); }
-.capture-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
-.capture-collapse[aria-pressed="true"] .icon-glyph { rotate: 180deg; }
-body:has(.capture-drawer:not([data-collapsed])) #library { padding-bottom: calc(var(--space-6) * 3); }
-@media (prefers-reduced-motion: reduce) { .capture-drawer, .capture-panel .capture-form, .capture-collapse .icon-glyph { transition: none; } }
-html.a11y-reduce-motion .capture-drawer, html.a11y-reduce-motion .capture-panel .capture-form, html.a11y-reduce-motion .capture-collapse .icon-glyph { transition: none; }
 .action-icon {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: var(--space-6); height: var(--space-6); padding: 0;
@@ -79,6 +53,6 @@ input[type="text"], input[type="search"], input[type="url"], input[type="number"
 button:disabled, button:disabled * { cursor: not-allowed !important; }
 .context-menu { z-index: calc(var(--z-modal) + 2); }
 
-/* Launch sequence: the sets tab strip drops in, then the grid cascades in as its first page lands. */
-@keyframes appLaunchDrop { from { opacity: 0; translate: 0 calc(var(--space-4) * -1); } to { opacity: 1; translate: none; } }
-.sets-tabs { animation: appLaunchDrop var(--motion-linger) var(--ease) backwards; }
+/* Launch sequence: the tab and capture bar rises in, then the grid cascades in as its first page lands. */
+@keyframes appLaunchRise { from { opacity: 0; translate: 0 var(--space-5); } to { opacity: 1; translate: none; } }
+.sets-tabs { animation: appLaunchRise var(--motion-linger) var(--ease) backwards; }

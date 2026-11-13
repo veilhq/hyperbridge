@@ -1,30 +1,41 @@
 /* === Hyperbridge: sets tab strip and Sets view === */
 .sets-tabs {
   --tab-rail-min: calc(var(--space-6) * 3);
-  flex: 0 0 auto; align-items: flex-end; padding: var(--space-3) var(--space-5) 0;
+  position: fixed; inset: auto 0 0 0; z-index: var(--z-dropdown);
+  align-items: flex-end; gap: var(--space-3); padding: var(--space-3) var(--space-5) 0;
+  background: var(--bg); border-top: var(--border-hair) solid var(--border);
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  transition: translate var(--motion-base) var(--ease);
 }
 .sets-tabs::-webkit-scrollbar { display: none; }
 .sets-tabs-scroll { display: contents; }
 .sets-tabs-spacer { flex: 1; }
-.sets-tabs > .action-icon { align-self: center; margin-left: var(--space-3); }
-.sets-tabs > .action-icon + .action-icon { margin-left: 0; }
+.sets-tabs > .action-icon { align-self: center; }
 .sets-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
 .sets-collapse[aria-pressed="true"] .icon-glyph { rotate: 180deg; }
-
-/* Auto-hide: the strip floats off the top and drops back in on hover or focus at the top edge. */
 .sets-tabs-edge { display: none; }
-.sets-tabs { background: var(--bg); transition: translate var(--motion-base) var(--ease); }
-.sets-tabs[data-collapsed] { position: absolute; inset: 0 0 auto 0; z-index: var(--z-topbar); translate: 0 -100%; }
-.sets-tabs[data-collapsed]:hover, .sets-tabs[data-collapsed]:focus-within { translate: none; }
-.sets-tabs-edge:has(~ .sets-tabs[data-collapsed]) { display: block; position: absolute; inset: 0 0 auto 0; height: var(--space-2); z-index: var(--z-topbar); }
-.sets-tabs-edge:hover ~ .sets-tabs[data-collapsed], .sets-tabs-edge:focus-within ~ .sets-tabs[data-collapsed] { translate: none; }
-/* The handle is a filled folder tab turned upside down, hanging from the top edge. */
-.sets-tabs-handle { position: absolute; top: calc(var(--border-hair) * -1); left: 50%; translate: -50% 0; rotate: 180deg; padding: 0 var(--space-5); border-bottom-width: 0; }
-.sets-tabs-handle .icon-glyph { width: var(--icon-sm); height: var(--icon-sm); }
 
-@media (prefers-reduced-motion: reduce) { .sets-tabs, .sets-collapse .icon-glyph { transition: none; } }
-html.a11y-reduce-motion .sets-tabs, html.a11y-reduce-motion .sets-collapse .icon-glyph { transition: none; }
+/* Capture: the input sits in the bar beside the tabs; a pasted link or Ctrl+L raises the bar and focuses it. */
+.sets-tabs .capture-panel { flex: 0 1 24rem; align-self: center; min-width: calc(var(--space-6) * 5); display: flex; }
+.sets-tabs .capture-form {
+  padding: 0 var(--space-2); border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius);
+  transition: border-color var(--motion-base) var(--ease);
+}
+.sets-tabs .capture-form:focus-within { border-color: var(--interactive); }
+.sets-tabs .capture-error { position: fixed; bottom: calc(var(--space-6) * 2); right: var(--space-5); left: auto; margin: 0; }
+
+/* Auto-hide: the bar rests below the window and rises on hover or focus at the bottom edge. */
+.sets-tabs[data-collapsed] { translate: 0 100%; }
+.sets-tabs[data-collapsed]:hover, .sets-tabs[data-collapsed]:focus-within { translate: none; }
+.sets-tabs-edge:has(~ .sets-tabs[data-collapsed]) { display: block; position: fixed; inset: auto 0 0 0; height: var(--space-2); z-index: var(--z-dropdown); }
+.sets-tabs-edge:hover ~ .sets-tabs[data-collapsed], .sets-tabs-edge:focus-within ~ .sets-tabs[data-collapsed] { translate: none; }
+/* The handle is the filled folder tab, upright, standing on the bottom edge; the raised bar covers it. */
+.sets-tabs-handle { position: absolute; bottom: calc(var(--border-hair) * -1); left: 50%; translate: -50% 0; padding: 0 var(--space-5); border-bottom-width: 0; }
+.sets-tabs-handle .icon-glyph { width: var(--icon-sm); height: var(--icon-sm); }
+body:has(.sets-tabs:not([data-collapsed])) #library { padding-bottom: calc(var(--space-6) * 3); }
+
+@media (prefers-reduced-motion: reduce) { .sets-tabs, .sets-tabs .capture-form, .sets-collapse .icon-glyph { transition: none; } }
+html.a11y-reduce-motion .sets-tabs, html.a11y-reduce-motion .sets-tabs .capture-form, html.a11y-reduce-motion .sets-collapse .icon-glyph { transition: none; }
 .sets-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); font-family: var(--font); font-size: var(--fs-mono); letter-spacing: var(--track-label); white-space: nowrap; }
 .sets-tab-count { opacity: 0.6; }
 
