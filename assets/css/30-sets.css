@@ -26,6 +26,8 @@ html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon
 /* A little air between the stacked tabs: a shallower overlap and taller tabs than the primitive default. */
 .sets-stack > .nav-tab.nav-tab-folder + .nav-tab.nav-tab-folder { margin-top: calc(var(--space-1) * -1); }
 .sets-stack > .sets-tab { padding-block: var(--space-3); }
+/* The active tab rises with its label: the whole tab shifts by the full raise, and its trim matches the overlap. */
+.sets-stack > .nav-tab.nav-tab-folder.nav-tab-active { --tab-up: var(--space-2); --tab-trim: var(--space-1); --tab-shift: var(--tab-up); }
 .sets-tab-name { overflow: hidden; text-overflow: ellipsis; }
 .sets-tab-count { opacity: 0.6; flex: none; }
 
