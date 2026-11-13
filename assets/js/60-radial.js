@@ -4,7 +4,7 @@
 
   function byId(id) { return document.getElementById(id); }
 
-  // Reuses a dock button's icon so the ring and the dock always match.
+  // Reuses a toolbar button's icon so the ring and the buttons always match.
   function iconOf(id) {
     var svg = byId(id) && byId(id).querySelector("svg");
     return svg ? svg.outerHTML : "";
@@ -15,10 +15,8 @@
     if (button && !button.hidden) button.click();
   }
 
-  // Focuses the dock input, opening the dock first when it is collapsed.
+  // Focuses the capture input; the drawer rises while it has focus.
   function focusInput() {
-    var dock = byId("dock");
-    if (dock && dock.getAttribute("data-collapsed") === "true") press("dock-toggle");
     var input = byId("dock-input");
     if (input) input.focus();
   }

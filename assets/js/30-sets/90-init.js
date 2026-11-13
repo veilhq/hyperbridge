@@ -65,6 +65,7 @@ function initSets() {
     if (!backslash || !(event.ctrlKey || event.metaKey) || event.repeat || $("#app").inert) return;
     event.preventDefault();
     setCollapsed(!tabsCollapsed);
+    document.dispatchEvent(new CustomEvent("hyperbridge:chrome", { detail: { collapsed: tabsCollapsed } }));
   }, true);
   setCollapsed(tabsCollapsed);
   $("#sets-pinned").addEventListener("click", function (event) {

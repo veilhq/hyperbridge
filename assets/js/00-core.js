@@ -45,30 +45,6 @@
   }
   window.renderStats = renderStats;
 
-  // Collapses the control bar to its logo button; the choice persists between sessions.
-  function setupDock() {
-    var dock = $("#dock");
-    var toggle = $("#dock-toggle");
-    var panel = $("#dock-panel");
-    if (!dock || !toggle || !panel) return;
-    function apply(collapsed) {
-      dock.setAttribute("data-collapsed", collapsed ? "true" : "false");
-      panel.inert = collapsed;
-      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      toggle.setAttribute("aria-label", collapsed ? "Expand controls" : "Collapse controls");
-    }
-    var saved = false;
-    try { saved = localStorage.getItem("hyperbridge-dock") === "collapsed"; } catch (err) { saved = false; }
-    apply(saved);
-    toggle.addEventListener("click", function () {
-      var collapsed = dock.getAttribute("data-collapsed") !== "true";
-      apply(collapsed);
-      try { localStorage.setItem("hyperbridge-dock", collapsed ? "collapsed" : "open"); } catch (err) { /* ignore */ }
-      if (!collapsed && $("#dock-input")) $("#dock-input").focus();
-    });
-  }
-  setupDock();
-
   function onBridgeReady() {
     var api = window.pywebview && window.pywebview.api;
     if (!api) return;

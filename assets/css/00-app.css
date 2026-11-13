@@ -3,30 +3,32 @@ html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-mono); line-height: var(--lh-ui); }
 #app { display: flex; flex-direction: column; height: 100%; }
 
-/* Floating pill-card control bar at the bottom of the window; eases between the full bar and the logo button. */
-.dock {
-  --dock-open: min(40rem, calc(100vw - var(--space-6) * 2));
-  --dock-closed: calc(var(--space-6) + var(--space-2) * 2 + var(--border-hair) * 2);
-  position: fixed; left: 50%; bottom: var(--space-4); transform: translateX(-50%);
-  z-index: var(--z-dropdown); width: var(--dock-open);
-  transition: width var(--motion-slow) var(--ease), border-color var(--motion-base) var(--ease);
+/* Capture drawer: a bottom strip holding the capture bar; it rests below the window and rises on hover, focus or paste. */
+.capture-edge { display: none; }
+.capture-drawer {
+  position: fixed; inset: auto 0 0 0; z-index: var(--z-dropdown);
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
+  background: var(--bg); border-top: var(--border-hair) solid var(--border);
+  transition: translate var(--motion-base) var(--ease);
 }
-.dock[data-collapsed="true"] { width: var(--dock-closed); overflow: hidden; }
-.dock-toggle {
-  display: inline-flex; align-items: center; justify-content: center; flex: none;
-  width: var(--space-6); height: var(--space-6); padding: 0;
-  color: var(--brand); background: transparent; border: 0; border-radius: var(--radius);
-  transition: color var(--motion-base) var(--ease);
+.capture-drawer[data-collapsed] { translate: 0 100%; }
+.capture-drawer[data-collapsed]:hover, .capture-drawer[data-collapsed]:focus-within { translate: none; }
+.capture-edge:has(~ .capture-drawer[data-collapsed]) { display: block; position: fixed; inset: auto 0 0 0; height: var(--space-2); z-index: var(--z-dropdown); }
+.capture-edge:hover ~ .capture-drawer[data-collapsed], .capture-edge:focus-within ~ .capture-drawer[data-collapsed] { translate: none; }
+/* The handle is the filled folder tab, upright, standing on the bottom edge. */
+.capture-handle { position: absolute; bottom: calc(var(--border-hair) * -1); left: 50%; translate: -50% 0; padding: 0 var(--space-5); border-bottom-width: 0; }
+.capture-handle .icon-glyph { width: var(--icon-sm); height: var(--icon-sm); }
+.capture-panel { flex: 1; min-width: 0; display: flex; justify-content: center; }
+.capture-panel .capture-form {
+  flex: 0 1 40rem; padding: 0 var(--space-2); border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius);
+  transition: border-color var(--motion-base) var(--ease);
 }
-.dock-toggle:hover { color: var(--interactive); }
-.dock-toggle:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: calc(var(--space-1) * -1); }
-.dock-logo { width: var(--icon-lg); height: var(--icon-lg); }
-.dock:focus-within { border-color: var(--interactive); }
-.dock-panel {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); margin-left: var(--space-2);
-  opacity: 1; transition: opacity var(--motion-base) var(--ease) var(--motion-tick);
-}
-.dock[data-collapsed="true"] .dock-panel { opacity: 0; visibility: hidden; transition: opacity var(--motion-fast) var(--ease), visibility 0s linear var(--motion-fast); }
+.capture-panel .capture-form:focus-within { border-color: var(--interactive); }
+.capture-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
+.capture-collapse[aria-pressed="true"] .icon-glyph { rotate: 180deg; }
+body:has(.capture-drawer:not([data-collapsed])) #library { padding-bottom: calc(var(--space-6) * 3); }
+@media (prefers-reduced-motion: reduce) { .capture-drawer, .capture-panel .capture-form, .capture-collapse .icon-glyph { transition: none; } }
+html.a11y-reduce-motion .capture-drawer, html.a11y-reduce-motion .capture-panel .capture-form, html.a11y-reduce-motion .capture-collapse .icon-glyph { transition: none; }
 .action-icon {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: var(--space-6); height: var(--space-6); padding: 0;
@@ -77,8 +79,6 @@ input[type="text"], input[type="search"], input[type="url"], input[type="number"
 button:disabled, button:disabled * { cursor: not-allowed !important; }
 .context-menu { z-index: calc(var(--z-modal) + 2); }
 
-/* Launch sequence: the sets tab strip drops in, then the dock rises; the grid cascades in as its first page lands. */
+/* Launch sequence: the sets tab strip drops in, then the grid cascades in as its first page lands. */
 @keyframes appLaunchDrop { from { opacity: 0; translate: 0 calc(var(--space-4) * -1); } to { opacity: 1; translate: none; } }
-@keyframes appLaunchRise { from { opacity: 0; translate: 0 var(--space-5); } to { opacity: 1; translate: none; } }
 .sets-tabs { animation: appLaunchDrop var(--motion-linger) var(--ease) backwards; }
-.dock { animation: appLaunchRise var(--motion-linger) var(--ease) calc(var(--motion-stagger) * 8) backwards; }
