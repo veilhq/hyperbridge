@@ -19,7 +19,7 @@ function renderTabs() {
   var open = selectedSet();
   var shown = pinnedSets();
   if (!shown.length) shown = sets.slice();
-  if (open && !open.pinned) shown = shown.concat([open]);
+  if (open && shown.indexOf(open) < 0) shown = shown.concat([open]);
   $("#sets-pinned").innerHTML = shown.map(function (item) {
     var active = !browsing && item.id === selectedId;
     return '<button class="nav-tab nav-tab-folder sets-tab' + (active ? " nav-tab-active" : "") + '" type="button" data-set="' + item.id + '"' +
