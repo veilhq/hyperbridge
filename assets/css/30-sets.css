@@ -1,15 +1,15 @@
 /* === Hyperbridge: sets tab strip and Sets view === */
 .sets-tabs {
-  flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-1);
-  padding: var(--space-3) var(--space-5); border-bottom: var(--border-hair) solid var(--border);
+  --tab-rail-min: calc(var(--space-6) * 3);
+  flex: 0 0 auto; align-items: flex-end; padding: var(--space-3) var(--space-5) 0;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
-.sets-tabs-scroll { display: flex; align-items: center; gap: var(--space-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.sets-tabs-scroll::-webkit-scrollbar { display: none; }
+.sets-tabs::-webkit-scrollbar { display: none; }
+.sets-tabs-scroll { display: contents; }
 .sets-tabs-spacer { flex: 1; }
-.sets-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-body); font-weight: var(--fw-semibold); white-space: nowrap; }
-.sets-tab-count { color: var(--text-dim); }
-.sets-tab-sep { flex: 0 0 auto; align-self: stretch; width: var(--border-hair); margin: var(--space-1) var(--space-2); background: var(--border); }
-.sets-tab-sep[hidden] { display: none; }
+.sets-tabs > .action-icon { align-self: center; margin-left: var(--space-3); }
+.sets-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); font-family: var(--font); font-size: var(--fs-mono); letter-spacing: var(--track-label); white-space: nowrap; }
+.sets-tab-count { opacity: 0.6; }
 
 /* Sets view: a hidden library grid underneath keeps its state while the cards show. */
 #library[data-sets-view] > :not(.sets-view):not(.library-sentinel) { display: none; }
