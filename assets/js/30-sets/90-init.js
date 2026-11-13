@@ -61,8 +61,11 @@ function initSets() {
   $("#sets-handle").addEventListener("click", function () { setCollapsed(false); });
   $("#sets-collapse").addEventListener("click", function () { setCollapsed(!tabsCollapsed); });
   document.addEventListener("keydown", function (event) {
-    if (event.key === "\\" && (event.ctrlKey || event.metaKey) && !$("#app").inert) setCollapsed(!tabsCollapsed);
-  });
+    var backslash = event.key === "\\" || event.code === "Backslash";
+    if (!backslash || !(event.ctrlKey || event.metaKey) || event.repeat || $("#app").inert) return;
+    event.preventDefault();
+    setCollapsed(!tabsCollapsed);
+  }, true);
   setCollapsed(tabsCollapsed);
   $("#sets-pinned").addEventListener("click", function (event) {
     var tab = event.target.closest("[data-set]");

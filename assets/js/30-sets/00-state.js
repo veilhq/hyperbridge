@@ -25,7 +25,7 @@ var armTimer = null;
 var query = "";
 var sortKey = "recent";
 var cardsEl;
-var tabsCollapsed = false;
+var tabsCollapsed = true;
 
 function api() { return window.pywebview && window.pywebview.api; }
 
@@ -75,7 +75,7 @@ function loadViewPrefs() {
   try {
     var saved = JSON.parse(localStorage.getItem(SETS_VIEW_KEY) || "{}");
     if (SORTS.indexOf(saved.sort) >= 0) sortKey = saved.sort;
-    tabsCollapsed = saved.collapsed === true;
+    if (typeof saved.collapsed === "boolean") tabsCollapsed = saved.collapsed;
   } catch (err) { /* ignore */ }
 }
 
