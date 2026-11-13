@@ -25,9 +25,14 @@ html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon
 .sets-tab { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-4); font-family: var(--font); font-size: var(--fs-mono); letter-spacing: var(--track-label); text-align: left; white-space: nowrap; }
 /* A little air between the stacked tabs: a shallower overlap and taller tabs than the primitive default. */
 .sets-stack > .nav-tab.nav-tab-folder + .nav-tab.nav-tab-folder { margin-top: calc(var(--space-1) * -1); }
-.sets-stack > .sets-tab { padding-block: var(--space-3); }
-/* The active tab rises with its label: the whole tab shifts by the full raise, and its trim matches the overlap. */
-.sets-stack > .nav-tab.nav-tab-folder.nav-tab-active { --tab-up: var(--space-2); --tab-trim: var(--space-1); --tab-shift: var(--tab-up); }
+.sets-stack > .nav-tab.nav-tab-folder.sets-tab {
+  padding-block: calc(var(--space-3) - var(--tab-trim) / 2) calc(var(--space-3) + var(--tab-trim) / 2);
+  transition: color var(--motion-fast) var(--ease), transform var(--motion-base) var(--ease), background-position var(--motion-base) var(--ease), padding var(--motion-base) var(--ease);
+}
+/* The active tab rises taller and its label follows: the trim matches the overlap and the label re-centers in the taller card. */
+.sets-stack > .nav-tab.nav-tab-folder.nav-tab-active { --tab-up: var(--space-2); --tab-trim: var(--space-1); }
+@media (prefers-reduced-motion: reduce) { .sets-stack > .nav-tab.nav-tab-folder.sets-tab { transition: none; } }
+html.a11y-reduce-motion .sets-stack > .nav-tab.nav-tab-folder.sets-tab { transition: none; }
 .sets-tab-name { overflow: hidden; text-overflow: ellipsis; }
 .sets-tab-count { opacity: 0.6; flex: none; }
 
