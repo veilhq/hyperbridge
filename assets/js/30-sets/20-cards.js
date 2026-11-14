@@ -65,7 +65,7 @@ function addTileHtml() {
     '<div class="poster-card-image is-empty"><span class="poster-card-empty">' + icon("plus") + "</span></div>" +
     '<span class="poster-card-count">NEW</span>' +
     '<div class="poster-card-body"><div class="poster-card-title">New set</div>' +
-    '<div class="poster-card-desc"><span>Name it, add a description, then fill it from the library.</span></div></div></button>";
+    '<div class="poster-card-desc"><span>Name it, add a description, then fill it from the library.</span></div></div></button>';
 }
 
 // Redraws the Sets view: tally, sort buttons and the card grid (the edit form takes focus).
