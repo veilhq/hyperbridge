@@ -1,7 +1,6 @@
 /* === Hyperbridge: sets - shared state and helpers === */
 var SETS_VIEW_KEY = "hyperbridge-sets-view";
 var ARM_MS = 2500;
-var METER_CELLS = 10;
 var MS_PER_DAY = 86400000;
 var SORTS = ["recent", "name", "size"];
 

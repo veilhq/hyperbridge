@@ -1,7 +1,8 @@
 /* === Hyperbridge: app shell === */
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-mono); line-height: var(--lh-ui); }
-#app { display: flex; flex-direction: column; height: 100%; }
+/* Rides above the shared ambient dots and bottom gradient, which sit at z-index 0. */
+#app { display: flex; flex-direction: column; height: 100%; position: relative; z-index: 1; }
 
 .action-icon {
   display: inline-flex; align-items: center; justify-content: center; flex: none;

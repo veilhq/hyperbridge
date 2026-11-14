@@ -137,8 +137,8 @@ html.a11y-reduce-motion .library-card-details { transition: none; }
 .capture-card { position: relative; display: flex; flex-direction: column; gap: var(--space-3); width: min(36rem, 90vw); }
 .capture-card .capture-panel { display: flex; }
 .capture-card .capture-form {
-  flex: 1; padding: var(--space-2) var(--space-3); background: var(--bg-card);
-  border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius);
+  flex: 1; padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); background: var(--bg-card);
+  border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius-pill);
   transition: border-color var(--motion-base) var(--ease);
 }
 .capture-card .capture-form:focus-within { border-color: var(--interactive); }

@@ -23,15 +23,6 @@ function paletteHtml(item) {
   }).join("") + "</span>";
 }
 
-// Ten cells showing a set's size relative to the largest set.
-function meterHtml(count) {
-  var largest = sets.reduce(function (most, item) { return Math.max(most, item.count); }, 1);
-  var lit = count ? Math.max(1, Math.round(count / largest * METER_CELLS)) : 0;
-  var cells = "";
-  for (var i = 0; i < METER_CELLS; i++) cells += "<i" + (i < lit ? ' class="on"' : "") + "></i>";
-  return '<span class="poster-card-meter" title="' + count + ' entries, relative to your largest set" aria-hidden="true">' + cells + "</span>";
-}
-
 function toolButton(action, id, glyph, label, pressed) {
   return '<button class="action-icon" type="button" data-' + action + '="' + id + '" aria-label="' + label + '" data-tooltip="' + label + '"' +
     (pressed === undefined ? "" : ' aria-pressed="' + pressed + '"') + (action === "del" && armedId === id ? " data-armed" : "") + ">" + icon(glyph) + "</button>";
@@ -63,7 +54,7 @@ function cardHtml(item) {
     '<button class="poster-card-open" type="button" data-open="' + item.id + '" aria-label="Open ' + esc(item.name) + '"></button>' +
     '<div class="poster-card-body"><div class="poster-card-title">' + esc(item.name) + "</div>" +
     '<div class="poster-card-desc"><span>' + esc(item.description || "No description.") + "</span></div>" + (item.count ? paletteHtml(item) : "") + "</div>" +
-    '<div class="poster-card-meta">' + meterHtml(item.count) + age + "</div>" +
+    (age ? '<div class="poster-card-meta">' + age + "</div>" : "") +
     '<span class="poster-card-tools' + (item.pinned ? " keep" : "") + '">' +
     toolButton("pin", item.id, "pin", pinLabel, item.pinned ? "true" : "false") + toolButton("edit", item.id, "edit", "Edit") +
     toolButton("del", item.id, "trash", armedId === item.id ? "Click again to delete" : "Delete") + "</span></div>";
@@ -74,8 +65,7 @@ function addTileHtml() {
     '<div class="poster-card-image is-empty"><span class="poster-card-empty">' + icon("plus") + "</span></div>" +
     '<span class="poster-card-count">NEW</span>' +
     '<div class="poster-card-body"><div class="poster-card-title">New set</div>' +
-    '<div class="poster-card-desc"><span>Name it, add a description, then fill it from the library.</span></div></div>' +
-    '<div class="poster-card-meta">' + meterHtml(0) + "<span>0</span></div></button>";
+    '<div class="poster-card-desc"><span>Name it, add a description, then fill it from the library.</span></div></div></button>";
 }
 
 // Redraws the Sets view: tally, sort buttons and the card grid (the edit form takes focus).
