@@ -9,12 +9,12 @@ function announce(name, detail) {
 }
 
 function markTab(button, active) {
-  button.classList.toggle("nav-tab-active", active);
+  button.classList.toggle("content-card-active", active);
   if (active) button.setAttribute("aria-current", "true");
   else button.removeAttribute("aria-current");
 }
 
-// Redraws the pinned tabs below the fixed ones (every set until one is pinned, plus the open set when it is not pinned) and marks the active tab.
+// Redraws the set cards below the fixed ones (every set until one is pinned, plus the open set when it is not pinned) and marks the active tab.
 function renderTabs() {
   var open = selectedSet();
   var shown = pinnedSets();
@@ -24,8 +24,9 @@ function renderTabs() {
   Array.prototype.slice.call(stack.querySelectorAll("[data-set]")).forEach(function (tab) { tab.remove(); });
   stack.insertAdjacentHTML("beforeend", shown.map(function (item) {
     var active = !browsing && item.id === selectedId;
-    return '<button class="nav-tab nav-tab-folder sets-tab' + (active ? " nav-tab-active" : "") + '" type="button" data-set="' + item.id + '"' +
-      (active ? ' aria-current="true"' : "") + ">" + '<span class="sets-tab-name">' + esc(item.name) + '</span><span class="sets-tab-count">' + item.count + "</span></button>";
+    return '<button class="content-card sets-tab sets-tab-set' + (active ? " content-card-active" : "") + '" type="button" data-set="' + item.id + '"' +
+      (active ? ' aria-current="true"' : "") + ">" + '<span class="sets-tab-head"><span class="sets-tab-name">' + esc(item.name) + '</span><span class="sets-tab-count">' + item.count + "</span></span>" +
+      (item.description ? '<span class="sets-tab-desc">' + esc(item.description) + "</span>" : "") + "</button>";
   }).join(""));
   markTab($("#sets-discover"), feedOpen && !browsing);
   markTab($("#sets-all"), selectedId === null && !feedOpen && !browsing);
