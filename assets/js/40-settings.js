@@ -523,7 +523,7 @@
     syncPoller = initSync();
     watchSyncActivity();
     library = $("#library");
-    opener = $("#dock-settings");
+    opener = $("#sets-settings");
     opener.addEventListener("click", function () { setOpen(!isOpen()); });
     $("#settings-close").addEventListener("click", function () { setOpen(false); });
     document.addEventListener("keydown", function (event) {

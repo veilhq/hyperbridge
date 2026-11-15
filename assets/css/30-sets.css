@@ -9,7 +9,8 @@
 }
 .sets-rail::-webkit-scrollbar { display: none; }
 .sets-stack { flex: 1 1 auto; }
-.sets-rail-tools { display: flex; align-items: center; justify-content: space-between; flex: none; }
+.sets-rail-tools { display: flex; align-items: center; gap: var(--space-1); flex: none; }
+.sets-rail-tools .sets-collapse { margin-left: auto; }
 .sets-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
 .sets-collapse[aria-pressed="true"] .icon-glyph { rotate: 180deg; }
 .sets-tabs-edge { display: none; }

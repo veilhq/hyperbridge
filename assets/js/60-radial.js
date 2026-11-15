@@ -68,7 +68,7 @@
       { label: "Add or search", svg: iconOf("capture-submit"), action: focusInput },
       { label: "Discover", svg: glyph("compass"), action: function () { press("sets-discover"); } },
       { label: "View", svg: iconOf("group-toggle"), children: viewRing() },
-      { label: "Settings", svg: iconOf("dock-settings"), action: function () { press("dock-settings"); } }
+      { label: "Settings", svg: iconOf("sets-settings"), action: function () { press("sets-settings"); } }
     ];
     var find = byId("dock-find");
     if (find && !find.hidden) items.splice(2, 0, { label: "Find more", svg: iconOf("dock-find"), action: function () { press("dock-find"); } });
@@ -80,4 +80,31 @@
   window.HvRadialMenu.register("body", function (body, event) {
     return event.target.closest("dialog[open]") ? null : actions();
   }, { shift: true });
+
+  var pointer = null;
+  var swallowKeyUp = false;
+  document.addEventListener("pointermove", function (event) { pointer = { x: event.clientX, y: event.clientY }; }, { passive: true });
+
+  function blocked(target) {
+    var app = byId("app");
+    return (app && app.inert) || document.querySelector("dialog[open], .radial-menu[aria-hidden='false']")
+      || (target && target.closest && target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])"));
+  }
+
+  // Space opens the ring at the pointer (the window center before the mouse has moved), unless typing or a dialog is open.
+  // The press is swallowed so it neither scrolls the page nor clicks a focused card.
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== " " || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || blocked(event.target)) return;
+    event.preventDefault();
+    if (event.repeat) return;
+    swallowKeyUp = true;
+    var at = pointer || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    window.HvRadialMenu.open(at.x, at.y, actions());
+  }, true);
+  document.addEventListener("keyup", function (event) {
+    if (event.key === " " && swallowKeyUp) {
+      swallowKeyUp = false;
+      event.preventDefault();
+    }
+  }, true);
 })();
