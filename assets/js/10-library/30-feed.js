@@ -21,7 +21,42 @@
 
   function feedCandidate(item) {
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
-      title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, matched: item.matched || null, known_entry_id: null };
+      title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, matched: item.matched || null,
+      followUrl: item.follow_url || null, followLabel: item.follow_label || "", known_entry_id: null };
+  }
+
+  // Returns the distinct unfollowed Are.na channels ({ url, label }) behind the given candidate indexes.
+  function followableIn(indexes) {
+    if (!candidates || !candidates.feed) return [];
+    var seen = {};
+    return indexes.map(function (index) { return candidates.candidates[index]; }).filter(function (item) {
+      if (!item || !item.followUrl || seen[item.followUrl]) return false;
+      seen[item.followUrl] = true;
+      return true;
+    }).map(function (item) { return { url: item.followUrl, label: item.followLabel || item.followUrl }; });
+  }
+
+  // Follows Are.na channels found by Find similar, one at a time, and stops offering them once followed.
+  function followChannels(channels) {
+    var bridge = api();
+    if (!bridge || !channels.length) return;
+    var current = candidates;
+    var added = [];
+    channels.reduce(function (chain, channel) {
+      return chain.then(function () {
+        return Promise.resolve(bridge.follow_source(channel.url)).then(function (result) {
+          if (!result || !result.ok) return;
+          added.push(channel.label);
+          if (candidates !== current) return;
+          current.candidates.forEach(function (item) { if (item.followUrl === channel.url) item.followUrl = null; });
+        }).catch(function () {});
+      });
+    }, Promise.resolve()).then(function () {
+      if (candidates === current) paintSelection();
+      if (!added.length) toast("error", "Could not add to sources.");
+      else if (added.length === channels.length) toast("success", added.length === 1 ? "Added " + added[0] + " to sources." : "Added " + added.length + " channels to sources.");
+      else toast("error", "Added " + added.length + " of " + channels.length + " channels to sources.");
+    });
   }
 
   // Loads every thumbnail off-screen first so cards enter the grid at their final size; images that fail are dropped.
@@ -51,9 +86,25 @@
       : noun + " from your sources. Select the ones to save or dismiss.";
   }
 
+  // Lists the best-ranked set matches not on screen yet; a new search can rank finds above cards already shown.
+  function nextSimilarPage(current) {
+    return listFeedPage(0, current.loaded + PAGE_SIZE).then(function (result) {
+      var shown = {};
+      current.candidates.forEach(function (item) { shown[item.feedId] = true; });
+      result.items = result.items.filter(function (item) { return !shown[item.id]; }).slice(0, PAGE_SIZE);
+      return result;
+    });
+  }
+
   // Adds the next page of feed images when the grid end nears; at the end of the stored list it pulls from the sources first.
+  // In Find similar the pull runs only from the Find more button, so scrolling never starts a search.
   function loadMoreFeed() {
     if (!candidates || !candidates.feed || candidates.busy || candidates.finished || !candidates.candidates.length) return;
+    if (feedSet && !candidates.manual && candidates.loaded >= candidates.total) {
+      candidates.finished = true;
+      syncMore();
+      return;
+    }
     var ticket = findTicket;
     var current = candidates;
     current.busy = true;
@@ -65,14 +116,20 @@
       tail.push(tile);
       placeInColumn(tile);
     }
-    var more = current.loaded < current.total
-      ? listFeedPage(current.loaded, PAGE_SIZE)
-      : pullFeed(false).then(function () { return listFeedPage(current.loaded, PAGE_SIZE); });
+    var more;
+    if (feedSet) {
+      more = (current.manual ? pullFeed(false) : Promise.resolve()).then(function () { return nextSimilarPage(current); });
+    } else {
+      more = current.loaded < current.total
+        ? listFeedPage(current.loaded, PAGE_SIZE)
+        : pullFeed(false).then(function () { return listFeedPage(current.loaded, PAGE_SIZE); });
+    }
     more.then(function (result) {
       if (ticket !== findTicket || candidates !== current) return null;
       if (!result.items.length) current.finished = true;
       current.loaded += result.items.length;
       current.total = result.total;
+      feedCount();
       return preloadFeed(result.items);
     }).then(function (items) {
       if (!items || ticket !== findTicket || candidates !== current) return;
@@ -90,17 +147,19 @@
       tail.forEach(function (tile) { tile.remove(); });
       current.busy = false;
       if (candidates !== current) return;
-      if (current.finished && current.manual) toast("info", "Nothing new from your sources right now.");
+      if (current.finished && current.manual) toast("info", feedSet ? "No new matches this time. Find more again to try other searches." : "Nothing new from your sources right now.");
       current.manual = false;
       syncMore();
       if (!current.finished && feedObserver) { feedObserver.unobserve(sentinel); feedObserver.observe(sentinel); }
     });
   }
 
-  // Shows the Discover more button once the feed has run out of images to add.
+  // Shows the Discover more (Find more for a set) button once the feed has run out of images to add.
   function syncMore() {
     var button = $("#library-more");
-    if (button) button.hidden = !(candidates && candidates.feed && candidates.finished && !candidates.busy && candidates.candidates.length);
+    if (!button) return;
+    button.hidden = !(candidates && candidates.feed && candidates.finished && !candidates.busy && candidates.candidates.length);
+    $("#feed-more").textContent = feedSet ? "Find more" : "Discover more";
   }
 
   function discoverMore() {
@@ -135,6 +194,7 @@
   // Names why a refresh brought nothing: no sources, nothing to pull from, or sources unreachable.
   function refreshNote(pulled) {
     if (!pulled || !pulled.ok) return "Could not refresh the feed.";
+    if (feedSet && !pulled.enabled.length) return "Add some tagged or titled images to this set so there is something to search for.";
     if (!pulled.enabled.length || !pulled.jobs) return "Discover pulls from the Are.na channels, Pinterest boards and Tumblr blogs on your followed list. Add one with the sliders icon.";
     if (pulled.failed >= pulled.jobs) return "Could not reach the sources. Check the internet connection and refresh.";
     return "";

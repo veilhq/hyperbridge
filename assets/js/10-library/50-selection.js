@@ -61,6 +61,7 @@
     $("#sel-save").hidden = picking;
     $("#sel-recapture").hidden = picking;
     $("#sel-discard").hidden = picking && !feedMode;
+    $("#sel-follow").hidden = !feedMode || !followableIn(selectedIds()).length;
   }
 
   function clearSelection() {
@@ -210,6 +211,7 @@
     $("#sel-save").addEventListener("click", bulkSave);
     $("#sel-recapture").addEventListener("click", bulkRecapture);
     $("#sel-discard").addEventListener("click", bulkDiscard);
+    $("#sel-follow").addEventListener("click", function () { followChannels(followableIn(selectedIds())); });
     $("#sel-clear").addEventListener("click", clearSelection);
     document.addEventListener("keydown", function (event) {
       if ($("#app").inert) return;
@@ -237,6 +239,12 @@
     if (!window.HvContextMenu) return;
     window.HvContextMenu.register(".library-card[data-id]", function (card) {
       var id = Number(card.getAttribute("data-id"));
+      if (candidates && candidates.feed) {
+        var channels = followableIn(selected.size > 1 && selected.has(id) ? selectedIds() : [id]);
+        if (!channels.length) return [];
+        var label = channels.length === 1 ? "Add " + escapeHtml(channels[0].label) + " to sources" : "Add " + channels.length + " channels to sources";
+        return [{ label: label, action: function () { followChannels(channels); } }];
+      }
       var entry = state.entries.find(function (item) { return item.id === id; });
       var bridge = api();
       if (!entry || !bridge) return [];

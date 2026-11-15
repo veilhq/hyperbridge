@@ -1,9 +1,10 @@
-"""Find similar: ranks the discovery feed against one set's words, and pulls from the followed sources closest to it."""
+"""Find similar: searches Are.na for one set's words, and ranks those finds and the feed's Are.na images against the set."""
 
 import json
 import math
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -12,6 +13,13 @@ from bridge.ingest import capture
 from bridge.ingest import feed
 
 POOL_LIMIT = 5000
+PAGE_LIMIT = 1000
+QUERIES = 3
+QUERY_POOL = 10
+PAIR_POOL = 4
+PAIR_WEIGHT = 0.8
+USED_WEIGHT = 0.1
+ARENA_CHANNELS = 3
 SHOWN_TERMS = 8
 MATCHED_TERMS = 3
 SOURCE_PULL = 4.0
@@ -115,6 +123,15 @@ def top_terms(weights, count=SHOWN_TERMS) -> list:
     return names
 
 
+def _followable(row, followed) -> dict:
+    """Return the Are.na channel an image came from when neither it nor its owner is followed, else nothing."""
+    found = arena.target(row["page_url"])
+    home = _bare(row["page_url"])
+    if not found or found[0] != "channel" or home in followed or home.rsplit("/", 1)[0] in followed:
+        return {}
+    return {"follow_url": row["page_url"], "follow_label": row["collection"] or found[1]}
+
+
 def rank(conn, set_id) -> tuple:
     """Return (scored unseen feed items, best first, each with the terms it matched; the set's profile)."""
     wanted = profile(conn, set_id)
@@ -122,8 +139,9 @@ def rank(conn, set_id) -> tuple:
         return [], wanted
     rows = conn.execute(
         "SELECT id, source_id, url, thumb, width, height, title, creator, page_url, term, collection, tags FROM feed_items"
-        " WHERE state = 'new' AND source_id IN ('arena', 'tumblr', 'pinterest') ORDER BY id DESC LIMIT ?",
-        (POOL_LIMIT,)).fetchall()
+        " WHERE state = 'new' AND (set_id IS NULL OR set_id = ?) AND source_id = 'arena'"
+        " ORDER BY id DESC LIMIT ?", (int(set_id), POOL_LIMIT)).fetchall()
+    followed = {_bare(source["url"]) for source in arena.list_followed(conn)}
     described = [(row, _item_terms(row)) for row in rows]
     counts = {}
     for _, terms in described:
@@ -138,17 +156,17 @@ def rank(conn, set_id) -> tuple:
             continue
         score = sum(shared.values()) / math.sqrt(len(terms))
         item = {key: row[key] for key in ("id", "source_id", "url", "thumb", "width", "height", "title", "creator", "page_url")}
-        item.update(score=round(score, 4), matched=top_terms(shared, MATCHED_TERMS))
+        item.update(score=round(score, 4), matched=top_terms(shared, MATCHED_TERMS), **_followable(row, followed))
         scored.append(item)
     scored.sort(key=lambda item: (-item["score"], -item["id"]))
     return scored, wanted
 
 
 def list_items(conn, set_id, offset=0, limit=60) -> dict:
-    """Return a page of unseen feed items ranked by likeness to a set, with the set's leading terms and whether the feed is due a refresh."""
+    """Return a page of unseen feed items ranked by likeness to a set, with the set's leading terms and whether a new search is due."""
     scored, wanted = rank(conn, set_id)
-    offset, limit = max(0, int(offset)), max(1, min(int(limit), 200))
-    newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
+    offset, limit = max(0, int(offset)), max(1, min(int(limit), PAGE_LIMIT))
+    newest = conn.execute("SELECT MAX(created_at) FROM feed_items WHERE set_id = ?", (int(set_id),)).fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > feed.STALE_HOURS * 3600
     return {"items": scored[offset:offset + limit], "total": len(scored), "stale": stale, "terms": top_terms(wanted)}
 
@@ -176,18 +194,60 @@ def source_weights(conn, set_id, followed, wanted=None) -> dict:
     return weights
 
 
+def queries(wanted, rng, count=QUERIES, used=()) -> list:
+    """Draw a few search phrases from the set's heaviest terms and pairs of them, favoring heavier and not yet searched ones."""
+    weights = {}
+    for term, weight in wanted.items():
+        name = _label(term)
+        if term.startswith("creator:") or name.startswith(("http", "www.")):
+            continue
+        if weight > weights.get(name, 0):
+            weights[name] = weight
+    best = dict(sorted(weights.items(), key=lambda pair: -pair[1])[:QUERY_POOL])
+    leaders = list(best)[:PAIR_POOL]
+    for index, first in enumerate(leaders):
+        for second in leaders[index + 1:]:
+            if first not in second and second not in first:
+                best[f"{first} {second}"] = min(best[first], best[second]) * PAIR_WEIGHT
+    used = {str(phrase).lower() for phrase in used}
+    return feed._weighted_pick(rng, {phrase: weight * (USED_WEIGHT if phrase in used else 1.0) for phrase, weight in best.items()}, count)
+
+
+def _search_one(query, fetcher, rng):
+    """Search Are.na channel names for one phrase and pull from one of the closest channels; returns (items, failed searches)."""
+    try:
+        channels = arena.search_channels(query, fetcher)[:ARENA_CHANNELS]
+        if not channels:
+            return [], 0
+        return [dict(item, term=query[:100]) for item in arena.channel_items(rng.choice(channels), fetcher, rng)], 0
+    except Exception:  # noqa: BLE001 - a failed search leaves the other phrases' results
+        return [], 1
+
+
+def search(conn, set_id, fetcher=None, rng=None) -> dict:
+    """Search Are.na for the set's leading terms and keep the images for that set's Find similar."""
+    fetcher = fetcher or capture.default_fetcher()
+    rng = rng or random.Random()
+    used = [row[0] for row in conn.execute("SELECT DISTINCT term FROM feed_items WHERE set_id = ?", (int(set_id),))]
+    phrases = queries(profile(conn, set_id), rng, used=used)
+    with ThreadPoolExecutor(max_workers=max(1, len(phrases))) as pool:
+        found = list(pool.map(lambda phrase: _search_one(phrase, fetcher, rng), phrases))
+    items = [item for batch, _ in found for item in batch]
+    added = feed.store(conn, items, int(set_id))
+    return {"added": added, "failed": sum(failed for _, failed in found), "jobs": len(phrases), "queries": phrases}
+
+
 def refresh(conn, set_id, fetcher=None, rng=None) -> dict:
-    """Pull from the followed sources, favoring those closest to the set, until something new arrives or the rounds run out."""
+    """Search Are.na for the set, then pull once from the followed Are.na channels and users closest to it."""
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
     feed.prune(conn)
-    followed = arena.list_followed(conn)
-    weights = source_weights(conn, set_id, followed)
-    added = failed = jobs = 0
-    for _ in range(feed.ROUNDS):
-        pulled, round_failed, round_jobs = feed.pull_round(weights, fetcher, rng)
-        failed, jobs = failed + round_failed, jobs + round_jobs
+    searched = search(conn, set_id, fetcher, rng)
+    followed = [source for source in arena.list_followed(conn) if arena.target(source["url"])]
+    added, failed, jobs = searched["added"], searched["failed"], searched["jobs"]
+    if followed:
+        pulled, round_failed, round_jobs = feed.pull_round(source_weights(conn, set_id, followed), fetcher, rng)
         added += feed.store(conn, pulled)
-        if added or not followed or round_failed == round_jobs:
-            break
-    return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else []}
+        failed, jobs = failed + round_failed, jobs + round_jobs
+    enabled = (["search"] if searched["queries"] else []) + (["arena"] if followed else [])
+    return {"added": added, "failed": failed, "jobs": jobs, "enabled": enabled, "queries": searched["queries"]}

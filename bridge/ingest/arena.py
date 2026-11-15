@@ -4,7 +4,7 @@ import json
 import re
 import time
 from datetime import datetime
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from bridge.ingest import capture
 from bridge.ingest import discover
@@ -221,6 +221,39 @@ def _fill_entry(conn, row, block) -> None:
     if updates:
         sets = ", ".join(f"{column} = ?" for column in updates)
         conn.execute(f"UPDATE entries SET {sets} WHERE id = ?", (*updates.values(), row["id"]))
+
+
+SEARCH_CHANNELS = 20
+SEARCH_WORDS = 2
+_TITLE_WORD = re.compile(r"[a-z0-9]{3,}")
+
+
+def search_channels(query, fetcher) -> list:
+    """Return the links of public Are.na channels whose titles share words with a query, closest then biggest first.
+
+    Uses the v2 search, which needs no login; a phrase that finds nothing is searched again word by word.
+    """
+    wanted = _TITLE_WORD.findall(query.lower())
+
+    def overlap(item):
+        return len(set(wanted) & set(_TITLE_WORD.findall(str(item.get("title") or "").lower())))
+
+    def lookup(text):
+        data = _json(fetcher, f"{API}/search/channels?" + urlencode({"q": text, "per": SEARCH_CHANNELS}))
+        return [item for item in data.get("channels") or []
+                if item.get("slug") and int(item.get("length") or 0) > 0 and item.get("status") != "private" and overlap(item)]
+
+    found = lookup(query)
+    if not found and len(wanted) > 1:
+        seen = set()
+        for word in sorted(set(wanted), key=len, reverse=True)[:SEARCH_WORDS]:
+            for item in lookup(word):
+                if item["slug"] not in seen:
+                    seen.add(item["slug"])
+                    found.append(item)
+    found.sort(key=lambda item: (-overlap(item), -int(item.get("length") or 0)))
+    owners = [((item.get("user") or {}).get("slug") or "channel") for item in found]
+    return [f"https://www.are.na/{owner}/{item['slug']}" for owner, item in zip(owners, found)]
 
 
 def pull(url, fetcher, rng) -> list:

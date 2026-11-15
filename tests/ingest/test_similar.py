@@ -5,9 +5,11 @@ import random
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bridge.ingest import arena  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import similar  # noqa: E402
 from bridge.library import library  # noqa: E402
@@ -28,7 +30,7 @@ class SimilarCase(LibraryCase):
         self.conn.execute("INSERT INTO set_entries (set_id, entry_id, placed_at) VALUES (?, ?, ?)", (set_id, entry, NOW))
         return entry
 
-    def feed_item(self, url, tags=(), collection="", title="", creator="", source_id="tumblr", state="new"):
+    def feed_item(self, url, tags=(), collection="", title="", creator="", source_id="arena", state="new"):
         cursor = self.conn.execute(
             "INSERT INTO feed_items (source_id, url, thumb, width, height, title, creator, page_url, term, created_at,"
             " source_ref, collection, posted_at, tags, state) VALUES (?, ?, ?, 10, 10, ?, ?, '', '', ?, '', ?, '', ?, ?)",
@@ -86,9 +88,14 @@ class RankTests(SimilarCase):
         self.assertIn("concrete", result["items"][0]["matched"])
 
     def test_untagged_items_match_on_their_collection(self):
-        board = self.feed_item("https://x/pin.jpg", collection="Brutal Buildings", source_id="pinterest")
+        channel = self.feed_item("https://x/block.jpg", collection="Brutal Buildings")
         result = similar.list_items(self.conn, self.set_id)
-        self.assertEqual([item["id"] for item in result["items"]], [board])
+        self.assertEqual([item["id"] for item in result["items"]], [channel])
+
+    def test_only_arena_images_are_ranked(self):
+        self.feed_item("https://x/post.jpg", tags=["concrete"], source_id="tumblr")
+        self.feed_item("https://x/pin.jpg", tags=["concrete"], source_id="pinterest")
+        self.assertEqual(similar.list_items(self.conn, self.set_id)["total"], 0)
 
     def test_leading_terms_are_reported(self):
         terms = similar.list_items(self.conn, self.set_id)["terms"]
@@ -116,19 +123,109 @@ class SourceWeightTests(SimilarCase):
         self.assertGreater(weights["https://concrete-daily.tumblr.com"], 1.0)
 
 
+def reply(data):
+    return SimpleNamespace(body=json.dumps(data).encode(), final_url="", status=200, content_type="application/json")
+
+
+def search_fetcher(url, headers=None):
+    if "/v2/search/channels" in url:
+        return reply({"channels": [{"slug": "coffee", "title": "Espresso Yourself", "length": 900, "status": "open", "user": {"slug": "maker"}},
+                                   {"slug": "concrete-things", "title": "Concrete Things", "length": 3, "status": "closed", "user": {"slug": "maker"}},
+                                   {"slug": "secret", "title": "Concrete", "length": 3, "status": "private", "user": {"slug": "maker"}}]})
+    if "/contents" in url:
+        return reply({"data": [{"id": 7, "title": "slab", "image": {"src": "https://arena.example/slab.jpg"}}]})
+    if "api.are.na/v3/channels/" in url:
+        return reply({"title": "Concrete Things", "counts": {"contents": 1}})
+    raise AssertionError(url)
+
+
+class SearchTests(SimilarCase):
+    def setUp(self):
+        super().setUp()
+        self.set_id = self.make_set()
+        self.member(self.set_id, tags=["concrete"], creator="Somebody")
+
+    def test_arena_channel_search_skips_private_and_off_topic_channels(self):
+        self.assertEqual(arena.search_channels("concrete", search_fetcher), ["https://www.are.na/maker/concrete-things"])
+
+    def test_arena_phrase_with_no_channels_is_searched_word_by_word(self):
+        asked = []
+
+        def fetcher(url, headers=None):
+            asked.append(url)
+            if "q=raw+concrete" in url:
+                return reply({"channels": []})
+            return search_fetcher(url, headers)
+        self.assertEqual(arena.search_channels("raw concrete", fetcher), ["https://www.are.na/maker/concrete-things"])
+        self.assertEqual(len(asked), 3)
+
+    def test_queries_skip_creators(self):
+        phrases = similar.queries(similar.profile(self.conn, self.set_id), random.Random(1), count=5)
+        self.assertEqual(phrases, ["concrete"])
+
+    def test_queries_offer_pairs_of_leading_terms(self):
+        phrases = similar.queries({"concrete": 1.0, "poster": 1.0}, random.Random(1), count=3)
+        self.assertEqual(sorted(phrases), ["concrete", "concrete poster", "poster"])
+
+    def test_queries_favor_phrases_not_yet_searched(self):
+        wanted = {"concrete": 1.0, "poster": 0.5}
+        picks = [similar.queries(wanted, random.Random(seed), count=1, used=["concrete", "concrete poster"])[0] for seed in range(40)]
+        self.assertGreater(picks.count("poster"), picks.count("concrete"))
+
+    def test_searching_again_adds_to_earlier_finds(self):
+        similar.search(self.conn, self.set_id, search_fetcher, random.Random(1))
+
+        def more(url, headers=None):
+            if "/contents" in url:
+                return reply({"data": [{"id": 8, "title": "beam", "image": {"src": "https://arena.example/beam.jpg"}}]})
+            return search_fetcher(url, headers)
+        similar.search(self.conn, self.set_id, more, random.Random(2))
+        self.assertEqual(similar.list_items(self.conn, self.set_id)["total"], 2)
+
+    def test_search_finds_belong_to_the_set_and_stay_out_of_discover(self):
+        result = similar.search(self.conn, self.set_id, search_fetcher, random.Random(1))
+        self.assertEqual((result["added"], result["failed"], result["queries"]), (1, 0, ["concrete"]))
+        self.assertEqual(similar.list_items(self.conn, self.set_id)["total"], 1)
+        self.assertEqual(feed.list_items(self.conn)["total"], 0)
+        other = self.make_set("Other")
+        self.member(other, tags=["concrete"])
+        self.assertEqual(similar.list_items(self.conn, other)["total"], 0)
+
+    def test_finds_offer_their_channel_until_it_or_its_owner_is_followed(self):
+        similar.search(self.conn, self.set_id, search_fetcher, random.Random(1))
+        item = similar.list_items(self.conn, self.set_id)["items"][0]
+        self.assertEqual((item["follow_url"], item["follow_label"]), ("https://www.are.na/maker/concrete-things", "Concrete Things"))
+        self.conn.execute("INSERT INTO followed_sources (kind, url, label, created_at) VALUES ('user', 'https://www.are.na/maker', 'maker', ?)", (NOW,))
+        self.assertNotIn("follow_url", similar.list_items(self.conn, self.set_id)["items"][0])
+
+    def test_an_unreachable_arena_counts_as_a_failed_search(self):
+        def down(url, headers=None):
+            raise OSError("down")
+        result = similar.search(self.conn, self.set_id, down, random.Random(1))
+        self.assertEqual((result["added"], result["failed"]), (0, 1))
+
+    def test_search_is_due_until_the_set_has_been_searched(self):
+        self.assertTrue(similar.list_items(self.conn, self.set_id)["stale"])
+        similar.search(self.conn, self.set_id, search_fetcher, random.Random(1))
+        self.assertFalse(similar.list_items(self.conn, self.set_id)["stale"])
+
+
 class RefreshTests(SimilarCase):
-    def test_pulls_and_stores_through_the_feed(self):
+    def test_searches_then_pulls_from_followed_arena_sources_only(self):
         set_id = self.make_set()
         self.member(set_id, tags=["concrete"])
         self.conn.execute("INSERT INTO followed_sources (kind, url, label, created_at) VALUES ('channel', 'https://www.are.na/me/chan', 'Chan', ?)", (NOW,))
+        self.conn.execute("INSERT INTO followed_sources (kind, url, label, created_at) VALUES ('blog', 'https://concrete.tumblr.com', 'concrete', ?)", (NOW,))
         item = {"source_id": "arena", "url": "https://arena.example/o.jpg", "thumb": "", "width": 1, "height": 1,
                 "title": "", "creator": "", "page_url": "", "term": "", "tags": ["concrete"]}
         original = feed.pull
-        feed.pull = lambda url, fetcher, rng: [item]
+        pulled = []
+        feed.pull = lambda url, fetcher, rng: pulled.append(url) or [item]
         self.addCleanup(setattr, feed, "pull", original)
-        result = similar.refresh(self.conn, set_id, fetcher=lambda url: None, rng=random.Random(1))
-        self.assertEqual((result["added"], result["jobs"]), (1, 1))
-        self.assertEqual(similar.list_items(self.conn, set_id)["total"], 1)
+        result = similar.refresh(self.conn, set_id, fetcher=search_fetcher, rng=random.Random(1))
+        self.assertEqual((result["added"], result["jobs"], result["enabled"]), (2, 2, ["search", "arena"]))
+        self.assertEqual(pulled, ["https://www.are.na/me/chan"])
+        self.assertEqual(similar.list_items(self.conn, set_id)["total"], 2)
 
 
 if __name__ == "__main__":

@@ -87,15 +87,15 @@ def refresh(conn, fetcher=None, rng=None, replace=False) -> dict:
         pulled, round_failed, round_jobs = pull_round({url: 1 for url in followed}, fetcher, rng)
         failed, jobs = failed + round_failed, jobs + round_jobs
         if replace and (pulled or not followed):
-            conn.execute("DELETE FROM feed_items WHERE state = 'new'")
+            conn.execute("DELETE FROM feed_items WHERE state = 'new' AND set_id IS NULL")
         added += store(conn, pulled)
         if added or not followed or round_failed == round_jobs:
             break
     return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else []}
 
 
-def store(conn, items) -> int:
-    """Insert items not already saved or seen; returns how many were new."""
+def store(conn, items, set_id=None) -> int:
+    """Insert items not already saved or seen, marked for a set when one is given; returns how many were new."""
     added = 0
     for item in items:
         try:
@@ -107,11 +107,11 @@ def store(conn, items) -> int:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO feed_items"
             " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at,"
-            " source_ref, collection, posted_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " source_ref, collection, posted_at, tags, set_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["source_id"], item["url"], item["thumb"], item["width"], item["height"], item["title"],
              item["creator"], item["page_url"], item["term"], _now(),
              item.get("source_ref", ""), item.get("collection", ""), item.get("posted_at", ""),
-             json.dumps(item.get("tags") or [])),
+             json.dumps(item.get("tags") or []), set_id),
         )
         added += cursor.rowcount
     return added
@@ -119,10 +119,10 @@ def store(conn, items) -> int:
 
 def list_items(conn, offset=0, limit=60) -> dict:
     """Return unseen feed items, oldest first so later pulls append, with whether the feed is due a refresh."""
-    total = conn.execute("SELECT COUNT(*) FROM feed_items WHERE state = 'new' AND source_id IN ('arena', 'tumblr', 'pinterest')").fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) FROM feed_items WHERE state = 'new' AND set_id IS NULL AND source_id IN ('arena', 'tumblr', 'pinterest')").fetchone()[0]
     rows = conn.execute(
         "SELECT id, source_id, url, thumb, width, height, title, creator, page_url FROM feed_items"
-        " WHERE state = 'new' AND source_id IN ('arena', 'tumblr', 'pinterest') ORDER BY id LIMIT ? OFFSET ?",
+        " WHERE state = 'new' AND set_id IS NULL AND source_id IN ('arena', 'tumblr', 'pinterest') ORDER BY id LIMIT ? OFFSET ?",
         (max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
     newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > STALE_HOURS * 3600
