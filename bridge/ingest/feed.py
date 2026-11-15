@@ -41,9 +41,9 @@ def pull(url, fetcher, rng) -> list:
     return pinterest.items(url, fetcher, rng) if pinterest.is_pinterest(url) else tumblr.items(url, fetcher, rng)
 
 
-def _round(followed, fetcher, rng):
-    """Pull from a few followed sources once; returns (items, failed, jobs)."""
-    picked = _weighted_pick(rng, {url: 1 for url in followed}, MAX_CHANNELS)
+def pull_round(weights, fetcher, rng):
+    """Pull once from a few followed sources drawn by weight ({url: weight}); returns (items, failed, jobs)."""
+    picked = _weighted_pick(rng, weights, MAX_CHANNELS)
     failed = 0
     pulled, seen = [], set()
     for url in picked:
@@ -84,17 +84,17 @@ def refresh(conn, fetcher=None, rng=None, replace=False) -> dict:
         pass
     added = failed = jobs = 0
     for attempt in range(1 if replace else ROUNDS):
-        pulled, round_failed, round_jobs = _round(followed, fetcher, rng)
+        pulled, round_failed, round_jobs = pull_round({url: 1 for url in followed}, fetcher, rng)
         failed, jobs = failed + round_failed, jobs + round_jobs
         if replace and (pulled or not followed):
             conn.execute("DELETE FROM feed_items WHERE state = 'new'")
-        added += _store(conn, pulled)
+        added += store(conn, pulled)
         if added or not followed or round_failed == round_jobs:
             break
     return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else []}
 
 
-def _store(conn, items) -> int:
+def store(conn, items) -> int:
     """Insert items not already saved or seen; returns how many were new."""
     added = 0
     for item in items:

@@ -87,6 +87,14 @@ function confirmDelete(id) {
   toast("info", "Click again to delete.");
 }
 
+// Opens a set and shows the feed images most like it.
+function findSimilar(id) {
+  var item = setById(id);
+  if (!item) return;
+  select(item.id);
+  announce("hyperbridge:similar", { id: item.id, name: item.name });
+}
+
 // Right-click menus: card and tab actions, and New set anywhere in the strip or the view.
 function setupMenus() {
   if (!window.HvContextMenu) return;
@@ -99,6 +107,7 @@ function setupMenus() {
     if (!item) return [];
     return [
       { label: "Open", action: function () { select(item.id); } },
+      { label: "Find similar", action: function () { findSimilar(item.id); } },
       { label: item.pinned ? "Unpin from tabs" : "Pin to tabs", action: function () { togglePin(item.id); } },
       { label: "Edit", action: function () { startEdit(item.id); } },
       { label: "Delete", action: function () { deleteSet(item); } },
@@ -110,6 +119,7 @@ function setupMenus() {
     var item = itemFor(tab);
     if (!item) return [];
     return [
+      { label: "Find similar", action: function () { findSimilar(item.id); } },
       { label: item.pinned ? "Unpin from tabs" : "Pin to tabs", action: function () { togglePin(item.id); } },
       { label: "Edit", action: function () { startEdit(item.id); } },
       { label: "Delete", action: function () { deleteSet(item); } },

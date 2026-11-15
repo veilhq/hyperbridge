@@ -71,6 +71,9 @@ function initSets() {
     if (tab) select(Number(tab.getAttribute("data-set")));
   });
   $("#set-head-back").addEventListener("click", openBrowse);
+  $("#set-head-similar").addEventListener("click", function () {
+    if (selectedId !== null) findSimilar(selectedId);
+  });
   $("#set-head-pin").addEventListener("click", function () {
     if (selectedId !== null) togglePin(selectedId);
   });

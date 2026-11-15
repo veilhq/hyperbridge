@@ -13,12 +13,15 @@
     $("#library-filter-color").addEventListener("click", function () { setColor(""); });
     document.addEventListener("hyperbridge:color", function (event) { setColor(event.detail.color); });
     $("#find-exit").addEventListener("click", function () {
-      if (candidates && candidates.feed) $("#sets-all").click();
-      else leaveCandidates();
+      if (candidates && candidates.feed && !feedSet) { $("#sets-all").click(); return; }
+      var wasSimilar = Boolean(feedSet);
+      leaveCandidates();
+      if (wasSimilar) load(true);
     });
-    $("#find-refresh").addEventListener("click", function () { openFeed(true); });
+    $("#find-refresh").addEventListener("click", function () { openFeed(true, feedSet); });
     $("#feed-more").addEventListener("click", discoverMore);
     document.addEventListener("hyperbridge:feed", function () { openFeed(false); });
+    document.addEventListener("hyperbridge:similar", function (event) { openFeed(false, event.detail); });
     window.addEventListener("resize", function () {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(relayoutColumns, 150);

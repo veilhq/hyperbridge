@@ -48,6 +48,7 @@ from bridge.ingest import capture  # noqa: E402
 from bridge.ingest import discover  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import feed_sources  # noqa: E402
+from bridge.ingest import similar  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
 from bridge.core import db  # noqa: E402
 from bridge.library import library  # noqa: E402
@@ -330,6 +331,16 @@ class HyperbridgeAPI:
         """Return unseen discovery feed items and whether a refresh is due."""
         return self._feed_call("list_feed", lambda conn: feed.list_items(conn, offset, limit),
                                {"items": [], "total": 0, "stale": False})
+
+    def list_similar(self, set_id: int, offset: int = 0, limit: int = 60) -> dict:
+        """Return unseen feed items ranked by likeness to a set, with the set's leading terms."""
+        return self._feed_call("list_similar", lambda conn: similar.list_items(conn, int(set_id), offset, limit),
+                               {"items": [], "total": 0, "stale": False, "terms": []})
+
+    def refresh_similar(self, set_id: int) -> dict:
+        """Pull new feed images, favoring the followed sources closest to a set."""
+        result = self._feed_call("refresh_similar", lambda conn: similar.refresh(conn, int(set_id)), None)
+        return {"ok": False, "error": "Could not refresh the feed."} if result is None else {"ok": True, **result}
 
     def dismiss_feed(self, ids: list) -> int:
         """Hide feed items the Operator does not want."""

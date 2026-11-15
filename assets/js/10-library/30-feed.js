@@ -1,4 +1,16 @@
   var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr", pinterest: "Pinterest" };
+  // The set ({ id, name }) the feed is narrowed to by Find similar; null for the full Discover feed.
+  var feedSet = null;
+
+  function listFeedPage(offset, limit) {
+    var bridge = api();
+    return Promise.resolve(feedSet ? bridge.list_similar(feedSet.id, offset, limit) : bridge.list_feed(offset, limit));
+  }
+
+  function pullFeed(replace) {
+    var bridge = api();
+    return Promise.resolve(feedSet ? bridge.refresh_similar(feedSet.id) : bridge.refresh_feed(replace));
+  }
 
   // Names the discover view's exit icon for screen readers and hover.
   function setExitLabel(text) {
@@ -9,7 +21,7 @@
 
   function feedCandidate(item) {
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
-      title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, known_entry_id: null };
+      title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, matched: item.matched || null, known_entry_id: null };
   }
 
   // Loads every thumbnail off-screen first so cards enter the grid at their final size; images that fail are dropped.
@@ -32,12 +44,15 @@
 
   function feedCount() {
     var count = candidates.total;
-    $("#find-head-desc").textContent = count + (count === 1 ? " new image" : " new images") + " from your sources. Select the ones to save or dismiss.";
+    var noun = count + (count === 1 ? " new image" : " new images");
+    var terms = candidates.terms && candidates.terms.length ? " (" + candidates.terms.join(", ") + ")" : "";
+    $("#find-head-desc").textContent = feedSet
+      ? noun + " like this set" + terms + ". Select the ones to add to it or dismiss."
+      : noun + " from your sources. Select the ones to save or dismiss.";
   }
 
   // Adds the next page of feed images when the grid end nears; at the end of the stored list it pulls from the sources first.
   function loadMoreFeed() {
-    var bridge = api();
     if (!candidates || !candidates.feed || candidates.busy || candidates.finished || !candidates.candidates.length) return;
     var ticket = findTicket;
     var current = candidates;
@@ -51,8 +66,8 @@
       placeInColumn(tile);
     }
     var more = current.loaded < current.total
-      ? Promise.resolve(bridge.list_feed(current.loaded, PAGE_SIZE))
-      : Promise.resolve(bridge.refresh_feed()).then(function () { return bridge.list_feed(current.loaded, PAGE_SIZE); });
+      ? listFeedPage(current.loaded, PAGE_SIZE)
+      : pullFeed(false).then(function () { return listFeedPage(current.loaded, PAGE_SIZE); });
     more.then(function (result) {
       if (ticket !== findTicket || candidates !== current) return null;
       if (!result.items.length) current.finished = true;
@@ -103,7 +118,7 @@
 
   // Paints the feed's unseen images in the grid; choosing some saves or dismisses them.
   function showFeed(result, note, quiet) {
-    candidates = { feed: true, page_url: "", total: result.total, loaded: result.loaded || result.items.length, busy: false, finished: false, candidates: result.items.map(feedCandidate) };
+    candidates = { feed: true, page_url: "", total: result.total, terms: result.terms || [], loaded: result.loaded || result.items.length, busy: false, finished: false, candidates: result.items.map(feedCandidate) };
     grid.removeAttribute("aria-busy");
     clearSelection();
     resetColumns();
@@ -111,7 +126,10 @@
     if (!quiet) cascadeIn();
     feedCount();
     var count = result.total;
-    feedMessage(count ? "" : (note || "Nothing new yet. Tag or group some images to steer the feed, then refresh."));
+    var empty = feedSet
+      ? "Nothing like this set in the feed yet. Tag its images to sharpen the match, or refresh to pull more."
+      : "Nothing new yet. Tag or group some images to steer the feed, then refresh.";
+    feedMessage(count ? "" : (note || empty));
   }
 
   // Names why a refresh brought nothing: no sources, nothing to pull from, or sources unreachable.
@@ -138,38 +156,39 @@
     $("#find-head-desc").textContent = "Finding images...";
   }
 
-  // Opens the Discover feed; it pulls from the sources first when it is empty or out of date.
-  function openFeed(forceRefresh) {
+  // Opens the Discover feed, or with a set ({ id, name }) the feed ranked by likeness to that set;
+  // it pulls from the sources first when it is empty or out of date.
+  function openFeed(forceRefresh, target) {
     var bridge = api();
     if (!bridge || !bridge.list_feed) return;
     var ticket = ++findTicket;
-    if (!candidates || !candidates.feed) {
-      state.setId = null;
-      setFinding(false);
-      $("#dock-find").hidden = true;
-      renderFilter();
-      emptyEl.hidden = true;
-      $("#library").setAttribute("data-finding", "true");
-      $("#find-head").hidden = false;
-      $("#find-head-title").textContent = "Discover";
-      setExitLabel("Back to library");
-      $("#find-refresh").hidden = false;
-    }
+    state.ticket++;
+    feedSet = target || null;
+    state.setId = feedSet ? feedSet.id : null;
+    setFinding(false);
+    $("#dock-find").hidden = true;
+    renderFilter();
+    emptyEl.hidden = true;
+    $("#library").setAttribute("data-finding", "true");
+    $("#find-head").hidden = false;
+    $("#find-head-title").textContent = feedSet ? "Like " + feedSet.name : "Discover";
+    setExitLabel(feedSet ? "Back to set" : "Back to library");
+    $("#find-refresh").hidden = false;
     showFeedLoading();
     var sourcesOff = "";
-    Promise.resolve(bridge.list_feed(0, PAGE_SIZE)).then(function (first) {
+    listFeedPage(0, PAGE_SIZE).then(function (first) {
       if (ticket !== findTicket) return null;
       if (!forceRefresh && first.total && !first.stale) return first;
-      return Promise.resolve(bridge.refresh_feed(true)).then(function (pulled) {
+      return pullFeed(true).then(function (pulled) {
         if (ticket !== findTicket) return null;
         sourcesOff = refreshNote(pulled);
-        return bridge.list_feed(0, PAGE_SIZE);
+        return listFeedPage(0, PAGE_SIZE);
       });
     }).then(function (result) {
       if (!result || ticket !== findTicket) return null;
       return preloadFeed(result.items).then(function (items) {
         if (ticket !== findTicket) return;
-        showFeed({ items: items, total: result.total, loaded: result.items.length },
+        showFeed({ items: items, total: result.total, terms: result.terms, loaded: result.items.length },
           sourcesOff);
       });
     }).catch(function () {
@@ -209,17 +228,16 @@
 
   // Redraws the feed after a save or dismiss without a skeleton pass, keeping the scroll position.
   function reloadFeed() {
-    var bridge = api();
     var ticket = ++findTicket;
     var shown = candidates ? Math.max(candidates.loaded, PAGE_SIZE) : PAGE_SIZE;
     var host = $("#library");
     var top = host.scrollTop;
-    Promise.resolve(bridge.list_feed(0, shown)).then(function (result) {
+    listFeedPage(0, shown).then(function (result) {
       if (ticket !== findTicket || !candidates || !candidates.feed) return null;
       return preloadFeed(result.items).then(function (items) {
         if (ticket !== findTicket || !candidates || !candidates.feed) return;
         flip(function () {
-          showFeed({ items: items, total: result.total, loaded: result.items.length }, "", true);
+          showFeed({ items: items, total: result.total, terms: result.terms, loaded: result.items.length }, "", true);
           host.scrollTop = top;
         });
       });
@@ -229,8 +247,10 @@
   function leaveCandidates() {
     if (!candidates) return;
     candidates = null;
+    feedSet = null;
     syncMore();
     findTicket++;
+    $("#dock-find").hidden = !state.setId;
     $("#find-refresh").hidden = true;
     setExitLabel("Back to set");
     grid.removeAttribute("data-columns");

@@ -88,6 +88,7 @@
     if (item.feedId) {
       if (item.title) details.appendChild(makeEl("span", "library-card-title", item.title));
       details.appendChild(makeEl("span", "library-card-domain", item.creator || item.source));
+      if (item.matched && item.matched.length) details.appendChild(makeEl("span", "library-card-domain", "Like: " + item.matched.join(", ")));
     } else {
       details.appendChild(makeEl("span", "library-card-domain", item.section || (item.width + " x " + item.height)));
     }

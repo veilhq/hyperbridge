@@ -66,6 +66,7 @@ html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon
 .set-head-exit, .set-head-aside { position: absolute; top: var(--space-5); }
 .set-head-exit { left: var(--space-5); }
 .set-head-aside { right: var(--space-5); }
+.set-head-aside.set-head-similar { right: calc(var(--space-5) + var(--space-6) + var(--space-1)); }
 .set-head-aside[hidden] { display: none; }
 .set-head-aside[aria-pressed="true"] { color: var(--selected); }
 .set-head-title { margin: 0; font-family: var(--font-body); font-size: var(--fs-display); font-weight: var(--fw-extrabold); letter-spacing: var(--track-display); line-height: var(--lh-tight); color: var(--text-bright); overflow-wrap: anywhere; }
