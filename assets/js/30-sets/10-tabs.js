@@ -45,8 +45,12 @@ function renderHead() {
   $("#set-head-title").textContent = current.name;
   desc.textContent = current.description || "";
   desc.hidden = !current.description;
-  $("#set-head-meta").textContent = entriesLabel(current.count) + (ago ? " - UPDATED " + ago.toUpperCase() : "") +
-    ((current.tags || []).length ? " - TAGS " + current.tags.join(", ").toUpperCase() : "");
+  $("#set-head-meta").textContent = entriesLabel(current.count) + (ago ? " - UPDATED " + ago.toUpperCase() : "");
+  var tags = $("#set-head-tags");
+  tags.innerHTML = (current.tags || []).map(function (tag) {
+    return '<li class="status-chip status-chip-outlined-muted">' + esc(tag) + "</li>";
+  }).join("");
+  tags.hidden = !tags.children.length;
   var pin = $("#set-head-pin");
   var label = current.pinned ? "Unpin from tabs" : "Pin to tabs";
   pin.setAttribute("aria-pressed", current.pinned ? "true" : "false");
