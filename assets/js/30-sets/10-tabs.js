@@ -34,7 +34,7 @@ function renderTabs() {
   $("#sets-count").textContent = sets.length;
 }
 
-// Shows the open set's title, description, size and pin at the top of the library.
+// Shows the open set's title, description, size, tags and pin at the top of the library.
 function renderHead() {
   var current = selectedSet();
   var head = $("#set-head");
@@ -45,7 +45,8 @@ function renderHead() {
   $("#set-head-title").textContent = current.name;
   desc.textContent = current.description || "";
   desc.hidden = !current.description;
-  $("#set-head-meta").textContent = entriesLabel(current.count) + (ago ? " - UPDATED " + ago.toUpperCase() : "");
+  $("#set-head-meta").textContent = entriesLabel(current.count) + (ago ? " - UPDATED " + ago.toUpperCase() : "") +
+    ((current.tags || []).length ? " - TAGS " + current.tags.join(", ").toUpperCase() : "");
   var pin = $("#set-head-pin");
   var label = current.pinned ? "Unpin from tabs" : "Pin to tabs";
   pin.setAttribute("aria-pressed", current.pinned ? "true" : "false");

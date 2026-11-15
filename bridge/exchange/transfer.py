@@ -9,6 +9,7 @@ from pathlib import Path
 
 from bridge.core import db
 from bridge.core import storage
+from bridge.library import sets as set_store
 
 FORMAT = 1
 MANIFEST = "library.json"
@@ -64,7 +65,7 @@ def export_library(conn, dest, only_uids=None) -> dict:
     ]
     included = {record["uid"] for record in entries}
     sets = []
-    for row in conn.execute("SELECT id, uid, name, description, created_at, updated_at FROM sets ORDER BY id"):
+    for row in conn.execute("SELECT id, uid, name, description, tags, created_at, updated_at FROM sets ORDER BY id"):
         placed = [
             item for item in conn.execute(
                 "SELECT e.uid, se.placed_at FROM set_entries se JOIN entries e ON e.id = se.entry_id"
@@ -73,7 +74,8 @@ def export_library(conn, dest, only_uids=None) -> dict:
         ]
         if only_uids is not None and not placed:
             continue
-        sets.append({"uid": row["uid"], "name": row["name"], "description": row["description"], "created_at": row["created_at"],
+        sets.append({"uid": row["uid"], "name": row["name"], "description": row["description"], "tags": set_store.parse_tags(row["tags"]),
+                     "created_at": row["created_at"],
                      "updated_at": row["updated_at"],
                      "entries": [{"uid": item["uid"], "placed_at": item["placed_at"]} for item in placed]})
     followed = [
@@ -257,8 +259,9 @@ def _apply_edits(conn, entry_id: int, record: dict, set_ids: set) -> bool:
 
 
 def list_set_heads(conn) -> list[dict]:
-    """Return every set's id, name, description and last edit time, for telling another library how its sets differ."""
-    return [dict(row) for row in conn.execute("SELECT uid, name, description, created_at, updated_at FROM sets ORDER BY id")]
+    """Return every set's id, name, description, tags and last edit time, for telling another library how its sets differ."""
+    return [dict(row, tags=set_store.parse_tags(row["tags"]))
+            for row in conn.execute("SELECT uid, name, description, tags, created_at, updated_at FROM sets ORDER BY id")]
 
 
 def list_set_deletions(conn) -> list[dict]:
@@ -316,8 +319,8 @@ def _merge_heads(conn, sets: list, update: bool) -> list:
                 conn.execute("UPDATE sets SET uid = ? WHERE id = ?", (uid, row["id"]))
         changed = False
         if row is None:
-            fields = (uid or storage.new_uid(), name, str(item.get("description", "")), created, stamp)
-            set_id = conn.execute("INSERT INTO sets (uid, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", fields).lastrowid
+            fields = (uid or storage.new_uid(), name, str(item.get("description", "")), json.dumps(set_store.clean_tags(item.get("tags"))), created, stamp)
+            set_id = conn.execute("INSERT INTO sets (uid, name, description, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", fields).lastrowid
             conn.execute("DELETE FROM set_deletions WHERE uid = ?", (fields[0],))
             changed = True
         else:
@@ -327,6 +330,8 @@ def _merge_heads(conn, sets: list, update: bool) -> list:
                 if taken is None:
                     conn.execute("UPDATE sets SET name = ? WHERE id = ?", (name, set_id))
                 conn.execute("UPDATE sets SET description = ?, updated_at = ? WHERE id = ?", (str(item.get("description", "")), stamp, set_id))
+                if "tags" in item:
+                    conn.execute("UPDATE sets SET tags = ? WHERE id = ?", (json.dumps(set_store.clean_tags(item.get("tags"))), set_id))
                 changed = True
         merged.append((item, set_id, changed))
     return merged

@@ -194,7 +194,7 @@
   // Names why a refresh brought nothing: no sources, nothing to pull from, or sources unreachable.
   function refreshNote(pulled) {
     if (!pulled || !pulled.ok) return "Could not refresh the feed.";
-    if (feedSet && !pulled.enabled.length) return "Add some tagged or titled images to this set so there is something to search for.";
+    if (feedSet && !pulled.enabled.length) return "Give this set some tags (Edit on its card), or add tagged or titled images, so there is something to search for.";
     if (!pulled.enabled.length || !pulled.jobs) return "Discover pulls from the Are.na channels, Pinterest boards and Tumblr blogs on your followed list. Add one with the sliders icon.";
     if (pulled.failed >= pulled.jobs) return "Could not reach the sources. Check the internet connection and refresh.";
     return "";

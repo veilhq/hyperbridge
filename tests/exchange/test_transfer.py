@@ -231,6 +231,11 @@ class SetSyncTests(TransferCase):
         self.assertEqual(self.conn.execute("SELECT description FROM sets").fetchone()[0], "new")
         self.assertEqual(transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True), 0)
 
+    def test_set_tags_travel_with_the_set_and_newer_edits_replace_them(self):
+        self.laptop_conn.execute("UPDATE sets SET tags = '[\"brutalist poster\"]', updated_at = '2999-01-01T00:00:00'")
+        transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
+        self.assertEqual(self.conn.execute("SELECT tags FROM sets").fetchone()[0], '["brutalist poster"]')
+
     def test_a_locally_newer_rename_is_kept(self):
         self.laptop_conn.execute("UPDATE sets SET name = 'Prints', updated_at = '2998-01-01T00:00:00'")
         self.conn.execute("UPDATE sets SET name = 'Mine', updated_at = '2999-01-01T00:00:00'")

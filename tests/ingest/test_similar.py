@@ -108,6 +108,41 @@ class RankTests(SimilarCase):
         self.assertEqual((len(page["items"]), page["total"]), (2, 5))
 
 
+class SetTagTests(SimilarCase):
+    def setUp(self):
+        super().setUp()
+        self.set_id = self.make_set()
+        self.member(self.set_id, tags=["concrete", "kittens"])
+        self.conn.execute("UPDATE sets SET tags = ? WHERE id = ?", (json.dumps(["Brutalist Poster", "concrete"]), self.set_id))
+
+    def test_own_tags_outweigh_terms_read_from_images(self):
+        wanted = similar.profile(self.conn, self.set_id)
+        self.assertEqual((wanted["tag:brutalist poster"], wanted["concrete"]), (1.0, 1.0))
+        self.assertEqual(wanted["kitten"], similar.INFERRED_WEIGHT)
+
+    def test_a_tagged_set_lists_only_items_matching_its_tags(self):
+        hit = self.feed_item("https://x/hit.jpg", collection="Swiss Poster")
+        self.feed_item("https://x/miss.jpg", tags=["kittens"])
+        result = similar.list_items(self.conn, self.set_id)
+        self.assertEqual([item["id"] for item in result["items"]], [hit])
+        self.assertEqual(result["terms"], ["Brutalist Poster", "concrete"])
+
+    def test_searches_use_the_tags_as_written(self):
+        phrases = similar.tag_queries(similar.set_tags(self.conn, self.set_id), random.Random(1), count=5)
+        self.assertEqual(sorted(phrases), ["Brutalist Poster", "concrete"])
+
+    def test_a_tag_not_yet_searched_makes_the_set_due(self):
+        similar.search(self.conn, self.set_id, search_fetcher, random.Random(1))
+        self.assertFalse(similar.list_items(self.conn, self.set_id)["stale"])
+        self.conn.execute("UPDATE sets SET tags = ? WHERE id = ?", (json.dumps(["Brutalist Poster", "concrete", "raw"]), self.set_id))
+        self.assertTrue(similar.list_items(self.conn, self.set_id)["stale"])
+
+    def test_an_empty_tagged_set_can_still_search(self):
+        empty = self.make_set("Empty")
+        self.conn.execute("UPDATE sets SET tags = '[\"concrete\"]' WHERE id = ?", (empty,))
+        self.assertEqual(similar.search(self.conn, empty, search_fetcher, random.Random(1))["queries"], ["concrete"])
+
+
 class SourceWeightTests(SimilarCase):
     def test_named_and_origin_sources_outweigh_others(self):
         set_id = self.make_set()

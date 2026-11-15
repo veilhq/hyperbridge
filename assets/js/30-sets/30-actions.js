@@ -24,13 +24,14 @@ function saveForm(form) {
   var bridge = api();
   var name = form.elements.name.value.trim();
   var description = form.elements.description.value.trim();
+  var tags = form.elements.tags.value;
   if (!bridge || !name) {
     toast("error", "Name the set.");
     return;
   }
   var target = form.getAttribute("data-form");
   var creating = target === "new";
-  var call = creating ? bridge.create_set(name, description) : bridge.rename_set(Number(target), name, description);
+  var call = creating ? bridge.create_set(name, description, tags) : bridge.rename_set(Number(target), name, description, tags);
   Promise.resolve(call).then(function (result) {
     if (!result || !result.ok) {
       toast("error", result && result.error ? result.error : "Could not save.");

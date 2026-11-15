@@ -5,7 +5,7 @@ var HEX_COLOR = /^#[0-9a-f]{6}$/i;
 function visibleSets() {
   var needle = query.trim().toLowerCase();
   var list = sets.filter(function (item) {
-    return !needle || (item.name + " " + item.description).toLowerCase().indexOf(needle) >= 0;
+    return !needle || (item.name + " " + item.description + " " + (item.tags || []).join(" ")).toLowerCase().indexOf(needle) >= 0;
   });
   list.sort(function (first, second) {
     if (sortKey === "name") return first.name.localeCompare(second.name);
@@ -41,6 +41,7 @@ function formHtml(item) {
     '<form class="poster-card-form" data-form="' + (isNew ? "new" : item.id) + '" novalidate>' +
     '<input class="form-input" name="name" placeholder="Set name" maxlength="100" aria-label="Set name" autocomplete="off" value="' + esc(isNew ? "" : item.name) + '">' +
     '<input class="form-input" name="description" placeholder="Description (optional)" maxlength="200" aria-label="Set description" autocomplete="off" value="' + esc(isNew ? "" : item.description) + '">' +
+    '<input class="form-input" name="tags" placeholder="Tags for Find similar, comma separated" maxlength="400" aria-label="Set tags" autocomplete="off" value="' + esc(isNew ? "" : (item.tags || []).join(", ")) + '">' +
     '<span class="sets-card-hint">ENTER SAVE - ESC CANCEL</span><button type="submit" hidden></button></form></div>';
 }
 

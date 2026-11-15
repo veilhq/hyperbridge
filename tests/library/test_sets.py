@@ -27,6 +27,14 @@ class SetTests(LibraryOpsCase):
         self.assertEqual(sets.list_sets()[0]["description"], "New")
         self.assertEqual(len(sets.create_set("Long", "x" * 500)["set"]["description"]), sets.MAX_DESCRIPTION)
 
+    def test_tags_are_cleaned_and_editable(self):
+        made = sets.create_set("Posters", "", " brutalist  poster, Concrete,concrete ,, ")["set"]
+        self.assertEqual(made["tags"], ["brutalist poster", "Concrete"])
+        self.assertEqual(sets.rename_set(made["id"], "Posters", None, ["swiss"])["set"]["tags"], ["swiss"])
+        self.assertEqual(sets.rename_set(made["id"], "Prints")["set"]["tags"], ["swiss"])
+        self.assertEqual(sets.list_sets()[0]["tags"], ["swiss"])
+        self.assertEqual(len(sets.clean_tags([str(index) for index in range(40)])), sets.MAX_TAGS)
+
     def test_list_counts_entries_and_orders_by_name(self):
         a, b = self.add_entry("A"), self.add_entry("B")
         zed = sets.create_set("Zed")["set"]["id"]

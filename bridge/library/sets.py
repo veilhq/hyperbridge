@@ -1,5 +1,6 @@
 """Sets: named groups of entries. Placing an entry in a set never copies or moves its files."""
 
+import json
 import sqlite3
 from datetime import datetime
 
@@ -9,6 +10,8 @@ from bridge.library import swatches
 MAX_NAME = 100
 MAX_DESCRIPTION = 200
 PALETTE_SIZE = 5
+MAX_TAGS = 12
+MAX_TAG = 60
 
 
 def _now() -> str:
@@ -23,12 +26,32 @@ def _clean_description(text) -> str:
     return " ".join(str(text or "").split())[:MAX_DESCRIPTION]
 
 
+def clean_tags(value) -> list[str]:
+    """Return a set's tags from a list or a comma-separated string: trimmed, deduplicated ignoring case, capped."""
+    items = value.split(",") if isinstance(value, str) else list(value or [])
+    found, seen = [], set()
+    for item in items:
+        tag = " ".join(str(item or "").split())[:MAX_TAG]
+        if tag and tag.lower() not in seen:
+            seen.add(tag.lower())
+            found.append(tag)
+    return found[:MAX_TAGS]
+
+
+def parse_tags(text) -> list[str]:
+    """Read a set's stored tags column; anything unreadable counts as no tags."""
+    try:
+        return clean_tags(json.loads(text or "[]"))
+    except (ValueError, TypeError):
+        return []
+
+
 def _row(conn, set_id: int) -> dict | None:
     row = conn.execute(
-        "SELECT s.id, s.name, s.description, s.pinned, (SELECT COUNT(*) FROM set_entries se WHERE se.set_id = s.id) AS count"
+        "SELECT s.id, s.name, s.description, s.tags, s.pinned, (SELECT COUNT(*) FROM set_entries se WHERE se.set_id = s.id) AS count"
         " FROM sets s WHERE s.id = ?", (set_id,)
     ).fetchone()
-    return dict(row) if row else None
+    return dict(row, tags=parse_tags(row["tags"])) if row else None
 
 
 def _palette(rows) -> list[str]:
@@ -50,7 +73,7 @@ def list_sets() -> list[dict]:
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT s.id, s.name, s.description, s.pinned, s.updated_at, COUNT(se.entry_id) AS count,"
+            "SELECT s.id, s.name, s.description, s.tags, s.pinned, s.updated_at, COUNT(se.entry_id) AS count,"
             " MAX(se.placed_at) AS placed_at FROM sets s"
             " LEFT JOIN set_entries se ON se.set_id = s.id GROUP BY s.id ORDER BY s.name COLLATE NOCASE"
         ).fetchall()
@@ -63,7 +86,7 @@ def list_sets() -> list[dict]:
             ).fetchall()
             cover = next((item["thumb_path"] for item in newest if item["thumb_path"]), None)
             result.append({
-                "id": row["id"], "name": row["name"], "description": row["description"], "count": row["count"],
+                "id": row["id"], "name": row["name"], "description": row["description"], "tags": parse_tags(row["tags"]), "count": row["count"],
                 "pinned": bool(row["pinned"]), "updated": max(row["updated_at"] or "", row["placed_at"] or ""),
                 "cover_path": cover, "palette": _palette(newest),
             })
@@ -72,7 +95,7 @@ def list_sets() -> list[dict]:
         conn.close()
 
 
-def create_set(name, description="") -> dict:
+def create_set(name, description="", tags=None) -> dict:
     """Create a set; returns {"ok": True, "set": {...}} or {"ok": False, "error": "..."}."""
     name = _clean(name)
     if not name:
@@ -81,8 +104,8 @@ def create_set(name, description="") -> dict:
     try:
         try:
             cursor = conn.execute(
-                "INSERT INTO sets (name, description, created_at) VALUES (?, ?, ?)",
-                (name, _clean_description(description), _now()),
+                "INSERT INTO sets (name, description, tags, created_at) VALUES (?, ?, ?, ?)",
+                (name, _clean_description(description), json.dumps(clean_tags(tags)), _now()),
             )
         except sqlite3.IntegrityError:
             return {"ok": False, "error": "That set exists."}
@@ -91,8 +114,8 @@ def create_set(name, description="") -> dict:
         conn.close()
 
 
-def rename_set(set_id: int, name, description=None) -> dict:
-    """Rename a set and, when given, replace its description; same result shape as create_set."""
+def rename_set(set_id: int, name, description=None, tags=None) -> dict:
+    """Rename a set and, when given, replace its description and tags; same result shape as create_set."""
     name = _clean(name)
     if not name:
         return {"ok": False, "error": "Name the set."}
@@ -108,6 +131,8 @@ def rename_set(set_id: int, name, description=None) -> dict:
                     "UPDATE sets SET name = ?, description = ?, updated_at = ? WHERE id = ?",
                     (name, _clean_description(description), _now(), set_id),
                 )
+            if tags is not None:
+                conn.execute("UPDATE sets SET tags = ?, updated_at = ? WHERE id = ?", (json.dumps(clean_tags(tags)), _now(), set_id))
         except sqlite3.IntegrityError:
             return {"ok": False, "error": "That set exists."}
         return {"ok": True, "set": _row(conn, set_id)}

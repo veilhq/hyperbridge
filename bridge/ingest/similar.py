@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from bridge.ingest import arena
 from bridge.ingest import capture
 from bridge.ingest import feed
+from bridge.library import sets as set_store
 
 POOL_LIMIT = 5000
 PAGE_LIMIT = 1000
@@ -19,6 +20,7 @@ QUERY_POOL = 10
 PAIR_POOL = 4
 PAIR_WEIGHT = 0.8
 USED_WEIGHT = 0.1
+INFERRED_WEIGHT = 0.25
 ARENA_CHANNELS = 3
 SHOWN_TERMS = 8
 MATCHED_TERMS = 3
@@ -87,15 +89,30 @@ def _set_rows(conn, set_id):
         " FROM set_entries se JOIN entries e ON e.id = se.entry_id WHERE se.set_id = ?", (int(set_id),)).fetchall()
 
 
+def set_tags(conn, set_id) -> list:
+    """Return the tags given to the set itself, in the order they were entered."""
+    row = conn.execute("SELECT tags FROM sets WHERE id = ?", (int(set_id),)).fetchone()
+    return set_store.parse_tags(row["tags"]) if row else []
+
+
 def profile(conn, set_id) -> dict:
-    """Return {term: share of the set's images that carry it, scaled by field weight}; empty for an empty set."""
+    """Return {term: weight} for a set: its own tags at full weight, then the share of its images carrying each term.
+
+    When the set has tags, the terms read from its images count only at INFERRED_WEIGHT; an empty untagged set has none.
+    """
     rows = _set_rows(conn, set_id)
     totals = {}
     for row in rows:
         tags = [name for name in str(row["tags"] or "").split(chr(31)) if name]
         for term, weight in _describe(tags, row["collection"], row["creator"], row["title"], row["origin"] or "").items():
             totals[term] = totals.get(term, 0.0) + weight
-    return {term: total / len(rows) for term, total in totals.items()} if rows else {}
+    own = set_tags(conn, set_id)
+    scale = INFERRED_WEIGHT if own else 1.0
+    wanted = {term: scale * total / len(rows) for term, total in totals.items()} if rows else {}
+    for tag in own:
+        _add(wanted, words(tag) | {_named("tag", tag)}, FIELD_WEIGHTS["tag"])
+    wanted.pop("", None)
+    return wanted
 
 
 def _item_terms(row) -> dict:
@@ -103,7 +120,9 @@ def _item_terms(row) -> dict:
         tags = list(json.loads(row["tags"] or "[]"))
     except ValueError:
         tags = []
-    return _describe(tags, row["collection"] or row["term"], row["creator"], row["title"])
+    terms = _describe(tags, row["collection"] or row["term"], row["creator"], row["title"])
+    _add(terms, {_named("tag", row["term"])} - {""}, FIELD_WEIGHTS["tag"])
+    return terms
 
 
 def _label(term) -> str:
@@ -133,10 +152,16 @@ def _followable(row, followed) -> dict:
 
 
 def rank(conn, set_id) -> tuple:
-    """Return (scored unseen feed items, best first, each with the terms it matched; the set's profile)."""
+    """Return (scored unseen feed items, best first, each with the terms it matched; the set's profile).
+
+    A set with its own tags only lists items that match one of them.
+    """
     wanted = profile(conn, set_id)
     if not wanted:
         return [], wanted
+    required = set()
+    for tag in set_tags(conn, set_id):
+        required |= words(tag) | {_named("tag", tag)}
     rows = conn.execute(
         "SELECT id, source_id, url, thumb, width, height, title, creator, page_url, term, collection, tags FROM feed_items"
         " WHERE state = 'new' AND (set_id IS NULL OR set_id = ?) AND source_id = 'arena'"
@@ -152,7 +177,7 @@ def rank(conn, set_id) -> tuple:
     for row, terms in described:
         shared = {term: wanted[term] * weight * math.log((pool + 1) / (counts[term] + 0.5))
                   for term, weight in terms.items() if term in wanted}
-        if not shared:
+        if not shared or (required and not required & shared.keys()):
             continue
         score = sum(shared.values()) / math.sqrt(len(terms))
         item = {key: row[key] for key in ("id", "source_id", "url", "thumb", "width", "height", "title", "creator", "page_url")}
@@ -166,9 +191,13 @@ def list_items(conn, set_id, offset=0, limit=60) -> dict:
     """Return a page of unseen feed items ranked by likeness to a set, with the set's leading terms and whether a new search is due."""
     scored, wanted = rank(conn, set_id)
     offset, limit = max(0, int(offset)), max(1, min(int(limit), PAGE_LIMIT))
-    newest = conn.execute("SELECT MAX(created_at) FROM feed_items WHERE set_id = ?", (int(set_id),)).fetchone()[0]
+    newest = conn.execute("SELECT MAX(searched_at) FROM set_searches WHERE set_id = ?", (int(set_id),)).fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > feed.STALE_HOURS * 3600
-    return {"items": scored[offset:offset + limit], "total": len(scored), "stale": stale, "terms": top_terms(wanted)}
+    own = set_tags(conn, set_id)
+    if own and not stale:
+        searched = {phrase.lower() for phrase in _searched(conn, set_id)}
+        stale = any(tag.lower() not in searched for tag in own)
+    return {"items": scored[offset:offset + limit], "total": len(scored), "stale": stale, "terms": own or top_terms(wanted)}
 
 
 def _bare(url) -> str:
@@ -192,6 +221,16 @@ def source_weights(conn, set_id, followed, wanted=None) -> dict:
             score += 1.0
         weights[url] = 1.0 + SOURCE_PULL * score
     return weights
+
+
+def _searched(conn, set_id) -> list:
+    return [row[0] for row in conn.execute("SELECT phrase FROM set_searches WHERE set_id = ?", (int(set_id),))]
+
+
+def tag_queries(tags, rng, count=QUERIES, used=()) -> list:
+    """Draw search phrases straight from the set's own tags, those not yet searched first."""
+    used = {str(phrase).lower() for phrase in used}
+    return feed._weighted_pick(rng, {tag: USED_WEIGHT if tag.lower() in used else 1.0 for tag in tags}, count)
 
 
 def queries(wanted, rng, count=QUERIES, used=()) -> list:
@@ -228,12 +267,15 @@ def search(conn, set_id, fetcher=None, rng=None) -> dict:
     """Search Are.na for the set's leading terms and keep the images for that set's Find similar."""
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
-    used = [row[0] for row in conn.execute("SELECT DISTINCT term FROM feed_items WHERE set_id = ?", (int(set_id),))]
-    phrases = queries(profile(conn, set_id), rng, used=used)
+    used, own = _searched(conn, set_id), set_tags(conn, set_id)
+    phrases = tag_queries(own, rng, used=used) if own else queries(profile(conn, set_id), rng, used=used)
     with ThreadPoolExecutor(max_workers=max(1, len(phrases))) as pool:
         found = list(pool.map(lambda phrase: _search_one(phrase, fetcher, rng), phrases))
     items = [item for batch, _ in found for item in batch]
     added = feed.store(conn, items, int(set_id))
+    stamp = datetime.now().isoformat(timespec="seconds")
+    conn.executemany("INSERT OR REPLACE INTO set_searches (set_id, phrase, searched_at) VALUES (?, ?, ?)",
+                     [(int(set_id), phrase, stamp) for phrase in phrases])
     return {"added": added, "failed": sum(failed for _, failed in found), "jobs": len(phrases), "queries": phrases}
 
 

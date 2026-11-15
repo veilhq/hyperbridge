@@ -429,13 +429,13 @@ class HyperbridgeAPI:
         """Pin or unpin a set as a tab."""
         return sets.set_pinned(int(set_id), bool(pinned))
 
-    def create_set(self, name: str, description: str = "") -> dict:
-        """Create a set."""
-        return sets.create_set(name, description)
+    def create_set(self, name: str, description: str = "", tags=None) -> dict:
+        """Create a set, with optional tags for Find similar."""
+        return sets.create_set(name, description, tags)
 
-    def rename_set(self, set_id: int, name: str, description: str | None = None) -> dict:
-        """Rename a set and optionally replace its description."""
-        return sets.rename_set(int(set_id), name, description)
+    def rename_set(self, set_id: int, name: str, description: str | None = None, tags=None) -> dict:
+        """Rename a set and optionally replace its description and tags."""
+        return sets.rename_set(int(set_id), name, description, tags)
 
     def delete_set(self, set_id: int) -> bool:
         """Delete a set; its entries stay in the library."""
