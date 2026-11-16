@@ -43,7 +43,7 @@ function setupViewEvents() {
       $("#sets-search").value = "";
       renderCards();
     } else {
-      setBrowsing(false);
+      navigate(function () { setBrowsing(false); });
     }
   }, true);
 }

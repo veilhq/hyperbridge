@@ -6,33 +6,39 @@ function stopEditing() {
 }
 
 function startNew() {
-  openBrowse();
-  editing = "new";
-  renderCards();
-  var form = cardsEl.querySelector("form");
-  if (form) form.scrollIntoView({ block: "nearest" });
+  navigateIf(!browsing || settingsOpen(), function () {
+    openBrowse();
+    editing = "new";
+    renderCards();
+    var form = cardsEl.querySelector("form");
+    if (form) form.scrollIntoView({ block: "nearest" });
+  });
 }
 
 function startEdit(id) {
-  openBrowse();
-  editing = id;
-  renderCards();
+  navigateIf(!browsing || settingsOpen(), function () {
+    openBrowse();
+    editing = id;
+    renderCards();
+  });
 }
 
 // Opens a set and turns its header into the edit form, so it is edited where it is shown.
 function startHeadEdit(id) {
   var item = setById(id);
   if (!item) return;
-  select(id);
-  var form = $("#set-head-form");
-  form.setAttribute("data-form", id);
-  form.elements.name.value = item.name;
-  form.elements.description.value = item.description || "";
-  form.elements.tags.value = (item.tags || []).join(", ");
-  headEditing = true;
-  renderHead();
-  form.elements.name.focus();
-  form.elements.name.select();
+  navigateIf(id !== selectedId || feedOpen || browsing || settingsOpen(), function () {
+    select(id);
+    var form = $("#set-head-form");
+    form.setAttribute("data-form", id);
+    form.elements.name.value = item.name;
+    form.elements.description.value = item.description || "";
+    form.elements.tags.value = (item.tags || []).join(", ");
+    headEditing = true;
+    renderHead();
+    form.elements.name.focus();
+    form.elements.name.select();
+  });
 }
 
 function stopHeadEdit() {
@@ -115,8 +121,10 @@ function confirmDelete(id) {
 function findSimilar(id) {
   var item = setById(id);
   if (!item) return;
-  select(item.id);
-  announce("hyperbridge:similar", { id: item.id, name: item.name });
+  navigate(function () {
+    select(item.id);
+    announce("hyperbridge:similar", { id: item.id, name: item.name });
+  });
 }
 
 // Right-click menus: card and tab actions, and New set anywhere in the strip or the view.

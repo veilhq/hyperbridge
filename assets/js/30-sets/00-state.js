@@ -21,7 +21,6 @@ var feedOpen = false;
 var browsing = false;
 var editing = null;
 var headEditing = false;
-var headKey = null;
 var armedId = null;
 var armTimer = null;
 var query = "";
@@ -46,11 +45,16 @@ function esc(text) {
   });
 }
 
-// Restarts an element's CSS enter animation, for a header that stays on screen while its content changes.
-function replayEnter(el) {
-  el.style.animation = "none";
-  void el.offsetWidth;
-  el.style.animation = "";
+// Runs a change of view through the shared view transition when the core script provides one.
+function navigate(update) {
+  if (window.hbNavigate) window.hbNavigate(update);
+  else update();
+}
+
+// Navigates only when the view would change; edits within the current view run at once.
+function navigateIf(moving, update) {
+  if (moving) navigate(update);
+  else update();
 }
 
 function setById(id) {

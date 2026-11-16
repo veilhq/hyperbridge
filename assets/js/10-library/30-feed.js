@@ -230,15 +230,8 @@
     renderFilter();
     emptyEl.hidden = true;
     $("#library").setAttribute("data-finding", "true");
-    var head = $("#find-head");
-    var title = feedSet ? "Like " + feedSet.name : "Discover";
-    if (!head.hidden && $("#find-head-title").textContent !== title) {
-      head.style.animation = "none";
-      void head.offsetWidth;
-      head.style.animation = "";
-    }
-    head.hidden = false;
-    $("#find-head-title").textContent = title;
+    $("#find-head").hidden = false;
+    $("#find-head-title").textContent = feedSet ? "Like " + feedSet.name : "Discover";
     setExitLabel(feedSet ? "Back to set" : "Back to library");
     $("#find-refresh").hidden = false;
     showFeedLoading();
@@ -349,7 +342,7 @@
     urlInput.value = "";
     setFinding(false);
     document.dispatchEvent(new CustomEvent("hyperbridge:capture-close"));
-    showFinding(url);
+    navigate(function () { showFinding(url); });
     function fail(message) {
       if (ticket !== findTicket) return;
       grid.removeAttribute("aria-busy");
@@ -378,8 +371,10 @@
     Promise.resolve(bridge.add_discovered(urls, candidates.page_url, state.setId, details)).then(function (result) {
       if (!result || !result.ok) { toast("error", "Could not add those images."); return; }
       toast("success", "Added " + result.placed + (result.placed === 1 ? " image." : " images."));
-      leaveCandidates();
-      load(true);
+      navigate(function () {
+        leaveCandidates();
+        navigate.wait(load(true));
+      });
       refreshStats();
       changed();
     }).catch(function () { toast("error", "Could not add those images."); });

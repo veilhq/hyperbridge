@@ -15,8 +15,10 @@
     $("#find-exit").addEventListener("click", function () {
       if (candidates && candidates.feed && !feedSet) { $("#sets-all").click(); return; }
       var wasSimilar = Boolean(feedSet);
-      leaveCandidates();
-      if (wasSimilar) load(true);
+      navigate(function () {
+        leaveCandidates();
+        if (wasSimilar) navigate.wait(load(true));
+      });
     });
     $("#find-refresh").addEventListener("click", function () { openFeed(true, feedSet); });
     $("#feed-more").addEventListener("click", discoverMore);
@@ -53,7 +55,7 @@
       renderFilter();
       state.cascade = true;
       clearSelection();
-      load(true);
+      navigate.wait(load(true));
     });
     document.addEventListener("hyperbridge:discarded", function (event) { playDiscard([event.detail.id]).then(afterDiscard); });
     document.addEventListener("hyperbridge:changed", function () {

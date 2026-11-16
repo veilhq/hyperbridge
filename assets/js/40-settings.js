@@ -523,13 +523,17 @@
 
   function setOpen(open) {
     if (open === isOpen()) return;
-    if (open) library.setAttribute("data-settings", "true");
-    else library.removeAttribute("data-settings");
-    view.hidden = !open;
-    opener.setAttribute("aria-pressed", open ? "true" : "false");
-    opener.toggleAttribute("data-active", open);
-    if (open) load();
-    if (syncPoller) { if (open) syncPoller.start(); else syncPoller.stop(); }
+    var apply = function () {
+      if (open) library.setAttribute("data-settings", "true");
+      else library.removeAttribute("data-settings");
+      view.hidden = !open;
+      opener.setAttribute("aria-pressed", open ? "true" : "false");
+      opener.toggleAttribute("data-active", open);
+      if (open) load();
+      if (syncPoller) { if (open) syncPoller.start(); else syncPoller.stop(); }
+    };
+    if (window.hbNavigate) window.hbNavigate(apply);
+    else apply();
   }
 
   function init() {

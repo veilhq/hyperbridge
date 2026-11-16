@@ -224,7 +224,7 @@
       } else if (event.key === "Escape") {
         if (selected.size) clearSelection();
         else if (candidates && candidates.feed) $("#sets-all").click();
-        else if (candidates) leaveCandidates();
+        else if (candidates) navigate(leaveCandidates);
         else if (finding) setFinding(false);
       } else if ((event.ctrlKey || event.metaKey) && (event.key === "a" || event.key === "A")) {
         event.preventDefault();

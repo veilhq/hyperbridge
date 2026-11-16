@@ -45,6 +45,36 @@
   }
   window.renderStats = renderStats;
 
+  var NAV_WAIT_MS = 250;
+  var navWaits = null;
+
+  function reducedMotion() {
+    return document.documentElement.classList.contains("a11y-reduce-motion") ||
+      (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  // Runs a change of view as a view transition: the old view fades and drifts down, then the new one rises in.
+  // Navigations started inside it join the same transition; without support or with reduced motion it just runs.
+  function navigate(update) {
+    if (navWaits || !document.startViewTransition || reducedMotion()) { update(); return; }
+    document.startViewTransition(function () {
+      navWaits = [];
+      try { update(); } finally {
+        var waits = navWaits;
+        navWaits = null;
+      }
+      var cap = new Promise(function (resolve) { setTimeout(resolve, NAV_WAIT_MS); });
+      return Promise.race([Promise.all(waits).catch(function () {}), cap]);
+    });
+  }
+
+  // Holds the incoming snapshot until the promise settles (briefly), so a reloading grid arrives with its new cards.
+  navigate.wait = function (promise) {
+    if (navWaits && promise && promise.then) navWaits.push(promise);
+    return promise;
+  };
+  window.hbNavigate = navigate;
+
   function onBridgeReady() {
     var api = window.pywebview && window.pywebview.api;
     if (!api) return;

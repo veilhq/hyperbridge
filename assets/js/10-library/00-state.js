@@ -20,6 +20,13 @@ var candidates = null;
 
   function api() { return window.pywebview && window.pywebview.api; }
 
+  // Runs a change of view through the shared view transition; wait() holds it for a reload.
+  function navigate(update) {
+    if (window.hbNavigate) window.hbNavigate(update);
+    else update();
+  }
+  navigate.wait = function (promise) { return window.hbNavigate ? window.hbNavigate.wait(promise) : promise; };
+
   function makeEl(tag, className, text) {
     var el = document.createElement(tag);
     if (className) el.className = className;

@@ -39,9 +39,6 @@ function renderHead() {
   var current = selectedSet();
   var head = $("#set-head");
   head.hidden = !current;
-  var key = current ? current.id + (headEditing ? ":edit" : "") : null;
-  if (key !== headKey && current) replayEnter(head);
-  headKey = key;
   if (!current) return;
   var desc = $("#set-head-desc");
   var ago = agoLabel(daysSince(current));
@@ -108,27 +105,33 @@ function cascadeSets() {
 }
 
 function openBrowse() {
-  if (!browsing || settingsOpen()) announce("hyperbridge:sets");
-  setBrowsing(true);
+  navigateIf(!browsing || settingsOpen(), function () {
+    if (!browsing || settingsOpen()) announce("hyperbridge:sets");
+    setBrowsing(true);
+  });
 }
 
 // Opens a set (null for All) in the library, telling the grid when the filter changed.
 function select(id) {
-  var changed = id !== selectedId || feedOpen || settingsOpen();
-  if (id !== selectedId) headEditing = false;
-  feedOpen = false;
-  selectedId = id;
-  setBrowsing(false);
-  if (changed) announce("hyperbridge:filter", { setId: id });
+  navigateIf(id !== selectedId || feedOpen || browsing || settingsOpen(), function () {
+    var changed = id !== selectedId || feedOpen || settingsOpen();
+    if (id !== selectedId) headEditing = false;
+    feedOpen = false;
+    selectedId = id;
+    setBrowsing(false);
+    if (changed) announce("hyperbridge:filter", { setId: id });
+  });
 }
 
 function openDiscover() {
-  var changed = !feedOpen || settingsOpen();
-  headEditing = false;
-  feedOpen = true;
-  selectedId = null;
-  setBrowsing(false);
-  if (changed) announce("hyperbridge:feed");
+  navigate(function () {
+    var changed = !feedOpen || settingsOpen();
+    headEditing = false;
+    feedOpen = true;
+    selectedId = null;
+    setBrowsing(false);
+    if (changed) announce("hyperbridge:feed");
+  });
 }
 
 function refresh() {
