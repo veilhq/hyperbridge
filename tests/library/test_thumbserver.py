@@ -49,6 +49,16 @@ class ThumbServerTests(LibraryOpsCase):
         self.assertEqual(fetch(base + "assets/missing.webp")[0], 404)
         self.assertIsNone(thumbserver.url_for("hyperbridge.db"))
 
+    def test_lightbox_assets_load_by_url_while_the_server_runs(self):
+        from bridge.library import library
+
+        entry = self.add_entry("A")
+        asset = self.add_asset(entry, data=b"GIF89a-body", suffix=".gif")
+        thumbserver.start()
+        uri = library.get_asset_uri(asset)
+        self.assertTrue(uri.startswith("http://127.0.0.1:"))
+        self.assertEqual(fetch(uri)[:2], (200, b"GIF89a-body"))
+
     def test_no_url_while_the_server_is_off(self):
         _, path = self.thumbnail()
         self.assertIsNone(thumbserver.url_for(path))
@@ -72,6 +82,24 @@ class PagingTests(LibraryOpsCase):
         self.assertTrue(first["thumb"] and not first["keep"])
         again = api.list_entries("", 0, 60, None, "", "", "", "", [entry])["entries"][0]
         self.assertEqual((again["thumb"], again["keep"]), (None, True))
+
+
+class GridAnimationTests(LibraryOpsCase):
+    def grid_path(self, thumb_data):
+        entry = self.add_entry("A")
+        original = self.add_asset(entry, data=b"GIF89a", suffix=".gif")
+        thumb = self.add_asset(entry, kind="thumbnail", data=thumb_data, suffix=".webp")
+        paths = dict(self.conn.execute("SELECT id, path FROM assets").fetchall())
+        row = {"original_path": paths[original], "original_bytes": 6, "thumb_path": paths[thumb]}
+        return hyperbridge._grid_path(row), paths[original], paths[thumb]
+
+    def test_a_small_gif_shows_its_animated_thumbnail(self):
+        chosen, _, thumb = self.grid_path(b"RIFFxxxxWEBPVP8X" + b"\x00" * 14 + b"ANIM")
+        self.assertEqual(chosen, thumb)
+
+    def test_a_small_gif_with_a_still_thumbnail_keeps_its_original(self):
+        chosen, original, _ = self.grid_path(b"RIFFxxxxWEBPVP8 ")
+        self.assertEqual(chosen, original)
 
 
 if __name__ == "__main__":

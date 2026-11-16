@@ -119,11 +119,13 @@ def _thumb_ref(relative: str | None) -> str | None:
 
 
 def _grid_path(row) -> str | None:
-    """Pick the file a grid card shows: a small GIF keeps its original so it animates, else the thumbnail."""
-    original = row["original_path"]
-    if original and original.lower().endswith(".gif") and (row["original_bytes"] or 0) <= GIF_GRID_BYTES:
-        return original
-    return row["thumb_path"]
+    """Pick the file a grid card shows: the thumbnail, unless a small GIF's thumbnail is a still frame."""
+    original, thumb = row["original_path"], row["thumb_path"]
+    if not (original and original.lower().endswith(".gif") and (row["original_bytes"] or 0) <= GIF_GRID_BYTES):
+        return thumb
+    if thumb and thumb.lower().endswith(".webp") and capture.has_animation(db.data_dir() / thumb):
+        return thumb
+    return original
 
 
 class HyperbridgeAPI:

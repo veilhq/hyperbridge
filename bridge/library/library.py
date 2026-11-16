@@ -8,6 +8,7 @@ from datetime import datetime
 
 from bridge.core import db
 from bridge.core import storage
+from bridge.core import thumbserver
 from bridge.library import swatches
 
 EDITABLE_FIELDS = ("creator", "publisher", "title", "type", "year")
@@ -84,7 +85,7 @@ def get_entry(entry_id: int) -> dict | None:
 
 
 def get_asset_uri(asset_id: int) -> str | None:
-    """Return a data URI for a stored asset, or None when the row or file is missing."""
+    """Return a loopback URL (else a data URI) for a stored asset, or None when the row or file is missing."""
     conn = db.connect()
     try:
         row = conn.execute("SELECT path FROM assets WHERE id = ?", (asset_id,)).fetchone()
@@ -96,6 +97,9 @@ def get_asset_uri(asset_id: int) -> str | None:
     path = (root / row["path"]).resolve()
     if root not in path.parents:
         return None
+    url = thumbserver.url_for(row["path"])
+    if url:
+        return url
     try:
         raw = path.read_bytes()
     except OSError:

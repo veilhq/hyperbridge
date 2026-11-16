@@ -682,7 +682,7 @@ class AnimatedThumbnailTests(LibraryCase):
         ).fetchone()
         target = db.data_dir() / row[0]
         Image.new("RGB", (480, 320), "red").save(target, "WEBP")
-        self.assertFalse(capture._has_animation(target))
+        self.assertFalse(capture.has_animation(target))
         self.assertEqual(capture.refresh_animated_thumbnails(self.conn), 1)
-        self.assertTrue(capture._has_animation(target))
+        self.assertTrue(capture.has_animation(target))
         self.assertEqual(capture.refresh_animated_thumbnails(self.conn), 0)

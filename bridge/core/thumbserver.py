@@ -1,8 +1,9 @@
-"""Loopback image server: grid thumbnails load by URL instead of travelling the JS bridge as base64."""
+"""Loopback image server: grid thumbnails and lightbox images load by URL instead of travelling the JS bridge as base64."""
 
 import http.server
 import logging
 import secrets
+import shutil
 import threading
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
@@ -43,14 +44,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("ETag", etag)
             self.end_headers()
             return
-        body = target.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", IMAGE_TYPES[target.suffix.lower()])
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(stat.st_size))
         self.send_header("ETag", etag)
         self.send_header("Cache-Control", "private, max-age=31536000, immutable")
         self.end_headers()
-        self.wfile.write(body)
+        with open(target, "rb") as handle:
+            shutil.copyfileobj(handle, self.wfile)
 
 
 def start() -> str | None:

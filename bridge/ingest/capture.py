@@ -551,7 +551,7 @@ def _write_animated_thumbnail(image, target_dir_uid: str):
     return path, width, height
 
 
-def _has_animation(path) -> bool:
+def has_animation(path) -> bool:
     """Return True when a webp file carries an ANIM chunk (an animated webp)."""
     try:
         with open(path, "rb") as handle:
@@ -573,7 +573,7 @@ def refresh_animated_thumbnails(conn) -> int:
     changed = 0
     for row in rows:
         thumb = db.data_dir() / row["thumb"]
-        if thumb.suffix == ".webp" and _has_animation(thumb):
+        if thumb.suffix == ".webp" and has_animation(thumb):
             continue
         try:
             with Image.open(db.data_dir() / row["original"]) as image:
