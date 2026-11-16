@@ -22,7 +22,7 @@ def db_path() -> Path:
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
-    """Open a connection in autocommit mode with WAL, foreign keys and a busy timeout."""
+    """Open a connection in autocommit mode with WAL, foreign keys, a busy timeout and the SQL color functions."""
     target = Path(path) if path else db_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target), isolation_level=None, timeout=10)
@@ -31,7 +31,17 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 10000")
     conn.execute("PRAGMA synchronous = NORMAL")
+    from bridge.library import swatches  # imported here: swatches itself imports this module
+
+    swatches.register(conn)
+    conn.create_function("hb_entry_year", 2, entry_year, deterministic=True)
     return conn
+
+
+def entry_year(year: str | None, created_at: str | None) -> str:
+    """Return the first four-digit year in an entry's year field, else the year it was captured."""
+    match = re.search(r"\d{4}", year or "")
+    return match.group(0) if match else (created_at or "")[:4]
 
 
 def list_migrations(directory: Path = MIGRATIONS_DIR) -> list[tuple[int, Path]]:

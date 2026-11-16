@@ -48,11 +48,27 @@ def _entry_record(conn, row) -> dict:
     return record
 
 
-def list_keys(conn) -> list[dict]:
-    """Return the uid, source key and last edit time of every captured or failed entry, for deciding what another library lacks or has newer."""
+def change_cursor(conn) -> str:
+    """Return where this library's change sequence stands, as epoch:number; the epoch changes when the library is recreated."""
+    row = conn.execute("SELECT epoch, value FROM change_counter WHERE id = 1").fetchone()
+    return f"{row['epoch']}:{row['value']}" if row else ""
+
+
+def changes_since(conn, cursor: str) -> int:
+    """Return the change number a cursor from this library points at, or 0 (everything) when it is missing, malformed or from another epoch."""
+    epoch, _, number = str(cursor or "").partition(":")
+    current = conn.execute("SELECT epoch, value FROM change_counter WHERE id = 1").fetchone()
+    if not current or epoch != current["epoch"] or not number.isdigit() or int(number) > current["value"]:
+        return 0
+    return int(number)
+
+
+def list_keys(conn, since: int = 0) -> list[dict]:
+    """Return the uid, source key and last edit time of every captured or failed entry changed after since, for deciding what another library lacks or has newer."""
     return [
         {"uid": row["uid"], "source_key": row["source_key"], "updated_at": row["updated_at"]}
-        for row in conn.execute("SELECT uid, source_key, updated_at FROM entries WHERE state != 'pending' ORDER BY id")
+        for row in conn.execute(
+            "SELECT uid, source_key, updated_at FROM entries WHERE state != 'pending' AND change_seq > ? ORDER BY id", (int(since),))
     ]
 
 
@@ -138,10 +154,10 @@ def _copy_assets(archive, record: dict) -> list[dict]:
     return rows
 
 
-def list_deletions(conn) -> list[dict]:
-    """Return the uid and deletion time of every entry deleted here, for telling another library what to remove."""
+def list_deletions(conn, since: int = 0) -> list[dict]:
+    """Return the uid and deletion time of every entry deleted here after since, for telling another library what to remove."""
     return [{"uid": row["uid"], "deleted_at": row["deleted_at"]}
-            for row in conn.execute("SELECT uid, deleted_at FROM entry_deletions ORDER BY deleted_at")]
+            for row in conn.execute("SELECT uid, deleted_at FROM entry_deletions WHERE change_seq > ? ORDER BY deleted_at", (int(since),))]
 
 
 def apply_deletions(conn, deletions: list) -> int:

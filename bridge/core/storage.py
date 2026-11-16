@@ -4,7 +4,7 @@ import re
 import uuid
 from pathlib import Path
 
-from bridge.core.db import data_dir
+from bridge.core.db import data_dir, db_path
 
 ASSET_KINDS = ("original", "thumbnail", "screenshot")
 _UID = re.compile(r"^[0-9a-f]{32}$")
@@ -42,3 +42,14 @@ def asset_path(uid: str, kind: str, position: int, suffix: str) -> Path:
 def relative_path(path: Path) -> str:
     """Return a path relative to the data folder with forward slashes, for storing in the database."""
     return path.resolve().relative_to(data_dir().resolve()).as_posix()
+
+
+def usage(conn) -> dict:
+    """Return the bytes the library holds on disk: images by kind, the database with its journal, and the total."""
+    kinds = dict(conn.execute("SELECT kind, COALESCE(SUM(bytes), 0) FROM assets GROUP BY kind").fetchall())
+    base = db_path()
+    database = sum(path.stat().st_size for path in (base, base.with_name(base.name + "-wal")) if path.exists())
+    result = {"originals": kinds.get("original", 0), "thumbnails": kinds.get("thumbnail", 0),
+              "screenshots": kinds.get("screenshot", 0), "database": database}
+    result["total"] = sum(result.values()) + sum(size for kind, size in kinds.items() if kind not in ASSET_KINDS)
+    return result

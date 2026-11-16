@@ -30,10 +30,21 @@ html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-r
 
 /* Elements revealed by removing [hidden] ease in instead of popping. */
 @keyframes appEnter { from { opacity: 0; translate: 0 var(--space-2); } to { opacity: 1; translate: none; } }
-.library-filter:not([hidden]), .library-meta:not([hidden]), .capture-error:not([hidden]),
-.set-head:not([hidden]), .settings-view:not([hidden]) {
-  animation: appEnter var(--motion-enter) var(--ease) both;
+.settings-view:not([hidden]) { animation: appEnter var(--motion-enter) var(--ease) both; }
+/* Bars above the grid open and close their space as they fade; display flips once the collapse ends. */
+.library-filter, .library-meta, .set-head {
+  interpolate-size: allow-keywords; overflow: clip; overflow-clip-margin: var(--space-1);
+  transition: opacity var(--motion-enter) var(--ease), height var(--motion-enter) var(--ease), margin var(--motion-enter) var(--ease),
+    padding var(--motion-enter) var(--ease), display var(--motion-enter) allow-discrete;
 }
+.library-filter[hidden], .library-meta[hidden], .set-head[hidden] { opacity: 0; height: 0; margin-block: 0; padding-block: 0; }
+@starting-style {
+  .library-filter:not([hidden]), .library-meta:not([hidden]), .set-head:not([hidden]) { opacity: 0; height: 0; margin-block: 0; padding-block: 0; }
+}
+/* The capture error and the hint share a spot, so they crossfade. */
+.capture-error, .capture-hint { transition: opacity var(--motion-enter) var(--ease), visibility var(--motion-enter), display var(--motion-enter) allow-discrete; }
+.capture-error[hidden] { opacity: 0; }
+@starting-style { .capture-error:not([hidden]) { opacity: 0; } }
 /* A settings tab panel fades in place; the view around it already slides. */
 @keyframes appFade { from { opacity: 0; } to { opacity: 1; } }
 .settings-tab-panel:not([hidden]) { animation: appFade var(--motion-enter) var(--ease) both; }
@@ -44,12 +55,13 @@ html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-r
 .select-bar[hidden], .library-empty[hidden] { opacity: 0; translate: 0 var(--space-2); }
 @starting-style { .select-bar:not([hidden]), .library-empty:not([hidden]) { opacity: 0; translate: 0 var(--space-2); } }
 @media (prefers-reduced-motion: reduce) {
-  .library-filter, .library-meta, .capture-error, .set-head, .settings-view, .settings-tab-panel { animation: none !important; }
-  .select-bar, .library-empty { transition: none !important; }
+  .settings-view, .settings-tab-panel { animation: none !important; }
+  .select-bar, .library-empty, .library-filter, .library-meta, .set-head, .capture-error, .capture-hint { transition: none !important; }
 }
-html.a11y-reduce-motion .library-filter, html.a11y-reduce-motion .library-meta, html.a11y-reduce-motion .capture-error,
-html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .settings-view, html.a11y-reduce-motion .settings-tab-panel { animation: none !important; }
-html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-empty { transition: none !important; }
+html.a11y-reduce-motion .settings-view, html.a11y-reduce-motion .settings-tab-panel { animation: none !important; }
+html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-empty, html.a11y-reduce-motion .library-filter,
+html.a11y-reduce-motion .library-meta, html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .capture-error,
+html.a11y-reduce-motion .capture-hint { transition: none !important; }
 .workspace { position: relative; flex: 1; min-height: 0; display: flex; }
 /* Accent cursors everywhere, as in the sibling apps: arrow by default, filled arrow on clickables, I-beam in text fields. */
 body, body * {

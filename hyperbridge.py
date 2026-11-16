@@ -51,6 +51,8 @@ from bridge.ingest import feed_sources  # noqa: E402
 from bridge.ingest import similar  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
 from bridge.core import db  # noqa: E402
+from bridge.core import prefs  # noqa: E402
+from bridge.core import storage  # noqa: E402
 from bridge.library import library  # noqa: E402
 from bridge.ingest import screenshot  # noqa: E402
 from bridge.library import sets  # noqa: E402
@@ -86,32 +88,15 @@ _ORDERS = {
 }
 
 
-def _entry_year(row) -> str:
-    """Return the entry's year field, else the year it was captured."""
-    match = re.search(r"\d{4}", row["year"] or "")
-    return match.group(0) if match else (row["created_at"] or "")[:4]
-
-
-def _group_label(row, group: str) -> str:
-    """Return the section label an entry falls under for a grouping."""
-    if group == "color":
-        return swatches.entry_family(row["swatches"])
-    if group == "year":
-        return _entry_year(row) or "No year"
-    return row["domain"] or "No source"
-
-
-def _group_rank(labels: list, group: str) -> dict:
-    """Map each label to its sort position: color by hue order, year newest first, source by size."""
-    unique = sorted(set(labels))
-    if group == "color":
-        order = [*swatches.FAMILIES, swatches.NO_COLOR]
-        return {label: order.index(label) if label in order else len(order) for label in unique}
-    if group == "year":
-        ranked = sorted(unique, key=lambda label: (not label.isdigit(), -int(label) if label.isdigit() else 0, label))
-    else:
-        ranked = sorted(unique, key=lambda label: (-labels.count(label), label.lower()))
-    return {label: index for index, label in enumerate(ranked)}
+_COLOR_ORDER = "e.color_rank ASC, e.created_at DESC, e.id DESC"
+_YEAR_LABEL = "CASE WHEN e.year_label = '' THEN 'No year' ELSE e.year_label END"
+_SOURCE_LABEL = "CASE WHEN COALESCE(e.domain, '') = '' THEN 'No source' ELSE e.domain END"
+# Each grouping's section label and section order: color by hue order, year newest first, source by size.
+_GROUP_SQL = {
+    "color": ("e.color_family", "e.color_family"),
+    "year": (_YEAR_LABEL, "e.year_label = '', e.year_label DESC"),
+    "source": (_SOURCE_LABEL, f"COUNT(*) OVER (PARTITION BY {_SOURCE_LABEL}) DESC, lower({_SOURCE_LABEL}), {_SOURCE_LABEL}"),
+}
 
 
 GIF_GRID_BYTES = 1024 * 1024
@@ -169,6 +154,19 @@ class HyperbridgeAPI:
             conn.close()
         return {"entries": entries}
 
+    def get_storage(self) -> dict:
+        """Return how much disk the library uses, by kind, and the machine's storage preferences."""
+        conn = db.connect()
+        try:
+            usage = storage.usage(conn)
+        finally:
+            conn.close()
+        return {**usage, "downscale": prefs.get("downscale_originals"), "edge": capture.DOWNSCALE_EDGE}
+
+    def set_downscale(self, on: bool) -> dict:
+        """Turn shrinking of very large new images on or off for this machine."""
+        return {"downscale": prefs.set("downscale_originals", bool(on))["downscale_originals"]}
+
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
                      group: str = "", tag: str = "", color: str = "", order: str = "", known: list | None = None) -> dict:
         """Return a page of entries, newest first unless order is oldest, title or source; filtered by text, set, tag and color, and optionally grouped.
@@ -193,56 +191,46 @@ class HyperbridgeAPI:
                 "e.id IN (SELECT et.entry_id FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE t.name = ?)"
             )
             params.append(str(tag))
+        if color:
+            clauses.append("hb_swatch_near(e.swatches, ?)")
+            params.append(color)
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        in_sql = not (color or group or order == "color")
-        columns = ("e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type, e.created_at, e.swatches,"
-                   if not in_sql else "e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type, e.created_at,")
-        select = (
-            f"SELECT {columns} a.path AS thumb_path, a.width, a.height, o.path AS original_path, o.bytes AS original_bytes"
-            " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
-            " LEFT JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
-            f" {where} ORDER BY {_ORDERS.get(order, 'e.created_at DESC, e.id DESC')}"
-        )
+        label, section = _GROUP_SQL.get(group, ("''", ""))
+        ordering = _COLOR_ORDER if order == "color" else _ORDERS.get(order, "e.created_at DESC, e.id DESC")
+        # The page is picked from entries alone, then only its rows join their thumbnail and original.
+        pick = f"SELECT e.id, {label} AS grp FROM entries e {where} ORDER BY {section + ', ' if section else ''}{ordering} LIMIT ? OFFSET ?"
         conn = db.connect()
         try:
-            if in_sql:
-                total = conn.execute(f"SELECT COUNT(*) FROM entries e {where}", params).fetchone()[0]
-                rows = conn.execute(f"{select} LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
-                spans = conn.execute(f"SELECT e.year, e.created_at FROM entries e {where}", params).fetchall() if set_id else []
-            else:
-                rows = conn.execute(select, params).fetchall()
+            total = conn.execute(f"SELECT COUNT(*) FROM entries e {where}", params).fetchone()[0]
+            picked = conn.execute(pick, [*params, limit, offset]).fetchall()
+            ids = [row["id"] for row in picked]
+            details = {row["id"]: row for row in conn.execute(
+                "SELECT e.id, e.title, e.domain, e.state, e.year, e.creator, e.publisher, e.type,"
+                " a.path AS thumb_path, a.width, a.height, o.path AS original_path, o.bytes AS original_bytes"
+                " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
+                " LEFT JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
+                f" WHERE e.id IN ({', '.join('?' * len(ids))})", ids).fetchall()} if ids else {}
+            span = conn.execute(
+                f"SELECT MIN(e.year_label), MAX(e.year_label) FROM entries e {where}{' AND' if where else ' WHERE'} e.year_label != ''",
+                params).fetchone() if set_id else None
         finally:
             conn.close()
-        if in_sql:
-            labels = [""] * len(rows)
-            page = list(range(len(rows)))
-            years = [year for year in (_entry_year(row) for row in spans) if year]
-        else:
-            if color:
-                rows = [row for row in rows if swatches.near(row["swatches"], color)]
-            if order == "color":
-                rows = sorted(rows, key=lambda row: swatches.gradient_key(row["swatches"]))
-            labels = [_group_label(row, group) for row in rows] if group else [""] * len(rows)
-            ranked = list(range(len(rows)))
-            if group:
-                rank = _group_rank(labels, group)
-                ranked.sort(key=lambda index: (rank[labels[index]], index))
-            years = [year for year in (_entry_year(row) for row in rows) if year]
-            page = ranked[offset:offset + limit]
-            total = len(rows)
         entries = []
-        for i in page:
-            row = rows[i]
+        for item in picked:
+            row = details.get(item["id"])
+            if row is None:
+                continue
             keep = row["id"] in kept and bool(_grid_path(row))
             entries.append({
                 "id": row["id"], "title": row["title"], "domain": row["domain"],
                 "state": row["state"], "thumb": None if keep else _thumb_ref(_grid_path(row)), "keep": keep,
-                "width": row["width"], "height": row["height"], "group": labels[i],
+                "width": row["width"], "height": row["height"],
+                "group": swatches.family_name(item["grp"]) if group == "color" else item["grp"],
                 "caption": [row[name] for name in ("creator", "publisher", "type", "year") if row[name]],
             })
         return {
             "entries": entries, "total": total,
-            "years": [min(years), max(years)] if years else [],
+            "years": list(span) if span and span[0] else [],
         }
 
     def recapture_entries(self, entry_ids: list) -> int:

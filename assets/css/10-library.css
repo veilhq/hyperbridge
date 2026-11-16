@@ -33,6 +33,8 @@
 .library-card:hover, .library-card:focus-visible { border-color: var(--interactive); }
 .library-card:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: var(--space-1); }
 .library-card-image { display: block; width: 100%; height: auto; }
+/* A card far off screen keeps its measured height and skips rendering its contents. */
+.library-card[data-parked] { content-visibility: hidden; height: var(--parked-height); }
 .library-card-grow { transition: border-color var(--motion-base) var(--ease), height var(--motion-enter) var(--ease); }
 /* A rebuilt grid fades its cards in one after another, rows then columns. */
 @keyframes libraryCascade { from { opacity: 0; translate: 0 var(--space-2); } to { opacity: 1; translate: none; } }
@@ -143,7 +145,7 @@ html.a11y-reduce-motion .library-card-details { transition: none; }
 }
 .capture-card .capture-form:focus-within { border-color: var(--interactive); }
 .capture-hint { margin: 0; text-align: center; color: var(--text-dim); font-size: var(--fs-mono); letter-spacing: var(--track-label); }
-.capture-card:has(.capture-error:not([hidden])) .capture-hint { visibility: hidden; }
+.capture-card:has(.capture-error:not([hidden])) .capture-hint { visibility: hidden; opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .capture-card .capture-form { transition: none; } }
 html.a11y-reduce-motion .capture-card .capture-form { transition: none; }
 

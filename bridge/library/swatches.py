@@ -90,20 +90,39 @@ def entry_family(raw: str) -> str:
 
 
 HUE_STEPS = 24
+NO_COLOR_RANK = 2000.0
 
 
 @functools.lru_cache(maxsize=_CACHE)
-def gradient_key(raw: str) -> tuple:
-    """Sort key that runs colors around the hue wheel (light to dark within a step), then greys dark to light, then no color."""
+def color_rank(raw: str) -> float:
+    """Sort number that runs colors around the hue wheel (light to dark within a step), then greys dark to light, then no color."""
     values = parse(raw)
     try:
         red, green, blue = (int(values[0][i:i + 2], 16) / 255 for i in (1, 3, 5))
     except (IndexError, ValueError):
-        return (2, 0, 0.0)
+        return NO_COLOR_RANK
     hue, light, sat = colorsys.rgb_to_hls(red, green, blue)
     if sat < 0.18 or light < 0.12 or light > 0.92:
-        return (1, 0, light)
-    return (0, int(hue * HUE_STEPS) % HUE_STEPS, -light)
+        return 1000.0 + light
+    return (int(hue * HUE_STEPS) % HUE_STEPS) * 10 + (1.0 - light)
+
+
+def family_code(raw: str) -> int:
+    """Position of the entry's hue family in FAMILIES; NO_COLOR sorts last."""
+    name = entry_family(raw)
+    return FAMILIES.index(name) if name in FAMILIES else len(FAMILIES)
+
+
+def family_name(code: int) -> str:
+    """Return the family label stored as a family_code."""
+    return FAMILIES[code] if 0 <= code < len(FAMILIES) else NO_COLOR
+
+
+def register(conn) -> None:
+    """Expose the color helpers to SQL; the entries color columns are kept current by triggers that call them."""
+    conn.create_function("hb_color_rank", 1, lambda raw: color_rank(raw or "[]"), deterministic=True)
+    conn.create_function("hb_color_family", 1, lambda raw: family_code(raw or "[]"), deterministic=True)
+    conn.create_function("hb_swatch_near", 2, lambda raw, hex_color: int(near(raw or "[]", hex_color)), deterministic=True)
 
 
 def parse(raw: str) -> list[str]:

@@ -204,6 +204,30 @@ class DeletionTests(TransferCase):
         self.assertEqual(transfer.list_deletions(self.conn), [])
 
 
+class ChangeCursorTests(TransferCase):
+    def setUp(self):
+        super().setUp()
+        self.seed_laptop()
+        self.conn = use_library(str(self.main))
+        self.addCleanup(self.conn.close)
+        transfer.import_library(self.conn, self.zip_path)
+
+    def test_lists_hold_only_changes_after_the_cursor(self):
+        cursor = transfer.change_cursor(self.conn)
+        since = transfer.changes_since(self.conn, cursor)
+        self.assertEqual((transfer.list_keys(self.conn, since), transfer.list_deletions(self.conn, since)), ([], []))
+        self.conn.execute("UPDATE entries SET updated_at = '2999-01-01T00:00:00' WHERE id = (SELECT MIN(id) FROM entries)")
+        self.conn.execute("INSERT INTO entry_deletions (uid, deleted_at) VALUES ('gone', '2999-01-01T00:00:00')")
+        self.assertEqual(len(transfer.list_keys(self.conn, since)), 1)
+        self.assertEqual([item["uid"] for item in transfer.list_deletions(self.conn, since)], ["gone"])
+        self.assertEqual(len(transfer.list_keys(self.conn)), 2)
+
+    def test_a_foreign_or_malformed_cursor_means_everything(self):
+        epoch, _, number = transfer.change_cursor(self.conn).partition(":")
+        for cursor in ("", "other:" + number, epoch + ":x", epoch + ":" + str(int(number) + 5), "junk"):
+            self.assertEqual(transfer.changes_since(self.conn, cursor), 0, cursor)
+
+
 class SetSyncTests(TransferCase):
     def setUp(self):
         super().setUp()

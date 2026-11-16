@@ -154,13 +154,40 @@
     restoreFocus(focusedId);
   }
 
+  // Adds the cards of a newly loaded grouped page after the ones shown, opening a section wherever the group changes.
+  function appendGrouped(from) {
+    var grown = [];
+    var fragment = document.createDocumentFragment();
+    var lastGroup = from ? state.entries[from - 1].group : null;
+    for (var i = from; i < state.entries.length; i++) {
+      var entry = state.entries[i];
+      if (entry.group !== lastGroup) {
+        fragment.appendChild(makeEl("h2", "library-group", entry.group));
+        lastGroup = entry.group;
+      }
+      fragment.appendChild(makeCard(entry, grown));
+    }
+    grid.appendChild(fragment);
+    grown.forEach(growCard);
+  }
+
+  // True when the new list only adds entries after the ones already drawn.
+  function extendsShown(parts) {
+    var shown = state.signatureParts;
+    if (!shown || !shown.length || parts.length <= shown.length) return false;
+    for (var i = 0; i < shown.length; i++) if (parts[i] !== shown[i]) return false;
+    return true;
+  }
+
   function render() {
     if (candidates) return;
     var parts = state.entries.map(partOf);
     var signature = parts.join(";");
     if (signature !== state.signature) {
       var patchable = !state.group && !state.cascade && state.signatureParts && state.signatureParts.length > 0 && grid.hasAttribute("data-columns");
-      if (patchable) patchGrid();
+      var appendable = state.group && !state.cascade && !grid.hasAttribute("data-columns") && extendsShown(parts);
+      if (appendable) flip(function () { appendGrouped(state.signatureParts.length); });
+      else if (patchable) patchGrid();
       else if (!state.cascade && grid.querySelector(".library-card[data-id]")) flip(rebuildGrid);
       else rebuildGrid();
       var nextPending = {};

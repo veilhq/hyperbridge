@@ -133,9 +133,12 @@ def _handler_for(share):
                 return
             conn = db.connect()
             try:
-                manifest = {"format": transfer.FORMAT, "schema": db.schema_version(conn), "entries": transfer.list_keys(conn),
-                            "deleted": transfer.list_deletions(conn), "sets": transfer.list_set_heads(conn),
-                            "deleted_sets": transfer.list_set_deletions(conn)}
+                # The cursor is read before the lists, so a change made meanwhile is sent again next time rather than missed.
+                cursor = transfer.change_cursor(conn)
+                since = transfer.changes_since(conn, self.headers.get("X-Since", ""))
+                manifest = {"format": transfer.FORMAT, "schema": db.schema_version(conn), "cursor": cursor, "since": since,
+                            "entries": transfer.list_keys(conn, since), "deleted": transfer.list_deletions(conn, since),
+                            "sets": transfer.list_set_heads(conn), "deleted_sets": transfer.list_set_deletions(conn)}
             finally:
                 conn.close()
             self._reply(200, json.dumps(manifest).encode())
@@ -215,14 +218,17 @@ def _request(opener, url: str, headers: dict, body: bytes | None = None, denied:
         ) from err
 
 
-def pull(conn, base: str, sign, denied: str = "Wrong code.", update=False) -> dict:
+def pull(conn, base: str, sign, denied: str = "Wrong code.", update=False, since: str = "") -> dict:
     """Download the entries this library lacks from the server at base and merge them in; sign(method, path) gives the request headers.
 
     With update, entries edited more recently there also bring their fields, tags and sets here, and entries deleted
     there (and not edited here since) are deleted here too; entries deleted here stay deleted unless edited there since.
+    since is the cursor the server returned last time; the server then lists only later changes. The totals carry the
+    new cursor, empty when the server does not keep one.
     """
     opener = urllib.request.build_opener(_NoRedirect)
-    with _request(opener, f"{base}/manifest", sign("GET", "/manifest"), denied=denied) as reply:
+    headers = {**sign("GET", "/manifest"), **({"X-Since": since} if since else {})}
+    with _request(opener, f"{base}/manifest", headers, denied=denied) as reply:
         try:
             manifest = json.loads(reply.read(50_000_000))
             remote = manifest["entries"]
@@ -243,7 +249,8 @@ def pull(conn, base: str, sign, denied: str = "Wrong code.", update=False) -> di
     newer = [item["uid"] for item in remote
              if update and item.get("uid") in uids and str(item.get("updated_at") or "") > uids[item["uid"]]]
     wanted = missing + newer
-    totals = {"added": 0, "skipped": len(remote) - len(wanted), "updated": 0, "deleted": deleted, "sets": set_changes}
+    totals = {"added": 0, "skipped": len(remote) - len(wanted), "updated": 0, "deleted": deleted, "sets": set_changes,
+              "cursor": str(manifest.get("cursor") or "")}
     for start in range(0, len(wanted), BATCH):
         batch = json.dumps({"uids": wanted[start:start + BATCH]}).encode()
         with tempfile.TemporaryDirectory() as folder:

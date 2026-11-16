@@ -84,6 +84,28 @@ class SwatchTests(LibraryOpsCase):
         self.assertEqual(api.list_entries(set_id=made["set"]["id"])["years"], ["2020", "2024"])
         self.assertEqual(api.list_entries()["entries"][0]["group"], "")
 
+    def test_source_groups_run_largest_first_and_pages_continue_in_order(self):
+        for title, domain in (("A1", "a.com"), ("B1", "b.com"), ("B2", "b.com"), ("N1", ""), ("B3", "b.com"), ("A2", "a.com")):
+            entry = self.add_entry(title)
+            self.conn.execute("UPDATE entries SET domain = ? WHERE id = ?", (domain, entry))
+        self.conn.commit()
+        api = hyperbridge.HyperbridgeAPI()
+        labels = [e["group"] for e in api.list_entries(group="source")["entries"]]
+        self.assertEqual(labels, ["b.com"] * 3 + ["a.com"] * 2 + ["No source"])
+        paged = api.list_entries(group="source", limit=2, offset=2)
+        self.assertEqual([e["group"] for e in paged["entries"]], ["b.com", "a.com"])
+        self.assertEqual(paged["total"], 6)
+
+    def test_color_columns_follow_swatch_changes(self):
+        entry = self.add_entry("Shifting")
+        self.conn.execute("UPDATE entries SET swatches = ? WHERE id = ?", (json.dumps(["#0000ff"]), entry))
+        row = self.conn.execute("SELECT color_rank, color_family FROM entries WHERE id = ?", (entry,)).fetchone()
+        self.assertEqual(swatches.family_name(row["color_family"]), "Blue")
+        self.assertEqual(row["color_rank"], swatches.color_rank(json.dumps(["#0000ff"])))
+        self.conn.execute("UPDATE entries SET swatches = '[]' WHERE id = ?", (entry,))
+        row = self.conn.execute("SELECT color_rank, color_family FROM entries WHERE id = ?", (entry,)).fetchone()
+        self.assertEqual((row["color_rank"], swatches.family_name(row["color_family"])), (swatches.NO_COLOR_RANK, swatches.NO_COLOR))
+
     def test_near_matches_similar_shades_only(self):
         self.assertTrue(swatches.near(json.dumps(["#ff0000", "#00ff00"]), "#f81010"))
         self.assertFalse(swatches.near(json.dumps(["#0000ff"]), "#ff0000"))

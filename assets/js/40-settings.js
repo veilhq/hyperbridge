@@ -134,8 +134,44 @@
     }).catch(function () {});
   }
 
+  function bytes(count) {
+    var units = ["bytes", "KB", "MB", "GB", "TB"];
+    var value = count || 0, unit = 0;
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+    return (unit ? value.toFixed(value < 10 ? 1 : 0) : value) + " " + units[unit];
+  }
+
+  // Fills the Storage panel: the total, its split by kind, and the downscale switch.
+  function loadStorage() {
+    var bridge = api();
+    if (!bridge || !bridge.get_storage) return;
+    Promise.resolve(bridge.get_storage()).then(function (result) {
+      if (!result) return;
+      $("#storage-total").textContent = bytes(result.total);
+      var parts = ["Originals " + bytes(result.originals), "thumbnails " + bytes(result.thumbnails)];
+      if (result.screenshots) parts.push("screenshots " + bytes(result.screenshots));
+      parts.push("database " + bytes(result.database));
+      $("#storage-breakdown").textContent = parts.join(", ") + ".";
+      $("#downscale-switch").setAttribute("aria-checked", result.downscale ? "true" : "false");
+    }).catch(function () {});
+  }
+
+  function initStorage() {
+    var control = $("#downscale-switch");
+    control.addEventListener("click", function () {
+      var bridge = api();
+      if (!bridge || !bridge.set_downscale) return;
+      var on = control.getAttribute("aria-checked") !== "true";
+      control.disabled = true;
+      Promise.resolve(bridge.set_downscale(on)).then(function (result) {
+        control.setAttribute("aria-checked", result && result.downscale ? "true" : "false");
+      }).catch(function () { toast("error", "Could not change that setting."); }).then(function () { control.disabled = false; });
+    });
+  }
+
   function load() {
     loadFollowed();
+    loadStorage();
     var bridge = api();
     if (!bridge || !bridge.list_feed_sources) return Promise.resolve();
     return Promise.resolve(bridge.list_feed_sources()).then(function (result) {
@@ -520,6 +556,7 @@
       });
     });
     initShare();
+    initStorage();
     syncPoller = initSync();
     watchSyncActivity();
     library = $("#library");

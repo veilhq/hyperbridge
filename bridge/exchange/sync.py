@@ -16,7 +16,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from bridge.core import db
-from bridge.exchange import lan
+from bridge.exchange import lan, transfer
 from bridge.ingest import capture
 
 DISCOVERY_PORT = 47621
@@ -89,6 +89,19 @@ class PeerStore:
             peer = self._data["peers"].get(peer_id)
             if peer and peer.get("kind") != _kind(kind):
                 peer["kind"] = _kind(kind)
+                self._write()
+
+    def cursor_for(self, peer_id: str) -> str:
+        """Return where the last completed sync from a paired machine left off, or empty for a full sync."""
+        with self._lock:
+            peer = self._data["peers"].get(peer_id)
+            return str(peer.get("cursor") or "") if peer else ""
+
+    def set_cursor(self, peer_id: str, cursor: str) -> None:
+        with self._lock:
+            peer = self._data["peers"].get(peer_id)
+            if peer is not None and peer.get("cursor") != cursor:
+                peer["cursor"] = cursor
                 self._write()
 
     def remove(self, peer_id: str) -> None:
@@ -361,9 +374,15 @@ class Sync:
         lan._require_private(host)
         conn = db.connect()
         try:
-            result = lan.pull(conn, f"http://{host}:{port}", self._signer(peer_id), denied=DENIED, update=True)
+            # A cursor only holds for the library that received those changes; a recreated library starts over.
+            local = transfer.change_cursor(conn).partition(":")[0]
+            mine, _, since = self.store.cursor_for(peer_id).partition("|")
+            result = lan.pull(conn, f"http://{host}:{port}", self._signer(peer_id), denied=DENIED, update=True,
+                              since=since if mine == local else "")
         finally:
             conn.close()
+        cursor = result.pop("cursor", "")
+        self.store.set_cursor(peer_id, f"{local}|{cursor}" if cursor else "")
         self.received += result["added"]
         if announce:
             peer = self.store.peers().get(peer_id) or {}

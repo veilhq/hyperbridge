@@ -226,6 +226,40 @@ class DeletionSyncTests(SyncCase):
         self.assertEqual(self.count(self.conn, self.uids[0]), 1)
 
 
+
+class DeltaSyncTests(SyncCase):
+    def laptop_db(self):
+        conn = sqlite3.connect(str(self.laptop / "hyperbridge.db"), isolation_level=None)
+        self.addCleanup(conn.close)
+        return conn
+
+    def test_a_later_sync_lists_only_what_changed_since(self):
+        self.pair()
+        self.assertEqual(self.home.pull_from(self.there.store.id, self.laptop_address)["added"], 2)
+        self.laptop_db().execute("UPDATE entries SET title = 'Edited', updated_at = '2999-01-01T00:00:00' WHERE uid = ?", (self.uids[0],))
+        result = self.home.pull_from(self.there.store.id, self.laptop_address)
+        self.assertEqual((result["updated"], result["skipped"]), (1, 0))
+        self.assertEqual(self.conn.execute("SELECT title FROM entries WHERE uid = ?", (self.uids[0],)).fetchone()[0], "Edited")
+        self.assertEqual(self.home.pull_from(self.there.store.id, self.laptop_address)["skipped"], 0)
+
+    def test_a_deletion_arrives_once_through_the_delta(self):
+        self.pair()
+        self.home.pull_from(self.there.store.id, self.laptop_address)
+        laptop = self.laptop_db()
+        laptop.execute("DELETE FROM entries WHERE uid = ?", (self.uids[0],))
+        laptop.execute("INSERT INTO entry_deletions (uid, deleted_at) VALUES (?, '2999-01-01T00:00:00')", (self.uids[0],))
+        self.assertEqual(self.home.pull_from(self.there.store.id, self.laptop_address)["deleted"], 1)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0], 1)
+
+    def test_a_recreated_library_here_gets_the_full_list_again(self):
+        self.pair()
+        self.home.pull_from(self.there.store.id, self.laptop_address)
+        self.conn.execute("UPDATE change_counter SET epoch = 'fresh'")
+        self.conn.execute("DELETE FROM entries")
+        self.conn.commit()
+        self.assertEqual(self.home.pull_from(self.there.store.id, self.laptop_address)["added"], 2)
+
+
 class PhoneCaptureTests(SyncCase):
     def post(self, body, token=None):
         headers = {"Content-Type": "application/json"}

@@ -12,10 +12,12 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 from bridge.core import db
+from bridge.core import prefs
 from bridge.core import storage
 from bridge.library import swatches
 
 THUMB_EDGE = 480
+DOWNSCALE_EDGE = 3840  # longest side kept when the downscale preference is on
 MAX_PIXELS = 50_000_000
 MAX_HTML_BYTES = 2_000_000
 MAX_IMAGES = 20
@@ -476,6 +478,29 @@ def _open_image(body: bytes):
     return image_format, width, height
 
 
+def _downscale(body: bytes, image_format: str, width: int, height: int):
+    """Re-encode a still image larger than DOWNSCALE_EDGE to fit it; return (body, width, height), unchanged when not smaller."""
+    if max(width, height) <= DOWNSCALE_EDGE or image_format not in ("JPEG", "PNG", "WEBP"):
+        return body, width, height
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(body)) as image:
+        if getattr(image, "is_animated", False):
+            return body, width, height
+        icc = image.info.get("icc_profile")
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail((DOWNSCALE_EDGE, DOWNSCALE_EDGE), Image.LANCZOS)
+        if image_format == "JPEG" and image.mode not in ("RGB", "L", "CMYK"):
+            image = image.convert("RGB")
+        options = {"PNG": {"optimize": True}, "JPEG": {"quality": 90}, "WEBP": {"quality": 90}}[image_format]
+        if icc:
+            options["icc_profile"] = icc
+        out = io.BytesIO()
+        image.save(out, image_format, **options)
+    smaller = out.getvalue()
+    return (smaller, image.width, image.height) if len(smaller) < len(body) else (body, width, height)
+
+
 def _write_thumbnail(body: bytes, target_dir_uid: str):
     """Write a thumbnail (webp, else jpeg) and return (path, width, height)."""
     from PIL import Image
@@ -573,6 +598,8 @@ def refresh_animated_thumbnails(conn) -> int:
 def _store_image(conn, entry, body: bytes, position: int = 0) -> None:
     """Validate an image and store it at a position; position 0 also gets the grid thumbnail."""
     image_format, width, height = _open_image(body)
+    if prefs.get("downscale_originals"):
+        body, width, height = _downscale(body, image_format, width, height)
     uid = entry["uid"]
     conn.execute(
         "DELETE FROM assets WHERE entry_id = ? AND position = ? AND kind IN ('original', 'thumbnail')",
