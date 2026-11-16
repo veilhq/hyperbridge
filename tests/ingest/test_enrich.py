@@ -74,6 +74,54 @@ class EnrichTests(LibraryCase):
         self.assertEqual(self.row(site)["title"], "example.com")
         self.assertEqual(self.row(titled)["title"], "Real title")
 
+    def test_strip_hashtags_drops_runs_and_tag_lines_but_keeps_words_in_sentences(self):
+        cases = {
+            "Brass lamp #lighting #interiors #design": "Brass lamp",
+            "#tbt #paris Morning walk": "Morning walk",
+            "Visiting #Paris in spring": "Visiting Paris in spring",
+            "Visiting #Paris": "Visiting Paris",
+            "First line.\n\n#poster #print\n#swiss": "First line.",
+            "Para one\n\nPara two #a #b": "Para one\n\nPara two",
+            "#onlytag": "",
+            "See example.com/#section and &#39;quotes&#39; #1 pick": "See example.com/#section and &#39;quotes&#39; #1 pick",
+        }
+        for text, expected in cases.items():
+            self.assertEqual(enrich.strip_hashtags(text), expected, text)
+
+    def test_hashtags_leave_the_description_and_become_tags(self):
+        entry = self.add("a", title="Lamp", description="Brass lamp #Lighting #interiors", source_service="pinterest")
+        self.assertTrue(enrich.enrich_entry(self.conn, self.row(entry)))
+        self.assertEqual(self.row(entry)["description"], "Brass lamp")
+        self.assertEqual(self.tags(entry), ["interiors", "lighting", "pinterest"])
+
+    def test_hashtags_are_added_to_an_already_tagged_entry(self):
+        entry = self.add("a", title="Lamp", description="Lamp #brass #glass")
+        library.add_entry_tags(self.conn, entry, ["mine"])
+        enrich.enrich_entry(self.conn, self.row(entry))
+        self.assertEqual(self.tags(entry), ["brass", "glass", "mine"])
+
+    def test_hand_edited_description_and_tags_are_left_alone(self):
+        kept = self.add("a", title="Lamp", description="Mine #a #b", manual_fields='["description"]')
+        untagged = self.add("b", title="Lamp", description="Lamp #a #b", manual_fields='["tags"]')
+        enrich.enrich_entry(self.conn, self.row(kept))
+        enrich.enrich_entry(self.conn, self.row(untagged))
+        self.assertEqual(self.row(kept)["description"], "Mine #a #b")
+        self.assertEqual(self.row(untagged)["description"], "Lamp")
+        self.assertEqual(self.tags(untagged), [])
+
+    def test_backfill_cleans_tagged_entries_once(self):
+        entry = self.add("a", title="Lamp", description="Lamp #a #b")
+        library.add_entry_tags(self.conn, entry, ["mine"])
+        self.assertEqual(enrich.backfill(self.conn), 1)
+        self.assertEqual(self.row(entry)["description"], "Lamp")
+        self.assertEqual(enrich.backfill(self.conn), 0)
+
+    def test_an_all_hashtag_description_does_not_become_the_title(self):
+        entry = self.add("a", description="#poster #swiss")
+        enrich.enrich_entry(self.conn, self.row(entry))
+        self.assertEqual(self.row(entry)["description"], "")
+        self.assertNotIn("#", self.row(entry)["title"])
+
     def test_placeholder_titles_are_recognized(self):
         for title, fields in (("", {}), ("Lighting", {"collection": "Interiors / Lighting"}),
                               ("Lighting by Ana", {"collection": "Lighting", "creator": "Ana"}), ("site.example", {"domain": "www.site.example"})):
