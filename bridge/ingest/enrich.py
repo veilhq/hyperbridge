@@ -32,7 +32,7 @@ def fallback_title(row) -> str:
     return capture.shorten_title(leaf or creator or re.sub(r"^www\.", "", row["domain"] or ""))
 
 
-def _manual(row) -> list:
+def manual_fields(row) -> list:
     """Return the entry's hand-edited field names."""
     try:
         return list(json.loads(row["manual_fields"] or "[]"))
@@ -40,9 +40,21 @@ def _manual(row) -> list:
         return []
 
 
+def placeholder_title(row) -> bool:
+    """Whether an entry's title is only its collection, collection and creator, or site name - a stand-in a real title may replace."""
+    title = " ".join(str(row["title"] or "").split()).lower()
+    if not title:
+        return True
+    leaf = str(row["collection"] or "").split(" / ")[-1].strip()
+    creator = str(row["creator"] or "").strip()
+    domain = re.sub(r"^www\.", "", row["domain"] or "")
+    stand_ins = [leaf, f"{leaf} by {creator}" if leaf and creator else "", creator, domain]
+    return any(title == capture.shorten_title(" ".join(item.split())).lower() for item in stand_ins if item)
+
+
 def enrich_entry(conn, row) -> bool:
     """Add source tags to an untagged entry and a fallback title to an untitled one; returns True when anything changed."""
-    manual = _manual(row)
+    manual = manual_fields(row)
     changed = False
     title = str(row["title"] or "").strip()
     if "title" not in manual and (not title or _URL_TITLE.match(title)):

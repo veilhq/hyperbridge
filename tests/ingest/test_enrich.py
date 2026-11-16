@@ -74,6 +74,12 @@ class EnrichTests(LibraryCase):
         self.assertEqual(self.row(site)["title"], "example.com")
         self.assertEqual(self.row(titled)["title"], "Real title")
 
+    def test_placeholder_titles_are_recognized(self):
+        for title, fields in (("", {}), ("Lighting", {"collection": "Interiors / Lighting"}),
+                              ("Lighting by Ana", {"collection": "Lighting", "creator": "Ana"}), ("site.example", {"domain": "www.site.example"})):
+            self.assertTrue(enrich.placeholder_title(self.row(self.add(title or "blank", title=title, **fields))), title)
+        self.assertFalse(enrich.placeholder_title(self.row(self.add("real", title="Brass lamp", collection="Lighting"))))
+
     def test_a_hand_edited_empty_title_stays_empty(self):
         entry = self.add("a", description="Text", manual_fields='["title"]')
         enrich.enrich_entry(self.conn, self.row(entry))

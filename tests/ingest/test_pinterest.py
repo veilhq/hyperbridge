@@ -77,6 +77,21 @@ class BoardPinTests(unittest.TestCase):
         self.assertEqual(pinterest.board_pins(("a", "b", ""), fetch), ("", []))
 
 
+class PinDetailTests(unittest.TestCase):
+    def test_a_pin_carries_its_description_site_date_and_hashtags(self):
+        record = dict(pin(1), grid_title="Quiet harbor", description="Boats  at dusk", link_domain="example.com",
+                      created_at="Mon, 20 Mar 2023 16:24:21 +0000", hashtags=["#sea", "#"])
+        found = pinterest.board_pins(("a", "b", ""), lambda url, headers=None: json_response(
+            {"data": {"id": "1", "name": "B", "pin_count": 1}} if "/BoardResource/" in url
+            else {"data": [record] if "BoardFeed" in url else [], "bookmark": "-end-"}))[1][0]
+        self.assertEqual((found["title"], found["description"], found["publisher"], found["posted_at"], found["tags"]),
+                         ("Quiet harbor", "Boats at dusk", "example.com", "2023-03-20", ["sea"]))
+
+    def test_missing_or_blank_fields_stay_empty(self):
+        self.assertEqual(pinterest.pin_details({"description": " ", "created_at": "not a date"}),
+                         {"title": "", "description": "", "publisher": "", "posted_at": "", "tags": []})
+
+
 class FetchHeaderTests(unittest.TestCase):
     def test_credentials_headers_are_refused(self):
         with self.assertRaises(fetchguard.FetchError):
@@ -113,6 +128,16 @@ class DiscoverBoardTests(LibraryCase):
         discover.add_candidates(self.conn, [url], BOARD, None, details)
         row = self.conn.execute("SELECT title, creator FROM entries").fetchone()
         self.assertEqual(tuple(row), ("Quiet harbor", "Sam"))
+
+    def test_saved_entries_keep_the_pin_description_site_date_and_tags(self):
+        url = "https://i.pinimg.com/originals/aa/1.jpg"
+        details = {url: {"source_service": "pinterest", "source_ref": "1001", "description": "Boats at dusk",
+                         "publisher": "example.com", "posted_at": "2023-03-20", "tags": ["sea"]}}
+        discover.add_candidates(self.conn, [url], BOARD, None, details)
+        entry = self.conn.execute("SELECT * FROM entries").fetchone()
+        self.assertEqual((entry["description"], entry["publisher"], entry["posted_at"]), ("Boats at dusk", "example.com", "2023-03-20"))
+        tags = [row[0] for row in self.conn.execute("SELECT t.name FROM tags t JOIN entry_tags et ON et.tag_id = t.id")]
+        self.assertEqual(tags, ["sea"])
 
 
 class FollowBoardTests(LibraryCase):

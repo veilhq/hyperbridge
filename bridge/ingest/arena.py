@@ -68,11 +68,21 @@ def _usable(block) -> bool:
     return bool((block.get("image") or {}).get("src"))
 
 
+def block_details(block) -> dict:
+    """Return a block's description and the site its image came from, empty when the block gives none."""
+    provider = ((block.get("source") or {}).get("provider") or {}).get("name") or ""
+    description = _clean(_text(block.get("description")), 1000)
+    if description.lower().startswith("source pattern"):
+        description = ""
+    return {"description": description, "publisher": re.sub(r"^https?://", "", provider)[:200]}
+
+
 def _block_fields(block) -> dict:
-    """Return the size, block id and posted date a feed item carries from its Are.na block."""
+    """Return the size, block id, posted date, description and source site a feed item carries from its Are.na block."""
     image = block["image"]
     return {"width": int(image.get("width") or 0), "height": int(image.get("height") or 0),
-            "source_ref": str(block.get("id") or ""), "posted_at": str(block.get("created_at") or "")[:10], "tags": []}
+            "source_ref": str(block.get("id") or ""), "posted_at": str(block.get("created_at") or "")[:10], "tags": [],
+            **block_details(block)}
 
 
 def channel_items(channel_url, fetcher, rng) -> list:
@@ -125,17 +135,32 @@ def _clean(text, limit) -> str:
     return re.sub(r"\s+", " ", re.sub(r"^\W+", "", text or "")).strip()[:limit]
 
 
+BLOCK_LIMIT = 50
+_ROW_COLUMNS = ("e.id, e.source_key, e.source_url, e.title, e.creator, e.description, e.publisher, e.source_ref,"
+                " e.collection, e.domain, e.manual_fields")
+
+
 def backfill_origins(conn, fetcher, rng, max_channels=2, retries=0) -> int:
     """Match saved Are.na images to their blocks, recording the block and channel words and filling empty fields.
 
-    Handles up to max_channels channels per call (all of them when None), waiting out rate limits retries times; entries saved from a block page are read directly.
+    Handles up to max_channels channels per call (all of them when None), waiting out rate limits retries times; entries saved from a block page,
+    and up to BLOCK_LIMIT feed-saved entries whose block is known but never read, are read directly.
     """
     now = datetime.now().isoformat(timespec="seconds")
+    known = conn.execute(
+        f"SELECT {_ROW_COLUMNS} FROM entries e WHERE e.source_service = 'arena' AND e.source_ref != ''"
+        " AND NOT EXISTS (SELECT 1 FROM entry_origins o WHERE o.entry_id = e.id) LIMIT ?", (BLOCK_LIMIT,)).fetchall()
+    done = 0
+    for row in known:
+        try:
+            done += _match_block(conn, int(row["source_ref"]), row, fetcher, now, retries)
+        except Exception:  # noqa: BLE001 - an unreadable block is retried on a later refresh
+            continue
     rows = conn.execute(
-        "SELECT e.id, e.source_key, e.source_url, e.title, e.creator, e.description, e.publisher, e.source_ref FROM entries e"
+        f"SELECT {_ROW_COLUMNS} FROM entries e"
         " WHERE e.source_url LIKE '%are.na/%' AND e.source_key IS NOT NULL"
         " AND e.source_ref = ''").fetchall()
-    by_channel, done = {}, 0
+    by_channel = {}
     for row in rows:
         block = _BLOCK_LINK.search(row["source_url"])
         if block:
@@ -205,19 +230,21 @@ def _match_channel(conn, slug, entries, fetcher, now, retries=0) -> int:
 
 
 def _fill_entry(conn, row, block) -> None:
-    """Fill a saved image's empty or filename-only fields from its block."""
-    provider = ((block.get("source") or {}).get("provider") or {}).get("name") or ""
+    """Fill a saved image's empty, filename-only or placeholder fields from its block, leaving hand-edited ones alone."""
+    from bridge.ingest import enrich
+
+    details = block_details(block)
     block_title = _clean(block.get("title"), 300)
-    description = _clean(_text(block.get("description")), 1000)
+    manual = enrich.manual_fields(row)
     updates = {}
     if not row["source_ref"] and block.get("id"):
         updates.update(source_service="arena", source_ref=str(block["id"]), posted_at=str(block.get("created_at") or "")[:10])
-    if junk_title(row["title"]) and block_title and not junk_title(block_title):
+    if ("title" not in manual and block_title and not junk_title(block_title)
+            and (junk_title(row["title"]) or enrich.placeholder_title(row))):
         updates["title"] = block_title
-    if not row["description"] and description and not description.lower().startswith("source pattern"):
-        updates["description"] = description
-    if not row["publisher"] and provider:
-        updates["publisher"] = re.sub(r"^https?://", "", provider)[:200]
+    for field in ("description", "publisher"):
+        if field not in manual and not row[field] and details[field]:
+            updates[field] = details[field]
     if updates:
         sets = ", ".join(f"{column} = ?" for column in updates)
         conn.execute(f"UPDATE entries SET {sets} WHERE id = ?", (*updates.values(), row["id"]))

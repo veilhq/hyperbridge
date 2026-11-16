@@ -1,4 +1,4 @@
-"""Tests for restoring lost titles from Tumblr and Pinterest."""
+"""Tests for reading Tumblr posts and Pinterest pins again to fill what saved entries lack."""
 
 import json
 import sys
@@ -18,44 +18,76 @@ def body(text):
 
 def fetcher(url, **kwargs):
     if "api/read/json" in url:
-        post = {"id": "77", "regular-title": "Blue chair", "tags": []}
+        post = {"id": "77", "regular-title": "Blue chair", "tags": ["chairs"], "date-gmt": "2024-05-01 10:00:00 GMT",
+                "photo-caption": "<p>Blue chair</p><p>Oak and lacquer, 1962.</p>"}
         return body("var tumblr_api_read = " + json.dumps({"posts": [post], "tumblelog": {"title": "b"}}) + ";")
     if "PinResource" in url:
-        return body(json.dumps({"resource_response": {"data": {"grid_title": "Quiet harbor"}}}))
+        pin = {"grid_title": "Quiet harbor", "description": "Boats at dusk", "link_domain": "example.com",
+               "created_at": "Mon, 20 Mar 2023 16:24:21 +0000", "hashtags": ["#sea"]}
+        return body(json.dumps({"resource_response": {"data": pin}}))
     raise OSError("unreachable")
 
 
-class RestoreTitleTests(LibraryCase):
-    def add(self, service, ref, url, title="", manual="[]"):
+class RestoreDetailsTests(LibraryCase):
+    def add(self, service, ref, url, title="", manual="[]", collection=""):
         self.conn.execute(
             "INSERT INTO entries (uid, title, source_url, source_key, state, source_service, source_ref, manual_fields,"
-            " created_at, updated_at) VALUES (?, ?, ?, ?, 'captured', ?, ?, ?, '2026-01-01T00:00:00', '2026-01-01T00:00:00')",
-            (f"u{ref}", title, url, url, service, ref, manual))
+            " collection, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, 'captured', ?, ?, ?, ?, '2026-01-01T00:00:00', '2026-01-01T00:00:00')",
+            (f"u{ref}", title, url, url, service, ref, manual, collection))
         return self.conn.execute("SELECT id FROM entries WHERE uid = ?", (f"u{ref}",)).fetchone()[0]
 
-    def title(self, entry_id):
-        return self.conn.execute("SELECT title FROM entries WHERE id = ?", (entry_id,)).fetchone()[0]
+    def entry(self, entry_id):
+        return dict(self.conn.execute(
+            "SELECT title, description, publisher, posted_at, updated_at FROM entries WHERE id = ?", (entry_id,)).fetchone())
 
-    def test_untitled_tumblr_and_pinterest_entries_get_their_source_title(self):
+    def tags(self, entry_id):
+        return [row[0] for row in self.conn.execute(
+            "SELECT t.name FROM tags t JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = ?", (entry_id,))]
+
+    def test_tumblr_and_pinterest_entries_get_their_source_details(self):
         post = self.add("tumblr", "77", "https://blog.tumblr.com/post/77/slug")
         pin = self.add("pinterest", "1001", "https://www.pinterest.com/pin/1001/", title="IMG_8841.jpg")
-        self.assertEqual(restore.titles(self.conn, fetcher), 2)
-        self.assertEqual((self.title(post), self.title(pin)), ("Blue chair", "Quiet harbor"))
+        self.assertEqual(restore.details(self.conn, fetcher), 2)
+        self.assertEqual(self.entry(post), {
+            "title": "Blue chair", "description": "Blue chair\nOak and lacquer, 1962.", "publisher": "",
+            "posted_at": "2024-05-01", "updated_at": "2026-01-01T00:00:00"})
+        self.assertEqual(self.entry(pin), {
+            "title": "Quiet harbor", "description": "Boats at dusk", "publisher": "example.com",
+            "posted_at": "2023-03-20", "updated_at": "2026-01-01T00:00:00"})
+        self.assertEqual((self.tags(post), self.tags(pin)), (["chairs"], ["sea"]))
 
-    def test_hand_written_and_real_titles_are_left_alone(self):
-        edited = self.add("pinterest", "1", "https://www.pinterest.com/pin/1/", manual='["title"]')
-        real = self.add("pinterest", "2", "https://www.pinterest.com/pin/2/", title="Kept")
-        self.assertEqual(restore.titles(self.conn, fetcher), 0)
-        self.assertEqual((self.title(edited), self.title(real)), ("", "Kept"))
+    def test_a_placeholder_title_is_replaced_but_hand_written_and_real_titles_are_kept(self):
+        placeholder = self.add("pinterest", "1", "https://www.pinterest.com/pin/1/", title="Harbors", collection="Places / Harbors")
+        edited = self.add("pinterest", "2", "https://www.pinterest.com/pin/2/", manual='["title"]')
+        real = self.add("pinterest", "3", "https://www.pinterest.com/pin/3/", title="Kept")
+        restore.details(self.conn, fetcher)
+        titles = [self.entry(entry)["title"] for entry in (placeholder, edited, real)]
+        self.assertEqual(titles, ["Quiet harbor", "", "Kept"])
+        self.assertEqual(self.entry(real)["description"], "Boats at dusk")
 
-    def test_an_unreadable_source_is_skipped_without_failing(self):
-        entry = self.add("pinterest", "3", "https://www.pinterest.com/pin/3/")
+    def test_each_entry_is_read_once(self):
+        self.add("pinterest", "4", "https://www.pinterest.com/pin/4/", title="Kept")
+        calls = []
+
+        def counting(url, **kwargs):
+            calls.append(url)
+            return fetcher(url, **kwargs)
+
+        restore.details(self.conn, counting)
+        restore.details(self.conn, counting)
+        self.assertEqual(len(calls), 1)
+
+    def test_an_unreadable_source_is_skipped_and_tried_again_later(self):
+        entry = self.add("pinterest", "5", "https://www.pinterest.com/pin/5/")
 
         def broken(url, **kwargs):
             raise OSError("down")
 
-        self.assertEqual(restore.titles(self.conn, broken), 0)
-        self.assertEqual(self.title(entry), "")
+        self.assertEqual(restore.details(self.conn, broken), 0)
+        self.assertEqual(self.entry(entry)["title"], "")
+        self.assertEqual(restore.details(self.conn, fetcher), 1)
+        self.assertEqual(self.entry(entry)["title"], "Quiet harbor")
 
 
 if __name__ == "__main__":

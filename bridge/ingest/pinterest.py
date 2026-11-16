@@ -1,6 +1,7 @@
 """Reads the pins of a public Pinterest board, section by section, through the JSON endpoints the board page itself calls."""
 import json
 from concurrent.futures import ThreadPoolExecutor
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote, urlencode, urlsplit
 
 PIN_LIMIT = 1000
@@ -45,8 +46,25 @@ def _pages(fetcher, name, options, source, limit):
         options["bookmarks"] = [bookmark]
 
 
+def _date(value) -> str:
+    try:
+        return parsedate_to_datetime(str(value)).date().isoformat()
+    except (TypeError, ValueError, IndexError):
+        return ""
+
+
+def pin_details(item) -> dict:
+    """Return the title, description, outside source site, pinned date and hashtags a pin record carries; missing fields are empty."""
+    title = " ".join(str(item.get("grid_title") or item.get("title") or "").split())
+    description = " ".join(str(item.get("description") or "").split())[:1000]
+    tags = [str(tag).lstrip("#") for tag in item.get("hashtags") or [] if str(tag).strip("# ")]
+    return {"title": title, "description": "" if description.lower() == title.lower() else description,
+            "publisher": str(item.get("link_domain") or item.get("domain") or "").strip()[:200],
+            "posted_at": _date(item.get("created_at") or ""), "tags": tags}
+
+
 def _pin(item, section=""):
-    """Return the pin's image URLs, size, id, title and section name, or None when it has no image."""
+    """Return the pin's image URLs, size, id, section name and details, or None when it has no image."""
     sizes = item.get("images") or {}
     full = sizes.get("orig") or sizes.get("736x") or {}
     preview = sizes.get("474x") or sizes.get("236x") or full
@@ -54,8 +72,7 @@ def _pin(item, section=""):
         return None
     pin_id = str(item.get("id") or "")
     return {"url": full["url"], "preview": preview["url"], "width": full.get("width") or 0, "height": full.get("height") or 0,
-            "id": pin_id if pin_id.isdigit() else "", "title": str(item.get("grid_title") or item.get("title") or "").strip(),
-            "section": section}
+            "id": pin_id if pin_id.isdigit() else "", "section": section, **pin_details(item)}
 
 
 def _section_pins(fetcher, section, source, limit):
@@ -133,8 +150,9 @@ def items(url, fetcher, rng) -> list:
         result.append({
             "source_id": "pinterest", "url": pin["url"], "thumb": pin["preview"], "width": pin["width"], "height": pin["height"],
             "title": pin["title"][:300], "creator": "", "page_url": "https://www.pinterest.com/pin/" + pin["id"] + "/" if pin["id"] else board_url,
-            "term": (pin["section"] or name)[:100], "tags": [], "source_ref": pin["id"], "posted_at": "",
+            "term": (pin["section"] or name)[:100], "tags": pin["tags"], "source_ref": pin["id"], "posted_at": pin["posted_at"],
             "collection": " / ".join(part for part in (name, pin["section"]) if part)[:200],
+            "description": pin["description"], "publisher": pin["publisher"],
         })
     return result
 

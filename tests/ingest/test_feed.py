@@ -149,6 +149,13 @@ class ReviewTests(FeedCase):
         row = self.conn.execute("SELECT title, creator FROM entries ORDER BY id DESC").fetchone()
         self.assertEqual(tuple(row), ("Card title", "Pat"))
 
+    def test_accept_keeps_the_description_and_source_site(self):
+        ids = self.seed()
+        self.conn.execute("UPDATE feed_items SET description = 'Oak, 1962', publisher = 'example.com' WHERE id = ?", (ids[0],))
+        feed.accept(self.conn, ids[:1])
+        row = self.conn.execute("SELECT description, publisher FROM entries ORDER BY id DESC").fetchone()
+        self.assertEqual(tuple(row), ("Oak, 1962", "example.com"))
+
 
 if __name__ == "__main__":
     unittest.main()

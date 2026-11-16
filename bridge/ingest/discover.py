@@ -8,7 +8,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
 from bridge.ingest import capture, pinterest
-from bridge.library import sets
+from bridge.library import library, sets
 
 MAX_CANDIDATES = 60
 MIN_EDGE = 150
@@ -127,11 +127,13 @@ def _probe(url, fetcher):
 
 
 def _pin_candidate(pin, board_name, board_url):
-    """Build a candidate from a Pinterest pin: its preview for the card, the full-size URL to capture, and its board and section."""
+    """Build a candidate from a Pinterest pin: its preview for the card, the full-size URL to capture, its board and section, and its details."""
     collection = " / ".join(part for part in (board_name, pin["section"]) if part)
     return {"url": pin["url"], "thumb": pin["preview"], "width": pin["width"], "height": pin["height"],
             "page_url": "https://www.pinterest.com/pin/" + pin["id"] + "/" if pin["id"] else board_url,
-            "source_service": "pinterest", "source_ref": pin["id"], "collection": collection, "section": pin["section"]}
+            "source_service": "pinterest", "source_ref": pin["id"], "collection": collection, "section": pin["section"],
+            "title": pin["title"], "description": pin["description"], "publisher": pin["publisher"],
+            "posted_at": pin["posted_at"], "tags": pin["tags"]}
 
 
 def discover(conn, url, fetcher=None) -> dict:
@@ -179,7 +181,8 @@ def discover(conn, url, fetcher=None) -> dict:
 def add_candidates(conn, urls, page_url, set_id, details=None) -> dict:
     """Queue the chosen image URLs for capture, credit the page as their source and place them in a set.
 
-    details maps an image URL to its own page_url, source_service, source_ref, collection, title and creator.
+    details maps an image URL to its own page_url, source_service, source_ref, collection, title, creator,
+    description, publisher, posted_at and tags.
     """
     added = placed = 0
     for url in urls:
@@ -189,10 +192,15 @@ def add_candidates(conn, urls, page_url, set_id, details=None) -> dict:
             own = (details or {}).get(url) or {}
             credit = str(own.get("page_url") or page_url)
             conn.execute(
-                "UPDATE entries SET source_url = ?, domain = ?, source_service = ?, source_ref = ?, collection = ? WHERE id = ?",
+                "UPDATE entries SET source_url = ?, domain = ?, source_service = ?, source_ref = ?, collection = ?, posted_at = ?,"
+                " description = ?, publisher = ? WHERE id = ?",
                 (credit, capture.source_domain(credit) or capture.source_domain(url), str(own.get("source_service") or "")[:40],
-                 str(own.get("source_ref") or "")[:100], str(own.get("collection") or "")[:200], result["entry_id"]))
+                 str(own.get("source_ref") or "")[:100], str(own.get("collection") or "")[:200], str(own.get("posted_at") or "")[:10],
+                 str(own.get("description") or "")[:1000], str(own.get("publisher") or "")[:200], result["entry_id"]))
             capture.keep_details(conn, result["entry_id"], own.get("title"), own.get("creator"))
+            tags = own.get("tags")
+            if isinstance(tags, list):
+                library.add_entry_tags(conn, result["entry_id"], [str(tag) for tag in tags])
         if set_id and sets.place(result["entry_id"], int(set_id)):
             placed += 1
     return {"added": added, "placed": placed}

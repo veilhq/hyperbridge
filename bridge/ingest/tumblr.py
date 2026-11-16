@@ -13,6 +13,7 @@ PER_BLOG = 24
 _IMG = re.compile(r"<img\b[^>]*>", re.I)
 _ATTR = re.compile(r"""\b(src|srcset|data-orig-width|data-orig-height)\s*=\s*"([^"]*)\"""", re.I)
 _TAG = re.compile(r"<[^>]+>")
+_BREAK = re.compile(r"</p>|<br\s*/?>|</h\d>|</li>|</blockquote>", re.I)
 
 
 def target(url):
@@ -54,12 +55,32 @@ def post_images(post) -> list:
     return found
 
 
+def _plain(markup) -> str:
+    return " ".join(html.unescape(_TAG.sub(" ", markup or "")).split())
+
+
+def _caption(markup) -> str:
+    """Return caption markup as plain text, one line per paragraph or line break."""
+    lines = _BREAK.split(markup or "")
+    return "\n".join(line for line in (_plain(part) for part in lines) if line)
+
+
 def _title(post) -> str:
+    """Return the post title, else the caption's first paragraph, else the post's URL slug in words."""
     text = post.get("regular-title") or ""
     if not text:
         match = re.search(r"<p>(.*?)</p>", post.get("regular-body") or post.get("photo-caption") or "", re.S)
         text = match.group(1) if match else ""
-    return html.unescape(_TAG.sub("", text)).strip()[:300]
+    text = _plain(text) or " ".join(str(post.get("slug") or "").replace("-", " ").split())
+    return text[:300]
+
+
+def post_details(post) -> dict:
+    """Return the post's title, caption text (as a description when it says more than the title), posted date and tags."""
+    title = _title(post)
+    caption = _caption(post.get("photo-caption") or post.get("regular-body") or "")[:1000]
+    return {"title": title, "description": caption if caption.lower() != title.lower() else "",
+            "posted_at": str(post.get("date-gmt") or "")[:10], "tags": list(post.get("tags") or [])}
 
 
 def items(blog_url, fetcher, rng) -> list:
@@ -73,13 +94,15 @@ def items(blog_url, fetcher, rng) -> list:
     posts = [post for post in data["posts"] if post_images(post)]
     result = []
     for post in rng.sample(posts, min(PER_BLOG, len(posts))):
-        tags = post.get("tags") or []
+        details = post_details(post)
+        tags = details["tags"]
         for full, preview, width, height in post_images(post)[:4]:
             result.append({
                 "source_id": "tumblr", "url": full, "thumb": preview, "width": width, "height": height,
-                "title": _title(post), "creator": "", "page_url": post.get("url") or f"https://{host}/",
+                "title": details["title"], "creator": "", "page_url": post.get("url") or f"https://{host}/",
                 "term": (tags[0] if tags else host)[:100], "tags": tags, "source_ref": str(post.get("id") or ""),
-                "posted_at": str(post.get("date-gmt") or "")[:10], "collection": collection,
+                "posted_at": details["posted_at"], "collection": collection,
+                "description": details["description"], "publisher": "",
             })
     return result
 

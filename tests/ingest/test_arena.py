@@ -153,6 +153,15 @@ class OriginTests(LibraryCase):
         self.assertEqual(tuple(row), ("Poster Wall", "grid study", "site.example"))
         self.assertEqual(self.conn.execute("SELECT block_id FROM entry_origins").fetchone()[0], 77)
 
+    def test_entries_saved_from_the_feed_read_their_block_and_replace_a_placeholder_title(self):
+        entry = self.saved(6, "Posters")
+        self.conn.execute("UPDATE entries SET source_service = 'arena', source_ref = '77', collection = 'Posters',"
+                          " manual_fields = '[\"publisher\"]' WHERE id = ?", (entry,))
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1), max_channels=0), 1)
+        row = self.conn.execute("SELECT title, description, publisher FROM entries WHERE id = ?", (entry,)).fetchone()
+        self.assertEqual(tuple(row), ("Poster Wall", "grid study", ""))
+        self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1), max_channels=0), 0)
+
     def test_all_channels_are_read_when_no_limit_is_given(self):
         for number, slug in ((1, "home"), (2, "other"), (3, "third")):
             entry = self.saved(number, "x")

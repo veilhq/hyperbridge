@@ -55,6 +55,14 @@ class TumblrTests(LibraryCase):
                           result[0]["width"], result[0]["height"]), (["signage", "type"], "11", "2026-09-02", "Blog", 1200, 1800))
         self.assertIn("start=", fetcher.requests[-1])
 
+    def test_post_details_keep_the_caption_and_fall_back_to_the_slug(self):
+        captioned = {"photo-caption": "<p>Olafur Eliasson</p><p>Colour Experiment No. 87<br>2019</p>", "tags": ["art"]}
+        self.assertEqual(tumblr.post_details(captioned), {
+            "title": "Olafur Eliasson", "description": "Olafur Eliasson\nColour Experiment No. 87\n2019",
+            "posted_at": "", "tags": ["art"]})
+        self.assertEqual(tumblr.post_details({"photo-caption": "<p>Same</p>"})["description"], "")
+        self.assertEqual(tumblr.post_details({"slug": "blue-chair-1962"})["title"], "blue chair 1962")
+
     def test_follow_lists_the_blog_once_and_refuses_unreadable_links(self):
         first = tumblr.follow(self.conn, "https://Blog.example/page/2", FakeBlog())
         again = tumblr.follow(self.conn, "https://blog.example", FakeBlog())

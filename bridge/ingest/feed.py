@@ -107,11 +107,12 @@ def store(conn, items, set_id=None) -> int:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO feed_items"
             " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at,"
-            " source_ref, collection, posted_at, tags, set_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " source_ref, collection, posted_at, tags, set_id, description, publisher)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["source_id"], item["url"], item["thumb"], item["width"], item["height"], item["title"],
              item["creator"], item["page_url"], item["term"], _now(),
              item.get("source_ref", ""), item.get("collection", ""), item.get("posted_at", ""),
-             json.dumps(item.get("tags") or []), set_id),
+             json.dumps(item.get("tags") or []), set_id, item.get("description", ""), item.get("publisher", "")),
         )
         added += cursor.rowcount
     return added
@@ -149,9 +150,10 @@ def accept(conn, ids, set_id=None) -> dict:
         if result["created"]:
             added += 1
             conn.execute(
-                "UPDATE entries SET source_url = ?, domain = ?, source_service = ?, source_ref = ?, collection = ?, posted_at = ? WHERE id = ?",
+                "UPDATE entries SET source_url = ?, domain = ?, source_service = ?, source_ref = ?, collection = ?, posted_at = ?,"
+                " description = ?, publisher = ? WHERE id = ?",
                 (row["page_url"] or row["url"], capture.source_domain(row["page_url"] or row["url"]), row["source_id"], row["source_ref"], row["collection"], row["posted_at"],
-                 result["entry_id"]))
+                 row["description"], row["publisher"], result["entry_id"]))
             capture.keep_details(conn, result["entry_id"], row["title"], row["creator"])
             library.add_entry_tags(conn, result["entry_id"], json.loads(row["tags"] or "[]"))
         conn.execute("UPDATE feed_items SET state = 'saved' WHERE id = ?", (row["id"],))

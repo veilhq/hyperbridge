@@ -26,7 +26,7 @@ def source_steps(conn, fetcher) -> list:
         ("arena", lambda: arena.backfill_origins(conn, fetcher, random.Random(), max_channels=None, retries=arena.RETRIES)),
         ("tumblr", lambda: tumblr.backfill(conn, fetcher)),
         ("social", lambda: social.backfill(conn, fetcher)),
-        ("titles", lambda: restore.titles(conn, fetcher)),
+        ("details", lambda: restore.details(conn, fetcher)),
     ]
 
 
