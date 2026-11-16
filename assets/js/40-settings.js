@@ -453,12 +453,12 @@
   }
 
   var syncPoller = null;
-  var syncOverlay = { local: false, remote: false };
+  var syncOverlay = { local: false, remote: false, preview: false };
 
   // Shows the full-screen sync overlay while this machine starts a sync or another machine is syncing with it.
   function paintSyncOverlay() {
     var overlay = $("#sync-overlay");
-    if (overlay) overlay.hidden = !(syncOverlay.local || syncOverlay.remote);
+    if (overlay) overlay.hidden = !(syncOverlay.local || syncOverlay.remote || syncOverlay.preview);
   }
 
   // Announces links that arrived from a phone or another machine; the first reading only sets the baseline.
@@ -569,6 +569,16 @@
       if (tag === "INPUT") { event.target.blur(); return; }
       setOpen(false);
     });
+    // Debug: Ctrl+Shift+S toggles the sync overlay without syncing; Escape also dismisses the preview.
+    document.addEventListener("keydown", function (event) {
+      var toggle = String(event.key).toLowerCase() === "s" && (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey;
+      var dismiss = event.key === "Escape" && syncOverlay.preview;
+      if ((!toggle && !dismiss) || event.repeat) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      syncOverlay.preview = toggle ? !syncOverlay.preview : false;
+      paintSyncOverlay();
+    }, true);
     document.addEventListener("hyperbridge:filter", function () { setOpen(false); });
     document.addEventListener("hyperbridge:feed", function () { setOpen(false); });
     document.addEventListener("hyperbridge:sets", function () { setOpen(false); });

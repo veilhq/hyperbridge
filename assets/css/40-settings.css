@@ -45,7 +45,11 @@
 .sync-overlay[hidden] { display: none; opacity: 0; }
 @starting-style { .sync-overlay:not([hidden]) { opacity: 0; } }
 .sync-overlay-word { margin: 0; font-family: var(--font-display); font-size: min(calc(var(--fs-display-num) * 4 * 20 / 14), 34vw); font-weight: var(--fw-extrabold); letter-spacing: var(--track-display); line-height: var(--lh-tight); }
+/* A dot grid behind the word, lit by opacity rings that ripple outward from the center. */
+@property --sync-wave { syntax: "<length>"; inherits: false; initial-value: 0px; }
+.sync-overlay::before { --sync-wavelength: 30vmin; --sync-wave-floor: color-mix(in srgb, currentColor 15%, transparent); content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: radial-gradient(circle, currentColor var(--calib-dot-size), transparent calc(var(--calib-dot-size) + 0.5px)); background-size: var(--space-5) var(--space-5); background-position: center; -webkit-mask-image: repeating-radial-gradient(circle at center, var(--sync-wave-floor) calc(var(--sync-wave) - var(--sync-wavelength)), currentColor calc(var(--sync-wave) - var(--sync-wavelength) / 2), var(--sync-wave-floor) var(--sync-wave)), radial-gradient(circle at center, currentColor, transparent 70%); mask-image: repeating-radial-gradient(circle at center, var(--sync-wave-floor) calc(var(--sync-wave) - var(--sync-wavelength)), currentColor calc(var(--sync-wave) - var(--sync-wavelength) / 2), var(--sync-wave-floor) var(--sync-wave)), radial-gradient(circle at center, currentColor, transparent 70%); -webkit-mask-composite: source-in; mask-composite: intersect; animation: syncDotWave var(--period-pulse) linear infinite; }
+@keyframes syncDotWave { from { --sync-wave: 0px; } to { --sync-wave: var(--sync-wavelength); } }
 @keyframes syncOverlayGlow { 0%, 100% { box-shadow: inset 0 0 var(--space-6) var(--space-2) var(--live-wash), inset 0 0 0 var(--border-rail) var(--live); } 50% { box-shadow: inset 0 0 var(--space-6) var(--space-2) transparent, inset 0 0 0 var(--border-rail) var(--live); } }
-@media (prefers-reduced-motion: reduce) { .sync-overlay { animation: none; transition: none; } .settings-machine-icon, .settings-tag-name { transition: none; } }
-html.a11y-reduce-motion .sync-overlay { animation: none; transition: none; }
+@media (prefers-reduced-motion: reduce) { .sync-overlay, .sync-overlay::before { animation: none; transition: none; } .settings-machine-icon, .settings-tag-name { transition: none; } }
+html.a11y-reduce-motion .sync-overlay, html.a11y-reduce-motion .sync-overlay::before { animation: none; transition: none; }
 html.a11y-reduce-motion .settings-machine-icon, html.a11y-reduce-motion .settings-tag-name { transition: none; }
