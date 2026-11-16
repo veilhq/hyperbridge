@@ -31,9 +31,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 10000")
     conn.execute("PRAGMA synchronous = NORMAL")
-    from bridge.library import swatches  # imported here: swatches itself imports this module
+    from bridge.library import fingerprints, swatches  # imported here: both import this module
 
     swatches.register(conn)
+    fingerprints.register(conn)
     conn.create_function("hb_entry_year", 2, entry_year, deterministic=True)
     conn.create_function("hb_entry_year", 3, entry_year, deterministic=True)
     return conn

@@ -9,6 +9,7 @@ from datetime import datetime
 from bridge.core import db
 from bridge.core import storage
 from bridge.core import thumbserver
+from bridge.library import fingerprints
 from bridge.library import swatches
 
 EDITABLE_FIELDS = ("creator", "publisher", "title", "type", "year", "description")
@@ -83,6 +84,7 @@ def get_entry(entry_id: int) -> dict | None:
             "assets": _display_assets(conn, entry_id),
             "tags": tags,
             "sets": sets,
+            "duplicates": fingerprints.duplicates(conn, entry_id),
             "swatches": swatches.parse(row["swatches"]),
             "source": {name: row[name] for name in ("source_service", "source_ref", "collection", "posted_at")},
             **{name: row[name] for name in EDITABLE_FIELDS},

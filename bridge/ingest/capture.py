@@ -14,6 +14,7 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlsplit
 from bridge.core import db
 from bridge.core import prefs
 from bridge.core import storage
+from bridge.library import fingerprints
 from bridge.library import swatches
 
 THUMB_EDGE = 480
@@ -653,16 +654,16 @@ def _store_image(conn, entry, body: bytes, position: int = 0) -> None:
             stale.unlink(missing_ok=True)
     original = storage.asset_path(uid, "original", position, _FORMAT_SUFFIX[image_format])
     original.write_bytes(body)
-    rows = [("original", original, width, height, len(body))]
+    rows = [("original", original, width, height, len(body), *fingerprints.fingerprint(body))]
     if position == 0:
         thumb, thumb_width, thumb_height = _write_thumbnail(body, uid)
         swatches.store(conn, entry["id"], body)
-        rows.append(("thumbnail", thumb, thumb_width, thumb_height, thumb.stat().st_size))
-    for kind, path, row_width, row_height, size in rows:
+        rows.append(("thumbnail", thumb, thumb_width, thumb_height, thumb.stat().st_size, None, None))
+    for kind, path, row_width, row_height, size, digest, visual in rows:
         conn.execute(
-            "INSERT INTO assets (entry_id, position, kind, path, width, height, bytes)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (entry["id"], position, kind, storage.relative_path(path), row_width, row_height, size),
+            "INSERT INTO assets (entry_id, position, kind, path, width, height, bytes, sha256, dhash)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (entry["id"], position, kind, storage.relative_path(path), row_width, row_height, size, digest, visual),
         )
 
 

@@ -4,7 +4,7 @@ import random
 import time
 
 from bridge.ingest import arena, capture, enrich, restore, social, tumblr
-from bridge.library import swatches
+from bridge.library import fingerprints, swatches
 
 logger = logging.getLogger("hyperbridge")
 
@@ -16,6 +16,7 @@ def local_steps(conn) -> list:
         ("domains", lambda: capture.fix_domains(conn)),
         ("file name titles", lambda: capture.fix_file_name_titles(conn)),
         ("swatches", lambda: swatches.backfill(conn)),
+        ("fingerprints", lambda: fingerprints.backfill(conn)),
         ("animated thumbnails", lambda: capture.refresh_animated_thumbnails(conn)),
     ]
 

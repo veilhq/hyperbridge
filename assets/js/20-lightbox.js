@@ -111,6 +111,23 @@
     box.appendChild(add);
   }
 
+  // Lists other entries holding the same or a visually near image; each chip opens that entry.
+  function renderDuplicates(entry) {
+    var box = byId("lb-duplicates");
+    var items = entry.duplicates || [];
+    box.textContent = "";
+    box.hidden = !items.length;
+    byId("lb-duplicates-label").hidden = !items.length;
+    items.forEach(function (item) {
+      var title = displayTitle(item);
+      var chip = makeEl("button", "status-chip status-chip-outlined-muted lightbox-tag", title);
+      chip.type = "button";
+      chip.setAttribute("data-entry", item.id);
+      chip.setAttribute("data-tooltip", "Open " + title);
+      box.appendChild(chip);
+    });
+  }
+
   // Shows the source link with its service chip, plus the collection and posted date when known.
   function renderSource(entry) {
     var box = byId("lb-source");
@@ -250,6 +267,7 @@
     renderSource(entry);
     renderChips(byId("lb-tags"), entry.tags, "status-chip-outlined-muted", "No tags.", true);
     renderSets(entry);
+    renderDuplicates(entry);
     byId("act-save").hidden = !entry.assets.length;
     byId("act-save-all").hidden = entry.assets.length < 2;
     var blank = !entry.source_url && !FORM_FIELDS.some(function (name) { return entry[name]; });
@@ -557,6 +575,11 @@
       if (!chip) return;
       document.dispatchEvent(new CustomEvent("hyperbridge:tag", { detail: { tag: chip.getAttribute("data-tag") } }));
       closeDialog();
+    });
+    byId("lb-duplicates").addEventListener("click", function (event) {
+      var chip = event.target.closest("[data-entry]");
+      if (!chip) return;
+      openEntry(Number(chip.getAttribute("data-entry")));
     });
   }
 

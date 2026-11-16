@@ -1,5 +1,6 @@
 """Tests for URL normalizing, queueing, metadata extraction and the capture pipeline."""
 
+import hashlib
 import io
 import json
 import sys
@@ -249,6 +250,16 @@ class RunCaptureTests(LibraryCase):
         self.assertEqual(self.entry(entry_id)["state"], "captured")
         self.assertEqual(self.entry(entry_id)["title"], "photo")
         self.assertEqual(set(self.assets(entry_id)), {"original", "thumbnail"})
+
+    def test_the_stored_original_is_fingerprinted_and_the_thumbnail_is_not(self):
+        url = "https://example.com/art/photo.png"
+        entry_id, job_id = self.queue(url)
+        body = png_bytes(100, 50)
+        capture.run_capture(self.conn, job_id, FakeFetcher({url: reply(url, body, "image/png")}))
+        rows = {row["kind"]: row for row in self.conn.execute("SELECT kind, sha256, dhash FROM assets WHERE entry_id = ?", (entry_id,))}
+        self.assertEqual(rows["original"]["sha256"], hashlib.sha256(body).hexdigest())
+        self.assertIsNone(rows["thumbnail"]["sha256"])
+        self.assertIsNone(rows["thumbnail"]["dhash"])
 
     def exif_jpeg(self, artist="Ada Lovelace", description="OLYMPUS DIGITAL CAMERA"):
         from PIL import Image
