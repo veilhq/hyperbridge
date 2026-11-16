@@ -492,7 +492,14 @@
     byId("lb-full").addEventListener("click", openFull);
     byId("full-view-close").addEventListener("click", function () { view.close(); });
     byId("full-view-image").addEventListener("click", function () { view.close(); });
-    view.addEventListener("close", function () { byId("full-view-image").removeAttribute("src"); });
+    // Drops the image once the fade-out ends, unless the viewer reopened meanwhile.
+    var clear = function () { if (!view.open) byId("full-view-image").removeAttribute("src"); };
+    view.addEventListener("close", function () {
+      if (parseFloat(getComputedStyle(view).transitionDuration) === 0) clear();
+    });
+    view.addEventListener("transitionend", function (event) {
+      if (event.target === view && event.propertyName === "opacity") clear();
+    });
   }
 
   function init() {

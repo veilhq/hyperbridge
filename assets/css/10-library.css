@@ -33,11 +33,11 @@
 .library-card:hover, .library-card:focus-visible { border-color: var(--interactive); }
 .library-card:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: var(--space-1); }
 .library-card-image { display: block; width: 100%; height: auto; }
-.library-card-grow { transition: border-color var(--motion-base) var(--ease), height var(--motion-linger) var(--ease); }
+.library-card-grow { transition: border-color var(--motion-base) var(--ease), height var(--motion-enter) var(--ease); }
 /* A rebuilt grid fades its cards in one after another, rows then columns. */
-@keyframes libraryCascade { from { opacity: 0; transform: translateY(var(--space-3)); } to { opacity: 1; transform: none; } }
-.library-cascade { animation: libraryCascade var(--motion-reveal) var(--ease) calc(var(--cascade-index, 0) * var(--motion-stagger) * 2) both; }
-.library-card-reveal { opacity: 0; transition: opacity var(--motion-linger) var(--ease); }
+@keyframes libraryCascade { from { opacity: 0; translate: 0 var(--space-2); } to { opacity: 1; translate: none; } }
+.library-cascade { animation: libraryCascade var(--motion-enter) var(--ease) calc(var(--cascade-index, 0) * var(--motion-stagger) * 2) both; }
+.library-card-reveal { opacity: 0; transition: opacity var(--motion-reveal) var(--ease); }
 .library-card-reveal.is-loaded { opacity: 1; }
 /* Discard: the card fills with the error color around a dark x, then collapses away. */
 .library-card-discarding { pointer-events: none; }
@@ -51,7 +51,7 @@
 @keyframes libraryDiscard { from { opacity: 0; } to { opacity: 1; } }
 .library-card-collapse {
   opacity: 0; margin-bottom: 0;
-  transition: height var(--motion-linger) var(--ease), opacity var(--motion-linger) var(--ease), margin-bottom var(--motion-linger) var(--ease);
+  transition: height var(--motion-enter) var(--ease), opacity var(--motion-enter) var(--ease), margin-bottom var(--motion-enter) var(--ease);
 }
 .library-thumb-empty { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--bg-surface); }
 /* Pending capture: a square inner glow from the card edges, in the accent and cool colors, that slowly breathes. */
@@ -75,7 +75,7 @@
   background-repeat: no-repeat;
   background-size: 100% var(--space-6), 100% var(--space-6), var(--space-6) 100%, var(--space-6) 100%;
   background-position: top, bottom, left, right;
-  animation: libraryBreathe calc(var(--period-pulse) * 4) ease-in-out infinite;
+  animation: libraryBreathe var(--period-pulse) ease-in-out infinite;
 }
 @keyframes libraryBreathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
 .library-pending-icon { position: relative; display: flex; color: var(--tone-live); }

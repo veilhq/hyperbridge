@@ -86,6 +86,17 @@ function setBrowsing(value) {
   $("#sets-view").hidden = !value;
   if (value && !wasBrowsing) $("#library").scrollTop = 0;
   renderAll();
+  if (value && !wasBrowsing) cascadeSets();
+}
+
+// Fades the bar and set cards in one after another when the Sets view opens, like the library grid.
+function cascadeSets() {
+  var items = [$("#sets-view .sets-bar")].concat(Array.prototype.slice.call(cardsEl.children));
+  items.forEach(function (el, index) {
+    if (!el) return;
+    el.style.setProperty("--cascade-index", Math.min(index, SETS_CASCADE_MAX));
+    el.classList.add("library-cascade");
+  });
 }
 
 function openBrowse() {

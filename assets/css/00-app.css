@@ -9,7 +9,7 @@ body::before, body::after { z-index: -1; }
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: var(--space-6); height: var(--space-6); padding: 0;
   color: var(--text-dim); background: transparent; border: 0; border-radius: var(--radius);
-  transition: color var(--motion-base) var(--ease);
+  transition: color var(--motion-base) var(--ease), border-color var(--motion-base) var(--ease);
 }
 .action-icon:hover { color: var(--interactive); }
 .action-icon-danger:hover { color: var(--error); }
@@ -30,16 +30,26 @@ html.a11y-reduce-motion .dock, html.a11y-reduce-motion .dock-toggle, html.a11y-r
 
 /* Elements revealed by removing [hidden] ease in instead of popping. */
 @keyframes appEnter { from { opacity: 0; translate: 0 var(--space-2); } to { opacity: 1; translate: none; } }
-.select-bar:not([hidden]), .library-filter:not([hidden]), .library-meta:not([hidden]), .capture-error:not([hidden]),
-.set-head:not([hidden]), .sets-view:not([hidden]), .library-empty:not([hidden]) {
+.library-filter:not([hidden]), .library-meta:not([hidden]), .capture-error:not([hidden]),
+.set-head:not([hidden]), .settings-view:not([hidden]) {
   animation: appEnter var(--motion-enter) var(--ease) both;
 }
-@media (prefers-reduced-motion: reduce) {
-  .select-bar, .library-filter, .library-meta, .capture-error, .set-head, .sets-view, .library-empty { animation: none !important; }
+/* A settings tab panel fades in place; the view around it already slides. */
+@keyframes appFade { from { opacity: 0; } to { opacity: 1; } }
+.settings-tab-panel:not([hidden]) { animation: appFade var(--motion-enter) var(--ease) both; }
+/* Floating elements also ease out when hidden; display flips once the fade ends. */
+.select-bar, .library-empty {
+  transition: opacity var(--motion-enter) var(--ease), translate var(--motion-enter) var(--ease), display var(--motion-enter) allow-discrete;
 }
-html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-filter, html.a11y-reduce-motion .library-meta,
-html.a11y-reduce-motion .capture-error, html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .sets-view,
-html.a11y-reduce-motion .library-empty { animation: none !important; }
+.select-bar[hidden], .library-empty[hidden] { opacity: 0; translate: 0 var(--space-2); }
+@starting-style { .select-bar:not([hidden]), .library-empty:not([hidden]) { opacity: 0; translate: 0 var(--space-2); } }
+@media (prefers-reduced-motion: reduce) {
+  .library-filter, .library-meta, .capture-error, .set-head, .settings-view, .settings-tab-panel { animation: none !important; }
+  .select-bar, .library-empty { transition: none !important; }
+}
+html.a11y-reduce-motion .library-filter, html.a11y-reduce-motion .library-meta, html.a11y-reduce-motion .capture-error,
+html.a11y-reduce-motion .set-head, html.a11y-reduce-motion .settings-view, html.a11y-reduce-motion .settings-tab-panel { animation: none !important; }
+html.a11y-reduce-motion .select-bar, html.a11y-reduce-motion .library-empty { transition: none !important; }
 .workspace { position: relative; flex: 1; min-height: 0; display: flex; }
 /* Accent cursors everywhere, as in the sibling apps: arrow by default, filled arrow on clickables, I-beam in text fields. */
 body, body * {
@@ -56,5 +66,7 @@ button:disabled, button:disabled * { cursor: not-allowed !important; }
 .context-menu { z-index: calc(var(--z-modal) + 2); }
 
 /* Launch sequence: the sidebar slides in, then the grid cascades in as its first page lands. */
-@keyframes appLaunchSide { from { opacity: 0; translate: calc(var(--space-4) * -1) 0; } to { opacity: 1; translate: none; } }
-.sets-rail { animation: appLaunchSide var(--motion-linger) var(--ease) backwards; }
+@keyframes appLaunchSide { from { opacity: 0; translate: calc(var(--space-2) * -1) 0; } to { opacity: 1; translate: none; } }
+.sets-rail { animation: appLaunchSide var(--motion-enter) var(--ease) backwards; }
+@media (prefers-reduced-motion: reduce) { .sets-rail { animation: none; } }
+html.a11y-reduce-motion .sets-rail { animation: none; }

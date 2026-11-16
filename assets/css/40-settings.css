@@ -25,7 +25,7 @@
 .settings-follow-error { color: var(--error); font-size: var(--fs-mono); }
 .settings-follow-error[hidden] { display: none; }
 .settings-machine { grid-template-columns: auto 1fr auto auto; }
-.settings-machine-icon { display: inline-flex; color: var(--text-dim); }
+.settings-machine-icon { display: inline-flex; color: var(--text-dim); transition: color var(--motion-base) var(--ease); }
 .settings-machine-icon[data-online="true"] { color: var(--live); }
 .settings-followed .settings-source { grid-template-columns: 1fr auto auto; }
 .settings-followed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); column-gap: var(--space-4); }
@@ -36,14 +36,16 @@
 .settings-follow-kinds .nav-tab { padding: var(--space-1) var(--space-3); font-family: var(--font); font-size: var(--fs-mono); letter-spacing: var(--track-label); cursor: pointer; }
 .settings-follow-tools[hidden], #follow-more[hidden] { display: none; }
 .settings-tags .settings-source { grid-template-columns: 1fr auto auto auto; }
-.settings-tag-name { justify-self: start; max-width: 100%; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font); font-size: var(--fs-mono); color: var(--text-bright); background: none; border: 0; cursor: pointer; }
+.settings-tag-name { justify-self: start; max-width: 100%; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font); font-size: var(--fs-mono); color: var(--text-bright); background: none; border: 0; cursor: pointer; transition: color var(--motion-base) var(--ease); }
 .settings-tag-name:hover { color: var(--interactive); }
 .settings-tags .settings-source-desc { padding-top: var(--space-2); }
 #sets-settings[data-active] { color: var(--interactive); }
-.sync-overlay { position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center; color: var(--live); background: var(--scrim-soft); -webkit-backdrop-filter: blur(var(--space-2)); backdrop-filter: blur(var(--space-2)); box-shadow: inset 0 0 var(--space-6) var(--space-2) var(--live-wash), inset 0 0 0 var(--border-rail) var(--live); animation: syncOverlayIn var(--motion-slow) var(--ease), syncOverlayGlow var(--period-pulse) ease-in-out infinite; }
-.sync-overlay[hidden] { display: none; }
+.sync-overlay { position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center; color: var(--live); background: var(--scrim-soft); -webkit-backdrop-filter: blur(var(--space-2)); backdrop-filter: blur(var(--space-2)); box-shadow: inset 0 0 var(--space-6) var(--space-2) var(--live-wash), inset 0 0 0 var(--border-rail) var(--live); animation: syncOverlayGlow var(--period-pulse) ease-in-out infinite; transition: opacity var(--motion-slow) var(--ease), display var(--motion-slow) allow-discrete; }
+/* The overlay fades out as it fades in; display flips once the fade ends. */
+.sync-overlay[hidden] { display: none; opacity: 0; }
+@starting-style { .sync-overlay:not([hidden]) { opacity: 0; } }
 .sync-overlay-word { margin: 0; font-family: var(--font-display); font-size: min(calc(var(--fs-display-num) * 4 * 20 / 14), 34vw); font-weight: var(--fw-extrabold); letter-spacing: var(--track-display); line-height: var(--lh-tight); }
-@keyframes syncOverlayIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes syncOverlayGlow { 0%, 100% { box-shadow: inset 0 0 var(--space-6) var(--space-2) var(--live-wash), inset 0 0 0 var(--border-rail) var(--live); } 50% { box-shadow: inset 0 0 var(--space-6) var(--space-2) transparent, inset 0 0 0 var(--border-rail) var(--live); } }
-@media (prefers-reduced-motion: reduce) { .sync-overlay { animation: none; } }
-html.a11y-reduce-motion .sync-overlay { animation: none; }
+@media (prefers-reduced-motion: reduce) { .sync-overlay { animation: none; transition: none; } .settings-machine-icon, .settings-tag-name { transition: none; } }
+html.a11y-reduce-motion .sync-overlay { animation: none; transition: none; }
+html.a11y-reduce-motion .settings-machine-icon, html.a11y-reduce-motion .settings-tag-name { transition: none; }
