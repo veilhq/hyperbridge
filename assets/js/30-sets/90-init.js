@@ -77,6 +77,19 @@ function initSets() {
   $("#set-head-pin").addEventListener("click", function () {
     if (selectedId !== null) togglePin(selectedId);
   });
+  $("#set-head-edit").addEventListener("click", function () {
+    if (selectedId !== null) startHeadEdit(selectedId);
+  });
+  $("#set-head-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    saveForm(event.target);
+  });
+  $("#set-head-form").addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    stopHeadEdit();
+  });
   document.addEventListener("hyperbridge:changed", refresh);
   // Opening settings leaves the Sets view so the panel is not hidden behind it.
   new MutationObserver(function () {

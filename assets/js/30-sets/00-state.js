@@ -20,6 +20,8 @@ var selectedId = null;
 var feedOpen = false;
 var browsing = false;
 var editing = null;
+var headEditing = false;
+var headKey = null;
 var armedId = null;
 var armTimer = null;
 var query = "";
@@ -42,6 +44,13 @@ function esc(text) {
   return String(text === null || text === undefined ? "" : text).replace(/[&<>"']/g, function (char) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
   });
+}
+
+// Restarts an element's CSS enter animation, for a header that stays on screen while its content changes.
+function replayEnter(el) {
+  el.style.animation = "none";
+  void el.offsetWidth;
+  el.style.animation = "";
 }
 
 function setById(id) {

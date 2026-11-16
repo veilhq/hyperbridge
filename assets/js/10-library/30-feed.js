@@ -230,8 +230,15 @@
     renderFilter();
     emptyEl.hidden = true;
     $("#library").setAttribute("data-finding", "true");
-    $("#find-head").hidden = false;
-    $("#find-head-title").textContent = feedSet ? "Like " + feedSet.name : "Discover";
+    var head = $("#find-head");
+    var title = feedSet ? "Like " + feedSet.name : "Discover";
+    if (!head.hidden && $("#find-head-title").textContent !== title) {
+      head.style.animation = "none";
+      void head.offsetWidth;
+      head.style.animation = "";
+    }
+    head.hidden = false;
+    $("#find-head-title").textContent = title;
     setExitLabel(feedSet ? "Back to set" : "Back to library");
     $("#find-refresh").hidden = false;
     showFeedLoading();

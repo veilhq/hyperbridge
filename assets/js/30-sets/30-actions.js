@@ -19,6 +19,28 @@ function startEdit(id) {
   renderCards();
 }
 
+// Opens a set and turns its header into the edit form, so it is edited where it is shown.
+function startHeadEdit(id) {
+  var item = setById(id);
+  if (!item) return;
+  select(id);
+  var form = $("#set-head-form");
+  form.setAttribute("data-form", id);
+  form.elements.name.value = item.name;
+  form.elements.description.value = item.description || "";
+  form.elements.tags.value = (item.tags || []).join(", ");
+  headEditing = true;
+  renderHead();
+  form.elements.name.focus();
+  form.elements.name.select();
+}
+
+function stopHeadEdit() {
+  headEditing = false;
+  renderHead();
+  $("#set-head-edit").focus();
+}
+
 // Saves the open card form as a new set or as an edit of the one it belongs to.
 function saveForm(form) {
   var bridge = api();
@@ -38,6 +60,7 @@ function saveForm(form) {
       return;
     }
     editing = null;
+    headEditing = false;
     toast("success", creating ? "Created." : "Updated.");
     return refresh();
   }).catch(function () { toast("error", "Could not save."); });
@@ -122,10 +145,20 @@ function setupMenus() {
     return [
       { label: "Find similar", action: function () { findSimilar(item.id); } },
       { label: item.pinned ? "Unpin from tabs" : "Pin to tabs", action: function () { togglePin(item.id); } },
-      { label: "Edit", action: function () { startEdit(item.id); } },
+      { label: "Edit", action: function () { startHeadEdit(item.id); } },
       { label: "Delete", action: function () { deleteSet(item); } },
       { separator: true },
       fresh,
+    ];
+  });
+  window.HvContextMenu.register("#set-head", function () {
+    var item = selectedSet();
+    if (!item || headEditing) return [];
+    return [
+      { label: "Edit", action: function () { startHeadEdit(item.id); } },
+      { label: "Find similar", action: function () { findSimilar(item.id); } },
+      { label: item.pinned ? "Unpin from tabs" : "Pin to tabs", action: function () { togglePin(item.id); } },
+      { label: "Delete", action: function () { deleteSet(item); } },
     ];
   });
   window.HvContextMenu.register("#sets-rail", function () { return [fresh]; });

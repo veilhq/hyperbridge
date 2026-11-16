@@ -39,18 +39,25 @@ function renderHead() {
   var current = selectedSet();
   var head = $("#set-head");
   head.hidden = !current;
+  var key = current ? current.id + (headEditing ? ":edit" : "") : null;
+  if (key !== headKey && current) replayEnter(head);
+  headKey = key;
   if (!current) return;
   var desc = $("#set-head-desc");
   var ago = agoLabel(daysSince(current));
   $("#set-head-title").textContent = current.name;
   desc.textContent = current.description || "";
-  desc.hidden = !current.description;
+  desc.hidden = headEditing || !current.description;
   $("#set-head-meta").textContent = entriesLabel(current.count) + (ago ? " - UPDATED " + ago.toUpperCase() : "");
   var tags = $("#set-head-tags");
   tags.innerHTML = (current.tags || []).map(function (tag) {
     return '<li class="status-chip status-chip-outlined-muted">' + esc(tag) + "</li>";
   }).join("");
-  tags.hidden = !tags.children.length;
+  tags.hidden = headEditing || !tags.children.length;
+  $("#set-head-title").hidden = headEditing;
+  $("#set-head-meta").hidden = headEditing;
+  $("#set-head-form").hidden = !headEditing;
+  $("#set-head-edit").hidden = headEditing;
   var pin = $("#set-head-pin");
   var label = current.pinned ? "Unpin from tabs" : "Pin to tabs";
   pin.setAttribute("aria-pressed", current.pinned ? "true" : "false");
@@ -82,6 +89,7 @@ function setBrowsing(value) {
   var wasBrowsing = browsing;
   browsing = value;
   if (!value) editing = null;
+  if (value) headEditing = false;
   $("#library").toggleAttribute("data-sets-view", value);
   $("#sets-view").hidden = !value;
   if (value && !wasBrowsing) $("#library").scrollTop = 0;
@@ -107,6 +115,7 @@ function openBrowse() {
 // Opens a set (null for All) in the library, telling the grid when the filter changed.
 function select(id) {
   var changed = id !== selectedId || feedOpen || settingsOpen();
+  if (id !== selectedId) headEditing = false;
   feedOpen = false;
   selectedId = id;
   setBrowsing(false);
@@ -115,6 +124,7 @@ function select(id) {
 
 function openDiscover() {
   var changed = !feedOpen || settingsOpen();
+  headEditing = false;
   feedOpen = true;
   selectedId = null;
   setBrowsing(false);
