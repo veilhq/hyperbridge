@@ -15,11 +15,14 @@
 .sets-collapse[aria-pressed="true"] .icon-glyph { rotate: 180deg; }
 .sets-tabs-edge { display: none; }
 
-/* Auto-hide: the sidebar floats off the left edge and slides back in on hover or focus at that edge. */
-.sets-rail[data-collapsed] { position: absolute; inset: 0 auto 0 0; z-index: var(--z-topbar); translate: -100% 0; }
-.sets-rail[data-collapsed]:hover, .sets-rail[data-collapsed]:focus-within { translate: none; }
+/* Auto-hide: the sidebar floats off the left edge and slides back in on hover or keyboard focus at that edge. */
+.sets-rail[data-collapsed] { position: absolute; inset: 0 auto 0 0; z-index: var(--z-topbar); translate: -100% 0; view-transition-name: sets-rail; }
+.sets-rail[data-collapsed]:hover, .sets-rail[data-collapsed]:has(:focus-visible) { translate: none; }
 .sets-tabs-edge:has(~ .sets-rail[data-collapsed]) { display: block; position: absolute; inset: 0 auto 0 0; width: var(--space-2); z-index: var(--z-topbar); }
-.sets-tabs-edge:hover ~ .sets-rail[data-collapsed], .sets-tabs-edge:focus-within ~ .sets-rail[data-collapsed] { translate: none; }
+.sets-tabs-edge:hover ~ .sets-rail[data-collapsed], .sets-tabs-edge:has(:focus-visible) ~ .sets-rail[data-collapsed] { translate: none; }
+/* The floating sidebar is its own view-transition layer so the switching library pane stays beneath it. */
+::view-transition-group(sets-rail), ::view-transition-old(sets-rail), ::view-transition-new(sets-rail) { animation: none; }
+::view-transition-old(sets-rail) { display: none; }
 
 @media (prefers-reduced-motion: reduce) { .sets-rail, .sets-collapse .icon-glyph { transition: none; } }
 html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon-glyph { transition: none; }
