@@ -135,6 +135,38 @@ _IMAGE_META = (
     "og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src",
     "twitter:image0", "twitter:image1", "twitter:image2", "twitter:image3",
 )
+_KEYWORD_META = ("keywords", "news_keywords", "article:tag")
+MAX_PAGE_TAGS = 10
+_ISO_DATE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
+_CAMERA_TEXT = {"olympus digital camera", "sony dsc", "digital camera", "default", "camera", "image", "picture"}
+
+
+def iso_date(text) -> str:
+    """Return the calendar date in an ISO, RFC 2822 or similar date string as YYYY-MM-DD; empty when there is none."""
+    from datetime import date
+    from email.utils import parsedate_to_datetime
+
+    text = str(text or "").strip()
+    match = _ISO_DATE.search(text)
+    try:
+        if match:
+            return date(*(int(part) for part in match.groups())).isoformat()
+        return parsedate_to_datetime(text).date().isoformat() if text else ""
+    except (TypeError, ValueError, IndexError):
+        return ""
+
+
+def _keywords(values) -> list:
+    """Split keyword strings and lists into up to MAX_PAGE_TAGS short, distinct names."""
+    names, seen = [], set()
+    for value in values:
+        parts = value.split(",") if isinstance(value, str) else value if isinstance(value, list) else []
+        for part in parts:
+            name = " ".join(str(part).split()).strip("#").strip()
+            if name and len(name) <= 40 and name.lower() not in seen:
+                seen.add(name.lower())
+                names.append(name)
+    return names[:MAX_PAGE_TAGS]
 
 
 class _MetaParser(HTMLParser):
@@ -144,6 +176,7 @@ class _MetaParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.meta = {}
         self.images = []
+        self.keywords = []
         self.title = ""
         self.jsonld = []
         self._in_title = False
@@ -159,6 +192,8 @@ class _MetaParser(HTMLParser):
                 self.meta.setdefault(name, content)
                 if name in _IMAGE_META:
                     self.images.append(content)
+                elif name in _KEYWORD_META:
+                    self.keywords.append(content)
         elif tag == "title" and not self.title:
             self._in_title = True
             self._buffer = []
@@ -373,10 +408,12 @@ def readable_name(filename: str) -> str:
 
 
 def extract_metadata(html_bytes, base_url) -> dict:
-    """Return title, description, creator, publisher, type, year and image_url from page HTML."""
+    """Return title, description, creator, publisher, type, year, posted_at, tags and image_url from page HTML."""
     result = {key: "" for key in _FIELDS}
     result["image_url"] = ""
     result["image_urls"] = []
+    result["posted_at"] = ""
+    result["tags"] = []
     if not html_bytes:
         return result
     parser = _MetaParser()
@@ -388,7 +425,9 @@ def extract_metadata(html_bytes, base_url) -> dict:
     meta = parser.meta
     ld = {key: "" for key in (*_FIELDS, "image_url", "date")}
     ld_images = []
+    ld_keywords = []
     for node in _jsonld_nodes(parser.jsonld):
+        ld_keywords.append(node.get("keywords") or [])
         kind = node.get("@type", "")
         kind = kind[0] if isinstance(kind, list) and kind else kind
         ld["title"] = ld["title"] or _name_of(node.get("headline") or node.get("name"))
@@ -424,6 +463,8 @@ def extract_metadata(html_bytes, base_url) -> dict:
     )
     year = re.search(r"(?<!\d)(1[5-9]\d\d|2\d\d\d)(?!\d)", date)
     result["year"] = year.group(1) if year else ""
+    result["posted_at"] = iso_date(date)
+    result["tags"] = _keywords([*parser.keywords, *ld_keywords])
     image = first(
         meta.get("og:image"), meta.get("og:image:url"), meta.get("twitter:image"),
         meta.get("twitter:image:src"), ld["image_url"], meta.get("link:image_src"),
@@ -665,16 +706,20 @@ def keep_details(conn, entry_id: int, title: str = "", creator: str = "") -> Non
                  (*values.values(), json.dumps(manual), entry_id))
 
 
-def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
-    """Fetch the entry's page (or image), store assets and update its fields; screenshot when no image."""
+def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
+    """Fetch the entry's page (or image), store assets and update its fields; screenshot when no image.
+
+    Returns the page's keyword tags for the caller to add alongside the source tags.
+    """
     url = entry["source_key"] or entry["source_url"]
     response = fetcher(url)
     if _is_image(response):
         response = _fetch_full_size(fetcher, url, response)
         name = unquote(urlsplit(response.final_url or url).path.rsplit("/", 1)[-1])
-        _apply_metadata(conn, entry, {"title": readable_name(name)}, _timestamp())
+        embedded = {key: value for key, value in image_info(response.body).items() if not entry[key]}
+        _apply_metadata(conn, entry, {"title": readable_name(name), **embedded}, _timestamp())
         _store_image(conn, entry, response.body)
-        return
+        return []
     base = getattr(response, "final_url", "") or url
     values = extract_metadata(response.body, base)
     embed_url = instagram_embed_url(base)
@@ -687,6 +732,8 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
             values["image_urls"] = posted[:MAX_IMAGES]
             values["image_url"] = posted[0]
     _apply_metadata(conn, entry, values, _timestamp())
+    if values["posted_at"] and not entry["posted_at"]:
+        conn.execute("UPDATE entries SET posted_at = ? WHERE id = ?", (values["posted_at"], entry["id"]))
     stored = 0
     fetched = set()
     for image_url in values["image_urls"]:
@@ -699,6 +746,9 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
                 continue
             fetched.add(digest)
             _store_image(conn, entry, image.body, stored)
+            if not stored:
+                gaps = {key: value for key, value in image_info(image.body).items() if not values.get(key)}
+                _apply_metadata(conn, entry, gaps, _timestamp())
             stored += 1
         except Exception:  # noqa: BLE001 - one bad image does not fail the entry
             continue
@@ -710,6 +760,7 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> None:
             pass
     if values["image_urls"] and not stored:
         raise CaptureError("No preview image could be fetched")
+    return values["tags"]
 
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
@@ -743,6 +794,8 @@ def image_info(body: bytes) -> dict:
     info["publisher"] = _text(tags.get(0x8298) or text.get("copyright") or text.get("source"))
     info["title"] = _text(text.get("title"))
     info["description"] = _text(tags.get(0x010E) or text.get("description") or text.get("comment"))
+    if info["description"].lower() in _CAMERA_TEXT:
+        info["description"] = ""
     when = _text(tags.get(0x9003) or tags.get(0x0132) or text.get("creation time"))
     match = re.search(r"\b(19|20)\d\d\b", when)
     info["year"] = match.group(0) if match else ""
@@ -830,11 +883,12 @@ def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
             (_timestamp(), job_id),
         )
     error = ""
+    page_tags = []
     try:
         entry = conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone()
         if entry is None:
             raise CaptureError("Entry no longer exists")
-        _capture_entry(conn, entry, fetcher or default_fetcher(), screenshotter)
+        page_tags = _capture_entry(conn, entry, fetcher or default_fetcher(), screenshotter)
     except Exception as exc:  # noqa: BLE001 - any failure is recorded on the job
         error = f"{type(exc).__name__}: {exc}"[:500]
     stamp = _timestamp()
@@ -843,7 +897,7 @@ def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
         entry_state = "captured"
     if not error and job["entry_id"] is not None:
         from bridge.ingest import enrich
-        enrich.enrich_entry(conn, conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone())
+        enrich.enrich_entry(conn, conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone(), page_tags)
     if job["entry_id"] is not None:
         conn.execute(
             "UPDATE entries SET state = ?, updated_at = ? WHERE id = ?",

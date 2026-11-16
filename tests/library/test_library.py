@@ -162,6 +162,24 @@ class UpdateEntryTests(LibraryOpsCase):
     def test_missing_entry_is_none(self):
         self.assertIsNone(library.update_entry(999, {"title": "x"}))
 
+    def test_description_is_editable_keeps_line_breaks_and_becomes_manual(self):
+        entry = self.add_entry(description="From the feed")
+        result = library.update_entry(entry, {"description": " First line\r\nSecond line "})
+        self.assertEqual(result["description"], "First line\nSecond line")
+        self.assertEqual(result["manual"], ["description"])
+        self.assertEqual(self.search("second"), [entry])
+
+    def test_description_cap_is_longer_than_other_fields(self):
+        entry = self.add_entry()
+        result = library.update_entry(entry, {"description": "a" * 1500})
+        self.assertEqual(len(result["description"]), library.MAX_DESCRIPTION)
+
+    def test_tags_stay_manual_after_a_later_field_edit(self):
+        entry = self.add_entry(title="x")
+        library.update_entry(entry, {"tags": "keep"})
+        library.update_entry(entry, {"title": "y"})
+        self.assertEqual(sorted(library.get_entry(entry)["manual"]), ["tags", "title"])
+
 
 class DiscardTests(LibraryOpsCase):
     def test_removes_row_files_and_folder(self):

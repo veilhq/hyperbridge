@@ -3,6 +3,7 @@
   "use strict";
 
   var FIELDS = ["creator", "publisher", "title", "type", "year"];
+  var FORM_FIELDS = FIELDS.concat(["description"]);
   var imageCache = {};
   var current = null;
   var allSets = [];
@@ -53,6 +54,16 @@
       count++;
     });
     if (!count) box.appendChild(makeEl("span", "lightbox-none", "No fields."));
+  }
+
+  // Shows the description under its label, hidden when the entry has none.
+  function renderDescription(entry) {
+    var value = byId("lb-description");
+    var text = entry.description || "";
+    value.textContent = text;
+    value.hidden = !text;
+    byId("lb-description-label").hidden = !text;
+    value.classList.toggle("lightbox-caption-manual", entry.manual.indexOf("description") >= 0 && !!text);
   }
 
   function renderChips(box, names, className, emptyText, clickable) {
@@ -233,6 +244,7 @@
     if (lb.open) replay(document.querySelector(".lightbox-rail"));
     byId("lb-title").textContent = displayTitle(entry);
     renderCaption(entry);
+    renderDescription(entry);
     renderStatus(entry);
     renderSwatches(entry);
     renderSource(entry);
@@ -240,7 +252,7 @@
     renderSets(entry);
     byId("act-save").hidden = !entry.assets.length;
     byId("act-save-all").hidden = entry.assets.length < 2;
-    var blank = !entry.source_url && !FIELDS.some(function (name) { return entry[name]; });
+    var blank = !entry.source_url && !FORM_FIELDS.some(function (name) { return entry[name]; });
     var editLabel = entry.state === "failed" || blank ? "Fill in" : "Edit";
     byId("act-edit").setAttribute("aria-label", editLabel);
     byId("act-edit").setAttribute("data-tooltip", editLabel);
@@ -280,7 +292,7 @@
 
   function openForm() {
     if (!current) return;
-    FIELDS.forEach(function (name) { byId("f-" + name).value = current[name] || ""; });
+    FORM_FIELDS.forEach(function (name) { byId("f-" + name).value = current[name] || ""; });
     byId("f-tags").value = (current.tags || []).join(", ");
     byId("lb-view").hidden = true;
     byId("lb-form").hidden = false;
@@ -336,7 +348,7 @@
     var bridge = api();
     if (!bridge || !bridge.update_entry || !current) return;
     var values = {};
-    FIELDS.forEach(function (name) { values[name] = byId("f-" + name).value; });
+    FORM_FIELDS.forEach(function (name) { values[name] = byId("f-" + name).value; });
     values.tags = byId("f-tags").value;
     Promise.resolve(bridge.update_entry(current.id, values)).then(function (entry) {
       if (!entry) {

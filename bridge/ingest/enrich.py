@@ -52,8 +52,11 @@ def placeholder_title(row) -> bool:
     return any(title == capture.shorten_title(" ".join(item.split())).lower() for item in stand_ins if item)
 
 
-def enrich_entry(conn, row) -> bool:
-    """Add source tags to an untagged entry and a fallback title to an untitled one; returns True when anything changed."""
+def enrich_entry(conn, row, extra_tags=()) -> bool:
+    """Add source tags (plus any extra tags, such as page keywords) to an untagged entry and a fallback title to an untitled one.
+
+    Returns True when anything changed.
+    """
     manual = manual_fields(row)
     changed = False
     title = str(row["title"] or "").strip()
@@ -63,7 +66,7 @@ def enrich_entry(conn, row) -> bool:
             conn.execute("UPDATE entries SET title = ? WHERE id = ?", (found, row["id"]))
             changed = True
     if "tags" not in manual and not conn.execute("SELECT 1 FROM entry_tags WHERE entry_id = ?", (row["id"],)).fetchone():
-        names = source_tags(row)
+        names = source_tags(row) + [name.lower() for name in library.parse_tags(list(extra_tags))]
         if names:
             library.add_entry_tags(conn, row["id"], names)
             conn.execute("UPDATE entries SET manual_fields = ? WHERE id = ?", (json.dumps(manual + ["tags"]), row["id"]))

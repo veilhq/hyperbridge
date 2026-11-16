@@ -118,6 +118,21 @@ class ExtractMetadataTests(unittest.TestCase):
         self.assertEqual(meta["year"], "2021")
         self.assertEqual(meta["image_url"], "https://example.com/cover.png")
 
+    def test_publish_date_and_keywords_are_kept(self):
+        html = (b'<meta property="article:published_time" content="2024-03-08T10:00:00Z">'
+                b'<meta name="keywords" content="posters, Type,  swiss style">'
+                b'<meta property="article:tag" content="type"><meta property="article:tag" content="Grids">'
+                b'<script type="application/ld+json">{"@type": "Article", "keywords": ["print"]}</script>')
+        meta = capture.extract_metadata(html, PAGE_URL)
+        self.assertEqual((meta["year"], meta["posted_at"]), ("2024", "2024-03-08"))
+        self.assertEqual(meta["tags"], ["posters", "Type", "swiss style", "Grids", "print"])
+
+    def test_dates_in_other_formats_or_none_at_all(self):
+        self.assertEqual(capture.iso_date("Mon, 20 Mar 2023 16:24:21 +0000"), "2023-03-20")
+        self.assertEqual(capture.iso_date("2023-02-30"), "")
+        self.assertEqual(capture.iso_date("sometime"), "")
+        self.assertEqual(capture.extract_metadata(b"<title>x</title>", PAGE_URL)["posted_at"], "")
+
     def test_long_title_is_cut_at_a_word_boundary(self):
         long_title = "Spring catalogue " * 20
         html = ('<html><head><meta property="og:title" content="%s"></head></html>' % long_title).encode()
@@ -234,6 +249,45 @@ class RunCaptureTests(LibraryCase):
         self.assertEqual(self.entry(entry_id)["state"], "captured")
         self.assertEqual(self.entry(entry_id)["title"], "photo")
         self.assertEqual(set(self.assets(entry_id)), {"original", "thumbnail"})
+
+    def exif_jpeg(self, artist="Ada Lovelace", description="OLYMPUS DIGITAL CAMERA"):
+        from PIL import Image
+
+        exif = Image.Exif()
+        exif[0x013B] = artist
+        exif[0x010E] = description
+        exif[0x0132] = "2019:06:01 10:00:00"
+        buffer = io.BytesIO()
+        Image.new("RGB", (40, 30), "red").save(buffer, "JPEG", exif=exif)
+        return buffer.getvalue()
+
+    def test_a_direct_image_fills_empty_fields_from_its_exif(self):
+        url = "https://example.com/art/photo.jpg"
+        entry_id, job_id = self.queue(url)
+        self.conn.execute("UPDATE entries SET description = 'From the feed' WHERE id = ?", (entry_id,))
+        fetcher = FakeFetcher({url: reply(url, self.exif_jpeg(description="Harbor at dusk"), "image/jpeg")})
+        capture.run_capture(self.conn, job_id, fetcher)
+        entry = self.entry(entry_id)
+        self.assertEqual((entry["creator"], entry["year"], entry["description"]), ("Ada Lovelace", "2019", "From the feed"))
+
+    def test_camera_boilerplate_is_not_a_description(self):
+        self.assertNotIn("description", capture.image_info(self.exif_jpeg()))
+
+    def test_a_page_keeps_its_date_and_keywords_and_its_image_fills_gaps(self):
+        entry_id, job_id = self.queue()
+        page = (b'<meta property="og:title" content="Poster"><meta property="og:image" content="https://cdn.example/1.jpg">'
+                b'<meta property="article:published_time" content="2024-03-08"><meta name="keywords" content="posters">')
+        fetcher = FakeFetcher({
+            "https://example.com/post": reply(PAGE_URL, page, "text/html"),
+            "https://cdn.example/1.jpg": reply("https://cdn.example/1.jpg", self.exif_jpeg(), "image/jpeg"),
+        })
+        capture.run_capture(self.conn, job_id, fetcher)
+        entry = self.entry(entry_id)
+        self.assertEqual((entry["title"], entry["posted_at"], entry["year"], entry["creator"]),
+                         ("Poster", "2024-03-08", "2024", "Ada Lovelace"))
+        tags = {row[0] for row in self.conn.execute(
+            "SELECT t.name FROM tags t JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = ?", (entry_id,))}
+        self.assertEqual(tags, {"example.com", "posters"})
 
     def test_non_image_body_is_rejected(self):
         url = "https://example.com/fake.png"

@@ -11,8 +11,9 @@ from bridge.core import storage
 from bridge.core import thumbserver
 from bridge.library import swatches
 
-EDITABLE_FIELDS = ("creator", "publisher", "title", "type", "year")
+EDITABLE_FIELDS = ("creator", "publisher", "title", "type", "year", "description")
 _MAX_FIELD = 500
+MAX_DESCRIPTION = 1000
 MAX_TAGS = 20
 MAX_TAG_LENGTH = 40
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
@@ -29,7 +30,13 @@ def _manual(raw) -> list[str]:
         value = json.loads(raw or "[]")
     except ValueError:
         return []
-    return [name for name in value if name in EDITABLE_FIELDS] if isinstance(value, list) else []
+    return [name for name in value if name in EDITABLE_FIELDS or name == "tags"] if isinstance(value, list) else []
+
+
+def _clean_field(name: str, value) -> str:
+    """Trim an edited value and cap its length; descriptions keep their line breaks."""
+    text = str(value or "").replace("\r\n", "\n").strip()
+    return text[:MAX_DESCRIPTION] if name == "description" else text[:_MAX_FIELD]
 
 
 def _display_assets(conn, entry_id: int) -> list[dict]:
@@ -263,7 +270,7 @@ def update_entry(entry_id: int, fields: dict) -> dict | None:
         for name in EDITABLE_FIELDS:
             if name not in fields:
                 continue
-            value = str(fields[name] or "").strip()[:_MAX_FIELD]
+            value = _clean_field(name, fields[name])
             if value != row[name]:
                 changes[name] = value
                 if name not in manual:

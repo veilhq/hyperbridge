@@ -60,8 +60,8 @@
 .lightbox-field, .lightbox-form { display: flex; flex-direction: column; gap: var(--space-2); }
 .lightbox-form[hidden], .lightbox-field[hidden], .lightbox-actions[hidden] { display: none; }
 .lightbox-label { color: var(--text-dim); letter-spacing: var(--track-label); text-transform: uppercase; margin-top: var(--space-3); }
-.lightbox-label:first-child { margin-top: 0; }
-.lightbox-value { color: var(--identifier); font-family: var(--font-body); font-size: var(--fs-prose-ui); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+.lightbox-label:first-child, .lightbox-label[hidden] + [hidden] + .lightbox-label { margin-top: 0; }
+.lightbox-description { color: var(--text); font-family: var(--font-body); font-size: var(--fs-prose-ui); line-height: var(--lh-prose); white-space: pre-line; overflow-wrap: anywhere; }.lightbox-value { color: var(--identifier); font-family: var(--font-body); font-size: var(--fs-prose-ui); line-height: var(--lh-ui); overflow-wrap: anywhere; }
 .lightbox-value a { color: inherit; text-decoration: none; border-bottom: var(--border-hair) solid var(--identifier-border); transition: color var(--motion-base) var(--ease), border-color var(--motion-base) var(--ease); }
 .lightbox-value a:hover { color: var(--interactive); border-bottom-color: var(--interactive); }
 .lightbox-none { color: var(--text-dim); font-family: var(--font-body); font-size: var(--fs-prose-ui); }

@@ -129,6 +129,19 @@ class SchemaTests(LibraryCase):
             self.assertEqual(count, 0, table)
 
 
+class YearLabelTests(LibraryCase):
+    def label(self, entry):
+        return self.conn.execute("SELECT year_label FROM entries WHERE id = ?", (entry,)).fetchone()[0]
+
+    def test_year_then_posted_date_then_save_date(self):
+        entry = self.add_entry()
+        self.assertEqual(self.label(entry), NOW[:4])
+        self.conn.execute("UPDATE entries SET posted_at = '2019-05-01' WHERE id = ?", (entry,))
+        self.assertEqual(self.label(entry), "2019")
+        self.conn.execute("UPDATE entries SET year = 'c. 1962' WHERE id = ?", (entry,))
+        self.assertEqual(self.label(entry), "1962")
+
+
 class SearchTests(LibraryCase):
     def test_insert_is_searchable_with_diacritics_folded(self):
         entry = self.add_entry(title="Café menu poster")

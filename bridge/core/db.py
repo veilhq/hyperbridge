@@ -35,12 +35,13 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
     swatches.register(conn)
     conn.create_function("hb_entry_year", 2, entry_year, deterministic=True)
+    conn.create_function("hb_entry_year", 3, entry_year, deterministic=True)
     return conn
 
 
-def entry_year(year: str | None, created_at: str | None) -> str:
-    """Return the first four-digit year in an entry's year field, else the year it was captured."""
-    match = re.search(r"\d{4}", year or "")
+def entry_year(year: str | None, created_at: str | None, posted_at: str | None = None) -> str:
+    """Return the first four-digit year in an entry's year field, else the year its source posted it, else the year it was captured."""
+    match = re.search(r"\d{4}", year or "") or re.match(r"\d{4}", posted_at or "")
     return match.group(0) if match else (created_at or "")[:4]
 
 
