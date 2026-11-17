@@ -21,11 +21,18 @@
     return Math.min(COLUMN_LIMIT, Math.max(1, fitColumns() + columnShift));
   }
 
+  // Columns on screen now, which can differ from columnCount() when the width changed without a window resize.
+  function shownColumns() {
+    if (grid.hasAttribute("data-columns")) return grid.querySelectorAll(".library-grid-column").length || columnCount();
+    return parseInt(grid.style.columns, 10) || columnCount();
+  }
+
   // Adds or removes columns (+ shows more, smaller cards; - fewer, larger) and remembers the choice.
   function zoomColumns(step) {
     var fit = fitColumns();
-    var next = Math.min(COLUMN_LIMIT, Math.max(1, columnCount() + step));
-    if (next === columnCount()) return;
+    var shown = shownColumns();
+    var next = Math.min(COLUMN_LIMIT, Math.max(1, shown + step));
+    if (next === shown) return;
     columnShift = next - fit;
     try { localStorage.setItem("hyperbridge-columns", String(columnShift)); } catch (err) { /* ignore */ }
     zoomAnchor = pickAnchor();
