@@ -1,3 +1,16 @@
+  // Mirrors the library pane's corner into CSS so its back buttons stay pinned while it scrolls.
+  function pinLibraryCorner() {
+    var library = $("#library");
+    function sync() {
+      var box = library.getBoundingClientRect();
+      library.style.setProperty("--library-top", box.top + "px");
+      library.style.setProperty("--library-left", box.left + "px");
+    }
+    new ResizeObserver(sync).observe(library);
+    window.addEventListener("resize", sync);
+    sync();
+  }
+
   function init() {
     grid = $("#library-grid");
     emptyEl = $("#library-empty");
@@ -7,6 +20,7 @@
     submitBtn = $("#capture-submit");
     errorEl = $("#capture-error");
     if (!grid) return;
+    pinLibraryCorner();
 
     $("#capture-form").addEventListener("submit", onSubmit);
     $("#library-filter-chip").addEventListener("click", function () { setTag(""); });
