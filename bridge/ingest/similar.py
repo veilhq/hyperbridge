@@ -204,7 +204,7 @@ def list_items(conn, set_id, offset=0, limit=60, show_flagged=False) -> dict:
     if own and not stale:
         searched = {phrase.lower() for phrase in _searched(conn, set_id)}
         stale = any(tag.lower() not in searched for tag in own)
-    return {"items": scored[offset:offset + limit], "total": len(scored), "flagged": flagged, "stale": stale,
+    return {"items": feed.mark_captured(conn, scored[offset:offset + limit]), "total": len(scored), "flagged": flagged, "stale": stale,
             "terms": own or top_terms(wanted)}
 
 

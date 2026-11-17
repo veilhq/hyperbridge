@@ -105,11 +105,19 @@ html.a11y-reduce-motion .library-card-grow { transition: none; }
 .library-card-domain, .library-card-caption { font-size: var(--fs-mono); color: var(--text-muted); }
 .library-card-flag { position: absolute; top: var(--space-2); right: var(--space-2); }
 .library-card-flag.library-failed { color: var(--error); border-color: var(--error); }
+.library-card-flags { position: absolute; top: var(--space-2); right: var(--space-2); display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
+/* An AI-labeled feed image stays blurred until it is selected. */
+.library-card[data-veiled] .library-card-image { filter: blur(var(--space-4)); }
+.library-card .library-card-image { transition: filter var(--motion-base) var(--ease); }
+.find-flagged { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.find-flagged[hidden] { display: none; }
+.find-ai { --segment-count: 3; }
 @media (prefers-reduced-motion: reduce) {
-  .library-card, .library-card-details, .library-card-grow { transition: none; }
+  .library-card, .library-card-details, .library-card-grow, .library-card .library-card-image { transition: none; }
 }
 html.a11y-reduce-motion .library-card,
-html.a11y-reduce-motion .library-card-details { transition: none; }
+html.a11y-reduce-motion .library-card-details,
+html.a11y-reduce-motion .library-card .library-card-image { transition: none; }
 .library-sentinel { height: var(--space-1); }
 .library-more { display: flex; justify-content: center; padding: var(--space-4) 0 var(--space-6); }
 .library-more[hidden] { display: none; }

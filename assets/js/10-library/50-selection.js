@@ -265,6 +265,16 @@
         });
       }
       if (state.setId) {
+        var shown = setsCache.filter(function (item) { return item.id === state.setId; })[0];
+        if (shown && shown.cover_entry_id !== id && bridge.set_cover) {
+          items.push({ label: "Make set cover", action: function () {
+            Promise.resolve(bridge.set_cover(state.setId, id)).then(function (ok) {
+              if (!ok) { toast("error", "Could not change the cover."); return; }
+              toast("success", "Set as cover.");
+              changed();
+            }).catch(function () { toast("error", "Could not change the cover."); });
+          } });
+        }
         items.push({ label: "Remove from set", action: function () {
           Promise.resolve(bridge.remove_entry(id, state.setId)).then(function () { load(true); changed(); });
         } });

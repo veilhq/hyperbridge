@@ -1,5 +1,6 @@
 """SQLite access for Hyperbridge: connections, numbered migrations, data paths."""
 
+import hashlib
 import os
 import re
 import sqlite3
@@ -37,7 +38,14 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     fingerprints.register(conn)
     conn.create_function("hb_entry_year", 2, entry_year, deterministic=True)
     conn.create_function("hb_entry_year", 3, entry_year, deterministic=True)
+    conn.create_function("hb_shuffle", 2, shuffle_key, deterministic=True)
     return conn
+
+
+def shuffle_key(entry_id: int | None, seed: int | None) -> int:
+    """Return a stable pseudo-random sort key for an entry under a seed, so a shuffled order holds across pages."""
+    digest = hashlib.blake2b(f"{seed or 0}:{entry_id or 0}".encode(), digest_size=7).digest()
+    return int.from_bytes(digest, "big")
 
 
 def entry_year(year: str | None, created_at: str | None, posted_at: str | None = None) -> str:

@@ -1,5 +1,10 @@
   var GROUP_CHOICES = [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]];
-  var ORDER_CHOICES = [["color", "Color"], ["newest", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]];
+  var ORDER_CHOICES = [["color", "Color"], ["newest", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"], ["random", "Random"]];
+
+  // A fresh seed for the random order; each launch and each re-pick of Random deals a new shuffle.
+  function newSeed() {
+    return Math.floor(Math.random() * 2147483647);
+  }
 
   // The launch default for a view field when it is one of the choices, else the fallback.
   function launchDefault(key, choices, fallback) {
@@ -18,6 +23,7 @@
     function choose(field, value) {
       try { localStorage.setItem("hyperbridge-" + field, value); } catch (err) { /* ignore */ }
       state[field] = value;
+      if (field === "order" && value === "random") state.seed = newSeed();
       state.signature = ""; state.signatureParts = [];
       state.cascade = true;
       load(true);
@@ -25,6 +31,7 @@
 
     state.group = read("hyperbridge-group", GROUP_CHOICES, launchDefault("library_group", GROUP_CHOICES, ""));
     state.order = read("hyperbridge-order", ORDER_CHOICES, launchDefault("library_order", ORDER_CHOICES, "newest"));
+    state.seed = newSeed();
     window.HyperbridgeView = {
       groups: GROUP_CHOICES,
       orders: ORDER_CHOICES,

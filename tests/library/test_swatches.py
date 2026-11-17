@@ -57,6 +57,19 @@ class SwatchTests(LibraryOpsCase):
         self.assertEqual(titles("source"), ["apple", "", "Banana"])
         self.assertEqual(titles("junk"), ["", "apple", "Banana"])
 
+    def test_random_order_is_stable_for_a_seed_and_pages_without_overlap(self):
+        for index in range(30):
+            self.add_entry(f"E{index}")
+        self.conn.commit()
+        api = hyperbridge.HyperbridgeAPI()
+        ids = lambda seed, offset=0, limit=60: [e["id"] for e in api.list_entries(order="random", seed=seed, offset=offset, limit=limit)["entries"]]
+        whole = ids(7)
+        self.assertEqual(whole, ids(7))
+        self.assertEqual(sorted(whole), sorted(ids(8)))
+        self.assertNotEqual(whole, ids(8))
+        self.assertNotEqual(whole, sorted(whole))
+        self.assertEqual(ids(7, 0, 10) + ids(7, 10, 10) + ids(7, 20, 10), whole)
+
     def test_list_orders_by_color_as_a_gradient(self):
         shades = {"none": None, "white": "#ffffff", "blue": "#0000ff", "green": "#00ff00", "red": "#ff0000", "black": "#000000"}
         for name, shade in shades.items():

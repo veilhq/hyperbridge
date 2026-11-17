@@ -193,10 +193,12 @@ class HyperbridgeAPI:
         return {"ok": True, "defaults": prefs.view_defaults()}
 
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
-                     group: str = "", tag: str = "", color: str = "", order: str = "", known: list | None = None) -> dict:
-        """Return a page of entries, newest first unless order is oldest, title or source; filtered by text, set, tag and color, and optionally grouped.
+                     group: str = "", tag: str = "", color: str = "", order: str = "", known: list | None = None,
+                     seed: int = 0) -> dict:
+        """Return a page of entries, newest first unless order is color, oldest, title, source or random; filtered by text, set, tag and color, and optionally grouped.
 
         known lists entry ids whose thumbnails the caller already holds; those entries come back with keep set and no thumb.
+        seed fixes the random order so every page of one shuffle agrees.
         """
         offset = max(0, int(offset or 0))
         limit = min(_MAX_PAGE, max(1, int(limit or 60)))
@@ -221,7 +223,10 @@ class HyperbridgeAPI:
             params.append(color)
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
         label, section = _GROUP_SQL.get(group, ("''", ""))
-        ordering = _COLOR_ORDER if order == "color" else _ORDERS.get(order, "e.created_at DESC, e.id DESC")
+        if order == "random":
+            ordering = f"hb_shuffle(e.id, {int(seed or 0)}), e.id"
+        else:
+            ordering = _COLOR_ORDER if order == "color" else _ORDERS.get(order, "e.created_at DESC, e.id DESC")
         # The page is picked from entries alone, then only its rows join their thumbnail and original.
         pick = f"SELECT e.id, {label} AS grp FROM entries e {where} ORDER BY {section + ', ' if section else ''}{ordering} LIMIT ? OFFSET ?"
         conn = db.connect()
@@ -450,6 +455,10 @@ class HyperbridgeAPI:
     def rename_set(self, set_id: int, name: str, description: str | None = None, tags=None) -> dict:
         """Rename a set and optionally replace its description and tags."""
         return sets.rename_set(int(set_id), name, description, tags)
+
+    def set_cover(self, set_id: int, entry_id: int | None = None) -> bool:
+        """Make an entry in the set its cover; with no entry the newest image is the cover again."""
+        return sets.set_cover(int(set_id), int(entry_id) if entry_id else None)
 
     def delete_set(self, set_id: int) -> bool:
         """Delete a set; its entries stay in the library."""

@@ -135,7 +135,19 @@ def list_items(conn, offset=0, limit=60, show_flagged=False) -> dict:
         (max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
     newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > STALE_HOURS * 3600
-    return {"items": [dict(row) for row in rows], "total": total, "flagged": flagged, "stale": stale}
+    return {"items": mark_captured(conn, [dict(row) for row in rows]), "total": total, "flagged": flagged, "stale": stale}
+
+
+def mark_captured(conn, items) -> list:
+    """Set known_entry_id on each feed item to the library entry already captured from its image link, else None."""
+    for item in items:
+        try:
+            key = capture.normalize_url(item["url"])
+        except ValueError:
+            key = None
+        row = conn.execute("SELECT id FROM entries WHERE source_key = ?", (key,)).fetchone() if key else None
+        item["known_entry_id"] = row["id"] if row else None
+    return items
 
 
 def dismiss(conn, ids) -> int:

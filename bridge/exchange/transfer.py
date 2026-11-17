@@ -81,7 +81,7 @@ def export_library(conn, dest, only_uids=None) -> dict:
     ]
     included = {record["uid"] for record in entries}
     sets = []
-    for row in conn.execute("SELECT id, uid, name, description, tags, created_at, updated_at FROM sets ORDER BY id"):
+    for row in conn.execute("SELECT id, uid, name, description, tags, cover_uid, created_at, updated_at FROM sets ORDER BY id"):
         placed = [
             item for item in conn.execute(
                 "SELECT e.uid, se.placed_at FROM set_entries se JOIN entries e ON e.id = se.entry_id"
@@ -91,7 +91,7 @@ def export_library(conn, dest, only_uids=None) -> dict:
         if only_uids is not None and not placed:
             continue
         sets.append({"uid": row["uid"], "name": row["name"], "description": row["description"], "tags": set_store.parse_tags(row["tags"]),
-                     "created_at": row["created_at"],
+                     "cover": row["cover_uid"], "created_at": row["created_at"],
                      "updated_at": row["updated_at"],
                      "entries": [{"uid": item["uid"], "placed_at": item["placed_at"]} for item in placed]})
     followed = [
@@ -276,9 +276,9 @@ def _apply_edits(conn, entry_id: int, record: dict, set_ids: set) -> bool:
 
 
 def list_set_heads(conn) -> list[dict]:
-    """Return every set's id, name, description, tags and last edit time, for telling another library how its sets differ."""
+    """Return every set's id, name, description, tags, cover entry id and last edit time, for telling another library how its sets differ."""
     return [dict(row, tags=set_store.parse_tags(row["tags"]))
-            for row in conn.execute("SELECT uid, name, description, tags, created_at, updated_at FROM sets ORDER BY id")]
+            for row in conn.execute("SELECT uid, name, description, tags, cover_uid AS cover, created_at, updated_at FROM sets ORDER BY id")]
 
 
 def list_set_deletions(conn) -> list[dict]:
@@ -306,7 +306,7 @@ def apply_set_deletions(conn, deletions: list) -> int:
 
 
 def merge_set_heads(conn, sets: list, update=False) -> int:
-    """Create missing sets and, with update, take a newer name and description; returns how many sets changed."""
+    """Create missing sets and, with update, take a newer name, description, tags and cover; returns how many sets changed."""
     return sum(1 for _, _, changed in _merge_heads(conn, sets, update) if changed)
 
 
@@ -335,9 +335,11 @@ def _merge_heads(conn, sets: list, update: bool) -> list:
             if row is not None and uid:
                 conn.execute("UPDATE sets SET uid = ? WHERE id = ?", (uid, row["id"]))
         changed = False
+        cover = str(item.get("cover") or "")
+        cover = cover if re.fullmatch(r"[0-9a-f]{32}", cover) else ""
         if row is None:
-            fields = (uid or storage.new_uid(), name, str(item.get("description", "")), json.dumps(set_store.clean_tags(item.get("tags"))), created, stamp)
-            set_id = conn.execute("INSERT INTO sets (uid, name, description, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", fields).lastrowid
+            fields = (uid or storage.new_uid(), name, str(item.get("description", "")), json.dumps(set_store.clean_tags(item.get("tags"))), cover, created, stamp)
+            set_id = conn.execute("INSERT INTO sets (uid, name, description, tags, cover_uid, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)", fields).lastrowid
             conn.execute("DELETE FROM set_deletions WHERE uid = ?", (fields[0],))
             changed = True
         else:
@@ -349,6 +351,8 @@ def _merge_heads(conn, sets: list, update: bool) -> list:
                 conn.execute("UPDATE sets SET description = ?, updated_at = ? WHERE id = ?", (str(item.get("description", "")), stamp, set_id))
                 if "tags" in item:
                     conn.execute("UPDATE sets SET tags = ? WHERE id = ?", (json.dumps(set_store.clean_tags(item.get("tags"))), set_id))
+                if "cover" in item:
+                    conn.execute("UPDATE sets SET cover_uid = ? WHERE id = ?", (cover, set_id))
                 changed = True
         merged.append((item, set_id, changed))
     return merged

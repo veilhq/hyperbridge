@@ -59,6 +59,37 @@ class SetTests(LibraryOpsCase):
         self.assertEqual(placed["palette"], ["#112233", "#445566"])
         self.assertGreaterEqual(placed["updated"], empty["updated"])
 
+    def test_chosen_cover_wins_while_in_the_set_and_falls_back_after(self):
+        older, newer = self.add_entry("Old"), self.add_entry("New")
+        older_thumb = self.add_asset(older, "thumbnail", 0, suffix=".webp")
+        self.add_asset(newer, "thumbnail", 0, suffix=".webp")
+        target = sets.create_set("S")["set"]["id"]
+        self.conn.commit()
+        sets.place(older, target)
+        sets.place(newer, target)
+        self.conn.execute("UPDATE set_entries SET placed_at = '2020-01-01' WHERE entry_id = ?", (older,))
+        self.conn.commit()
+        newest_path = sets.list_sets()[0]["cover_path"]
+        self.assertIsNone(sets.list_sets()[0]["cover_entry_id"])
+        self.assertTrue(sets.set_cover(target, older))
+        chosen = sets.list_sets()[0]
+        older_path = self.conn.execute("SELECT path FROM assets WHERE id = ?", (older_thumb,)).fetchone()[0]
+        self.assertEqual((chosen["cover_entry_id"], chosen["cover_path"]), (older, older_path))
+        sets.remove(older, target)
+        fallen = sets.list_sets()[0]
+        self.assertEqual((fallen["cover_entry_id"], fallen["cover_path"]), (None, newest_path))
+
+    def test_cover_must_be_in_the_set_and_can_be_cleared(self):
+        inside, outside = self.add_entry("In"), self.add_entry("Out")
+        target = sets.create_set("S")["set"]["id"]
+        sets.place(inside, target)
+        self.assertFalse(sets.set_cover(target, outside))
+        self.assertFalse(sets.set_cover(999, inside))
+        self.assertTrue(sets.set_cover(target, inside))
+        self.assertTrue(sets.set_cover(target, None))
+        stored = self.conn.execute("SELECT cover_uid FROM sets WHERE id = ?", (target,)).fetchone()[0]
+        self.assertEqual(stored, "")
+
     def test_pin_toggles_and_checks_id(self):
         target = sets.create_set("S")["set"]["id"]
         self.assertTrue(sets.set_pinned(target, True))

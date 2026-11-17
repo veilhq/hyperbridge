@@ -90,6 +90,17 @@
     if (!entry.sets.length) box.appendChild(makeEl("span", "lightbox-none", "No sets."));
     entry.sets.forEach(function (item) {
       var chip = makeEl("span", "status-chip status-chip-outlined-accent", item.name);
+      var known = allSets.filter(function (set) { return set.id === item.id; })[0];
+      var isCover = Boolean(known && known.cover_entry_id === entry.id);
+      var coverLabel = isCover ? "Cover of " + item.name + " - use the newest image instead" : "Make cover of " + item.name;
+      var cover = makeEl("button", "lightbox-chip-cover");
+      cover.innerHTML = '<svg class="icon-glyph-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+      cover.type = "button";
+      cover.setAttribute("data-set", item.id);
+      cover.setAttribute("aria-pressed", isCover ? "true" : "false");
+      cover.setAttribute("aria-label", coverLabel);
+      cover.setAttribute("data-tooltip", coverLabel);
+      chip.appendChild(cover);
       var drop = makeEl("button", "lightbox-chip-remove");
       drop.innerHTML = '<svg class="icon-glyph-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
       drop.setAttribute("data-tooltip", "Remove from " + item.name);
@@ -427,6 +438,22 @@
     }).catch(function () { toast("error", "Could not remove."); });
   }
 
+  // Makes the open entry its set's cover, or with the cover pressed hands it back to the newest image.
+  function onSetCover(event) {
+    var button = event.target.closest(".lightbox-chip-cover");
+    var bridge = api();
+    if (!button || !bridge || !bridge.set_cover || !current) return;
+    var setId = Number(button.getAttribute("data-set"));
+    var making = button.getAttribute("aria-pressed") !== "true";
+    Promise.resolve(bridge.set_cover(setId, making ? current.id : null)).then(function (ok) {
+      if (!ok) { toast("error", "Could not change the cover."); return; }
+      allSets.forEach(function (item) { if (item.id === setId) item.cover_entry_id = making ? current.id : null; });
+      render();
+      toast("success", making ? "Set as cover." : "Cover set back to the newest image.");
+      changed();
+    }).catch(function () { toast("error", "Could not change the cover."); });
+  }
+
   function reportSave(result, noun) {
     var status = result && result.status ? result.status : result;
     if (status === "saved") toast("success", result.count > 1 ? "Saved " + result.count + " files." : "Saved.");
@@ -562,6 +589,7 @@
     byId("act-save-all").addEventListener("click", onSaveAll);
     byId("lb-sets").addEventListener("click", onPlaceMenu);
     byId("lb-sets").addEventListener("click", onSetRemove);
+    byId("lb-sets").addEventListener("click", onSetCover);
     byId("f-cancel").addEventListener("click", function () {
       closeForm();
       render();

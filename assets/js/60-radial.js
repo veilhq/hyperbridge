@@ -30,7 +30,8 @@
     sort: '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
     down: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
     up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
-    title: '<path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/>'
+    title: '<path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/>',
+    shuffle: '<path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/>'
   };
 
   // Inline Lucide-style glyph, so every tile in the ring is an icon.
@@ -40,7 +41,7 @@
 
   var CHOICE_GLYPHS = {
     group: { "": "none", color: "palette", year: "calendar", source: "link" },
-    order: { color: "palette", newest: "down", oldest: "up", title: "title", source: "link" }
+    order: { color: "palette", newest: "down", oldest: "up", title: "title", source: "link", random: "shuffle" }
   };
 
   // Builds the View sub-rings: Group by and Order, each listing its choices with the current one marked.

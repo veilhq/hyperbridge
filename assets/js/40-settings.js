@@ -171,7 +171,7 @@
 
   var DEFAULT_FIELDS = [
     { panel: "#defaults-library", key: "library_order", name: "Order", desc: "How entries are sorted.",
-      options: [["newest", "Newest"], ["color", "Color"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]] },
+      options: [["newest", "Newest"], ["color", "Color"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"], ["random", "Random"]] },
     { panel: "#defaults-library", key: "library_group", name: "Group by", desc: "Whether entries are gathered under headings.",
       options: [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]] },
     { panel: "#defaults-library", key: "library_columns", name: "Columns", desc: "Columns added to or taken from what fits the window. Fit uses the window width alone.",
@@ -180,7 +180,9 @@
       options: [["recent", "Recent"], ["name", "Name"], ["size", "Size"]] },
     { panel: "#defaults-sets", key: "sets_rail_collapsed", name: "Auto-hide the sidebar", desc: "Start with the set sidebar tucked away until you point at it." },
     { panel: "#defaults-sets", key: "lightbox_fit", name: "Viewer", desc: "Whether an opened image fills the space or shows whole with margins.",
-      options: [["fill", "Fill"], ["fit", "Whole"]] }
+      options: [["fill", "Fill"], ["fit", "Whole"]] },
+    { panel: "#defaults-discover", key: "feed_ai", name: "AI-labeled images", desc: "Hold them back, blur them until selected, or show them as they are.",
+      options: [["hide", "Hide"], ["blur", "Blur"], ["show", "Show"]] }
   ];
   var defaults = null;
   var defaultControls = {};

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bridge.ingest import capture  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import labels  # noqa: E402
 from bridge.ingest import similar  # noqa: E402
@@ -125,6 +126,16 @@ class FeedListTests(SimilarCase):
         self.assertEqual(([item["id"] for item in result["items"]], result["flagged"]), ([self.shown], 1))
         shown_all = similar.list_items(self.conn, set_id, show_flagged=True)
         self.assertEqual(sorted(item["id"] for item in shown_all["items"]), [self.shown, self.flagged])
+
+    def test_feed_images_already_captured_name_their_entry(self):
+        entry = self.add_entry(title="Kept")
+        self.conn.execute("UPDATE entries SET source_key = ? WHERE id = ?", (capture.normalize_url("https://x/shown.jpg"), entry))
+        marks = {item["id"]: item["known_entry_id"] for item in feed.list_items(self.conn, show_flagged=True)["items"]}
+        self.assertEqual(marks, {self.shown: entry, self.flagged: None})
+        set_id = self.make_set()
+        self.member(set_id, tags=["concrete"])
+        similar_marks = {item["id"]: item["known_entry_id"] for item in similar.list_items(self.conn, set_id, show_flagged=True)["items"]}
+        self.assertEqual(similar_marks, {self.shown: entry, self.flagged: None})
 
 
 if __name__ == "__main__":

@@ -83,6 +83,17 @@ function togglePin(id) {
   }).catch(function () { toast("error", "Could not pin."); });
 }
 
+// Drops a set's chosen cover so its newest image is the cover again.
+function resetCover(id) {
+  var bridge = api();
+  if (!bridge || !bridge.set_cover) return;
+  Promise.resolve(bridge.set_cover(id, null)).then(function (ok) {
+    if (!ok) { toast("error", "Could not change the cover."); return; }
+    toast("success", "Cover set back to the newest image.");
+    announce("hyperbridge:changed");
+  }).catch(function () { toast("error", "Could not change the cover."); });
+}
+
 // Deletes a set; its entries stay in the library.
 function deleteSet(item) {
   var bridge = api();
@@ -137,15 +148,18 @@ function setupMenus() {
   window.HvContextMenu.register(".poster-card[data-set]", function (card) {
     var item = itemFor(card);
     if (!item) return [];
-    return [
+    var items = [
       { label: "Open", action: function () { select(item.id); } },
       { label: "Find similar", action: function () { findSimilar(item.id); } },
       { label: item.pinned ? "Unpin from tabs" : "Pin to tabs", action: function () { togglePin(item.id); } },
       { label: "Edit", action: function () { startEdit(item.id); } },
+    ];
+    if (item.cover_entry_id) items.push({ label: "Use newest image as cover", action: function () { resetCover(item.id); } });
+    return items.concat([
       { label: "Delete", action: function () { deleteSet(item); } },
       { separator: true },
       fresh,
-    ];
+    ]);
   });
   window.HvContextMenu.register(".sets-tab[data-set]", function (tab) {
     var item = itemFor(tab);

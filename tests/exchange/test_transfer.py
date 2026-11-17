@@ -261,6 +261,15 @@ class SetSyncTests(TransferCase):
         transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
         self.assertEqual(self.conn.execute("SELECT tags FROM sets").fetchone()[0], '["brutalist poster"]')
 
+    def test_a_chosen_cover_travels_with_the_set_and_junk_is_dropped(self):
+        cover = self.uids[0]
+        self.laptop_conn.execute("UPDATE sets SET cover_uid = ?, updated_at = '2998-01-01T00:00:00'", (cover,))
+        transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
+        self.assertEqual(self.conn.execute("SELECT cover_uid FROM sets").fetchone()[0], cover)
+        self.laptop_conn.execute("UPDATE sets SET cover_uid = 'not-a-uid', updated_at = '2999-01-01T00:00:00'")
+        transfer.merge_set_heads(self.conn, transfer.list_set_heads(self.laptop_conn), update=True)
+        self.assertEqual(self.conn.execute("SELECT cover_uid FROM sets").fetchone()[0], "")
+
     def test_a_locally_newer_rename_is_kept(self):
         self.laptop_conn.execute("UPDATE sets SET name = 'Prints', updated_at = '2998-01-01T00:00:00'")
         self.conn.execute("UPDATE sets SET name = 'Mine', updated_at = '2999-01-01T00:00:00'")

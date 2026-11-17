@@ -215,7 +215,7 @@
     var ticket = ++state.ticket;
     var offset = reset ? 0 : state.entries.length;
     state.loading = true;
-    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag, state.color, state.order).then(function (result) {
+    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag, state.color, state.order, null, state.seed).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
@@ -238,7 +238,7 @@
     var held = {};
     state.entries.forEach(function (entry) { if (entry.thumb) held[entry.id] = entry.thumb; });
     state.loading = true;
-    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color, state.order, Object.keys(held).map(Number)).then(function (result) {
+    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color, state.order, Object.keys(held).map(Number), state.seed).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];

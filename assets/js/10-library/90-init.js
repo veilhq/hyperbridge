@@ -22,7 +22,9 @@
     });
     $("#find-refresh").addEventListener("click", function () { openFeed(true, feedSet); });
     $("#feed-more").addEventListener("click", discoverMore);
-    $("#find-flagged-toggle").addEventListener("click", toggleFlagged);
+    Array.prototype.forEach.call($("#find-ai").children, function (button) {
+      button.addEventListener("click", function () { chooseFeedAi(button.getAttribute("data-mode")); });
+    });
     document.addEventListener("hyperbridge:feed", function () { openFeed(false); });
     document.addEventListener("hyperbridge:similar", function (event) { openFeed(false, event.detail); });
     window.addEventListener("resize", function () {

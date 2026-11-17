@@ -63,7 +63,14 @@
       <header class="set-head find-head" id="find-head" hidden>
         <h1 class="set-head-title" id="find-head-title"></h1>
         <p class="set-head-desc" id="find-head-desc"></p>
-        <p class="set-head-meta" id="find-flagged" hidden><span id="find-flagged-text"></span> <button class="status-chip status-chip-outlined-accent" id="find-flagged-toggle" type="button" aria-pressed="false">Show</button></p>
+        <div class="set-head-meta find-flagged" id="find-flagged" hidden>
+          <span id="find-flagged-text"></span>
+          <div class="segmented find-ai" id="find-ai" role="group" aria-label="AI-labeled images">
+            <button class="segmented-option" type="button" data-mode="hide" aria-pressed="false">Hide</button>
+            <button class="segmented-option" type="button" data-mode="blur" aria-pressed="false">Blur</button>
+            <button class="segmented-option" type="button" data-mode="show" aria-pressed="false">Show</button>
+          </div>
+        </div>
         <button class="action-icon set-head-exit" id="find-exit" type="button" aria-label="Back to set" data-tooltip="Back to set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
         <button class="action-icon set-head-aside" id="find-refresh" type="button" aria-label="Refresh" data-tooltip="Refresh" hidden><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
       </header>
@@ -217,6 +224,13 @@
             <p class="settings-source-desc">Where the Sets view and the image viewer start. Defaults stay on this machine and are not synced.</p>
           </header>
           <div class="settings-list" id="defaults-sets"></div>
+        </section>
+        <section class="settings-panel" aria-labelledby="defaults-discover-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="defaults-discover-title">Discover</h2>
+            <p class="settings-source-desc">How Discover and Find similar start. Only images their source labels as AI-generated are caught.</p>
+          </header>
+          <div class="settings-list" id="defaults-discover"></div>
         </section>
         </div>
       </section>

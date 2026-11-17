@@ -83,8 +83,13 @@
     img.alt = "";
     reserveSpace(img, item.width, item.height);
     card.appendChild(img);
-    if (item.known_entry_id) card.appendChild(makeEl("span", "library-card-flag status-chip status-chip-outlined-accent", "Saved"));
-    if (item.aiLabel) card.appendChild(makeEl("span", "library-card-flag status-chip status-chip-outlined-accent", "AI label")).setAttribute("data-tooltip", item.aiLabel);
+    if (item.known_entry_id || item.aiLabel) {
+      var flags = card.appendChild(makeEl("span", "library-card-flags"));
+      if (item.known_entry_id) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "Captured")).setAttribute("data-tooltip", "Already in the library");
+      if (item.aiLabel) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "AI label")).setAttribute("data-tooltip", item.aiLabel);
+    }
+    // A blurred AI-labeled image clears for good once it is selected.
+    if (item.veiled) card.setAttribute("data-veiled", "true");
     var details = card.appendChild(makeEl("span", "library-card-details"));
     if (item.feedId) {
       if (item.title) details.appendChild(makeEl("span", "library-card-title", item.title));
@@ -95,6 +100,7 @@
     }
     if (selected.has(index)) card.setAttribute("data-selected", "true");
     card.addEventListener("click", function (event) {
+      if (item.veiled) { item.veiled = false; card.removeAttribute("data-veiled"); }
       if (event.shiftKey && anchorId !== null) selectRange(index);
       else toggleSelected(index);
     });

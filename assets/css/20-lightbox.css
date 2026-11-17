@@ -73,6 +73,10 @@
 .lightbox-chip-remove { display: inline-flex; vertical-align: middle; margin-left: var(--space-2); padding: 0; font: inherit; color: var(--text-dim); background: transparent; border: 0; transition: color var(--motion-base) var(--ease); }
 .lightbox-chip-remove:hover { color: var(--error); }
 .lightbox-chip-remove:focus-visible { outline: var(--border-rail) solid var(--focus); }
+.lightbox-chip-cover { display: inline-flex; vertical-align: middle; margin-left: var(--space-2); padding: 0; font: inherit; color: var(--text-dim); background: transparent; border: 0; transition: color var(--motion-base) var(--ease); }
+.lightbox-chip-cover:hover { color: var(--interactive); }
+.lightbox-chip-cover[aria-pressed="true"] { color: var(--selected); }
+.lightbox-chip-cover:focus-visible { outline: var(--border-rail) solid var(--focus); }
 .status-chip.lightbox-failed { color: var(--error); border-color: var(--error); }
 
 @media (max-width: 52rem) {
@@ -112,8 +116,8 @@ html.a11y-reduce-motion #lb-scrim { transition: none; }
 @keyframes lightboxSwap { from { opacity: 0; transform: translateY(var(--space-2)); } to { opacity: 1; transform: none; } }
 .lightbox-swap { animation: lightboxSwap var(--motion-enter) var(--ease) both; }
 @media (prefers-reduced-motion: reduce) { .lightbox-image { transition: none; } .lightbox-swap { animation: none; } }
-@media (prefers-reduced-motion: reduce) { .full-view, .lightbox-dot, .lightbox-value a, .lightbox-chip-remove { transition: none; } .lightbox-swatches { animation: none; } }
-html.a11y-reduce-motion .full-view, html.a11y-reduce-motion .lightbox-dot, html.a11y-reduce-motion .lightbox-value a, html.a11y-reduce-motion .lightbox-chip-remove { transition: none; }
+@media (prefers-reduced-motion: reduce) { .full-view, .lightbox-dot, .lightbox-value a, .lightbox-chip-remove, .lightbox-chip-cover { transition: none; } .lightbox-swatches { animation: none; } }
+html.a11y-reduce-motion .full-view, html.a11y-reduce-motion .lightbox-dot, html.a11y-reduce-motion .lightbox-value a, html.a11y-reduce-motion .lightbox-chip-remove, html.a11y-reduce-motion .lightbox-chip-cover { transition: none; }
 html.a11y-reduce-motion .lightbox-swatches { animation: none; }
 html.a11y-reduce-motion .lightbox-image { transition: none; }
 html.a11y-reduce-motion .lightbox-swap { animation: none; }

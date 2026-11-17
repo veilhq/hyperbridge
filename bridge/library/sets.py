@@ -69,11 +69,14 @@ def _palette(rows) -> list[str]:
 
 
 def list_sets() -> list[dict]:
-    """Return every set, ordered by name, with its entry count, pin, last-change time, cover thumbnail path and palette."""
+    """Return every set, ordered by name, with its entry count, pin, last-change time, cover and palette.
+
+    The cover is the chosen entry while it is still in the set with a thumbnail, else the newest placed image.
+    """
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT s.id, s.name, s.description, s.tags, s.pinned, s.updated_at, COUNT(se.entry_id) AS count,"
+            "SELECT s.id, s.name, s.description, s.tags, s.pinned, s.updated_at, s.cover_uid, COUNT(se.entry_id) AS count,"
             " MAX(se.placed_at) AS placed_at FROM sets s"
             " LEFT JOIN set_entries se ON se.set_id = s.id GROUP BY s.id ORDER BY s.name COLLATE NOCASE"
         ).fetchall()
@@ -84,11 +87,16 @@ def list_sets() -> list[dict]:
                 " LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
                 " WHERE se.set_id = ? ORDER BY se.placed_at DESC, e.id DESC LIMIT ?", (row["id"], PALETTE_SIZE)
             ).fetchall()
-            cover = next((item["thumb_path"] for item in newest if item["thumb_path"]), None)
+            chosen = conn.execute(
+                "SELECT e.id, a.path AS thumb_path FROM set_entries se JOIN entries e ON e.id = se.entry_id"
+                " JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
+                " WHERE se.set_id = ? AND e.uid = ?", (row["id"], row["cover_uid"])
+            ).fetchone() if row["cover_uid"] else None
+            cover = chosen["thumb_path"] if chosen else next((item["thumb_path"] for item in newest if item["thumb_path"]), None)
             result.append({
                 "id": row["id"], "name": row["name"], "description": row["description"], "tags": parse_tags(row["tags"]), "count": row["count"],
                 "pinned": bool(row["pinned"]), "updated": max(row["updated_at"] or "", row["placed_at"] or ""),
-                "cover_path": cover, "palette": _palette(newest),
+                "cover_path": cover, "cover_entry_id": chosen["id"] if chosen else None, "palette": _palette(newest),
             })
         return result
     finally:
@@ -145,6 +153,26 @@ def set_pinned(set_id: int, pinned: bool) -> bool:
     conn = db.connect()
     try:
         return conn.execute("UPDATE sets SET pinned = ? WHERE id = ?", (1 if pinned else 0, set_id)).rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_cover(set_id: int, entry_id: int | None) -> bool:
+    """Make an entry in the set its cover, or with no entry go back to the newest image; False when either is missing."""
+    conn = db.connect()
+    try:
+        if _row(conn, set_id) is None:
+            return False
+        uid = ""
+        if entry_id:
+            found = conn.execute(
+                "SELECT e.uid FROM set_entries se JOIN entries e ON e.id = se.entry_id WHERE se.set_id = ? AND se.entry_id = ?",
+                (set_id, int(entry_id))).fetchone()
+            if found is None:
+                return False
+            uid = found["uid"]
+        conn.execute("UPDATE sets SET cover_uid = ?, updated_at = ? WHERE id = ?", (uid, _now(), set_id))
+        return True
     finally:
         conn.close()
 

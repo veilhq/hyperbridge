@@ -1,33 +1,49 @@
   var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr", pinterest: "Pinterest" };
   // The set ({ id, name }) the feed is narrowed to by Find similar; null for the full Discover feed.
   var feedSet = null;
-  // Whether images carrying an AI label are shown in the feed instead of held back.
-  var feedShowFlagged = false;
+  // How feed images carrying an AI label appear: held back (hide), blurred until picked (blur), or as is (show).
+  var FEED_AI_MODES = ["hide", "blur", "show"];
+  var feedAiMode = (function () {
+    var fallback = window.hbDefault ? window.hbDefault("feed_ai", "blur") : "blur";
+    var saved = "";
+    try { saved = localStorage.getItem("hyperbridge-feed-ai") || ""; } catch (err) { saved = ""; }
+    if (FEED_AI_MODES.indexOf(saved) >= 0) return saved;
+    return FEED_AI_MODES.indexOf(fallback) >= 0 ? fallback : "blur";
+  })();
 
   function listFeedPage(offset, limit) {
     var bridge = api();
-    return Promise.resolve(feedSet ? bridge.list_similar(feedSet.id, offset, limit, feedShowFlagged)
-      : bridge.list_feed(offset, limit, feedShowFlagged));
+    var withFlagged = feedAiMode !== "hide";
+    return Promise.resolve(feedSet ? bridge.list_similar(feedSet.id, offset, limit, withFlagged)
+      : bridge.list_feed(offset, limit, withFlagged));
   }
 
-  // Says how many feed images are held back for an AI label, with the control that shows or hides them.
+  // Says how many feed images carry an AI label and how they are shown, with the control that changes it.
   function paintFlagged() {
     var count = (candidates && candidates.flagged) || 0;
     var line = $("#find-flagged");
-    line.hidden = !count && !feedShowFlagged;
+    line.hidden = !count;
     if (line.hidden) return;
-    $("#find-flagged-text").textContent = feedShowFlagged
-      ? "Showing images labeled as AI-generated. Images with no label are not caught."
-      : count + (count === 1 ? " image" : " images") + " hidden for an AI label. Images with no label are not caught.";
-    var toggle = $("#find-flagged-toggle");
-    toggle.textContent = feedShowFlagged ? "Hide" : "Show";
-    toggle.setAttribute("aria-pressed", feedShowFlagged ? "true" : "false");
+    var noun = count + (count === 1 ? " image" : " images");
+    var said = {
+      hide: noun + " hidden for an AI label.",
+      blur: noun + " with an AI label blurred. Select one to see it.",
+      show: noun + " with an AI label shown."
+    };
+    $("#find-flagged-text").textContent = said[feedAiMode] + " Images with no label are not caught.";
+    var control = $("#find-ai");
+    Array.prototype.forEach.call(control.children, function (button, position) {
+      button.setAttribute("aria-pressed", FEED_AI_MODES[position] === feedAiMode ? "true" : "false");
+    });
+    control.style.setProperty("--segment-index", FEED_AI_MODES.indexOf(feedAiMode));
   }
 
-  function toggleFlagged() {
-    if (!candidates || !candidates.feed) return;
-    feedShowFlagged = !feedShowFlagged;
-    reloadFeed();
+  // Switches how AI-labeled images appear and keeps the choice on this machine.
+  function chooseFeedAi(mode) {
+    if (FEED_AI_MODES.indexOf(mode) < 0 || mode === feedAiMode) return;
+    feedAiMode = mode;
+    try { localStorage.setItem("hyperbridge-feed-ai", mode); } catch (err) { /* ignore */ }
+    if (candidates && candidates.feed) reloadFeed();
   }
 
   function pullFeed(replace) {
@@ -45,7 +61,8 @@
   function feedCandidate(item) {
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
       title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, matched: item.matched || null,
-      followUrl: item.follow_url || null, followLabel: item.follow_label || "", aiLabel: item.ai_label || "", known_entry_id: null };
+      followUrl: item.follow_url || null, followLabel: item.follow_label || "", aiLabel: item.ai_label || "", veiled: Boolean(item.ai_label) && feedAiMode === "blur",
+      known_entry_id: item.known_entry_id || null };
   }
 
   // Returns the distinct unfollowed Are.na channels ({ url, label }) behind the given candidate indexes.
@@ -334,7 +351,6 @@
     if (!candidates) return;
     candidates = null;
     feedSet = null;
-    feedShowFlagged = false;
     $("#find-flagged").hidden = true;
     syncMore();
     findTicket++;
