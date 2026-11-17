@@ -20,14 +20,12 @@ function renderTabs() {
   var shown = pinnedSets();
   if (!shown.length) shown = sets.slice();
   if (open && shown.indexOf(open) < 0) shown = shown.concat([open]);
-  var stack = $("#sets-stack");
-  Array.prototype.slice.call(stack.querySelectorAll("[data-set]")).forEach(function (tab) { tab.remove(); });
-  stack.insertAdjacentHTML("beforeend", shown.map(function (item) {
+  $("#sets-list").innerHTML = shown.map(function (item) {
     var active = !browsing && item.id === selectedId;
     return '<button class="content-card sets-tab sets-tab-set' + (active ? " content-card-active" : "") + '" type="button" data-set="' + item.id + '"' +
       (active ? ' aria-current="true"' : "") + ">" + '<span class="sets-tab-head"><span class="sets-tab-name">' + esc(item.name) + '</span><span class="sets-tab-count">' + item.count + "</span></span>" +
       (item.description ? '<span class="sets-tab-desc">' + esc(item.description) + "</span>" : "") + "</button>";
-  }).join(""));
+  }).join("");
   markTab($("#sets-discover"), feedOpen && !browsing);
   markTab($("#sets-all"), selectedId === null && !feedOpen && !browsing);
   markTab($("#sets-browse"), browsing);
