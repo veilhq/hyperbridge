@@ -128,6 +128,15 @@ def _grid_path(row) -> str | None:
     return original
 
 
+DEFAULTS_SLOT = '<script type="application/json" id="hb-defaults">{}</script>'
+
+
+def with_defaults(html: str) -> str:
+    """Fill the shell's defaults slot with this machine's view defaults so the UI starts from them."""
+    payload = json.dumps(prefs.view_defaults()).replace("</", "<\\/")
+    return html.replace(DEFAULTS_SLOT, DEFAULTS_SLOT.replace("{}", payload), 1)
+
+
 class HyperbridgeAPI:
     """PyWebView JS bridge for Hyperbridge."""
 
@@ -168,6 +177,20 @@ class HyperbridgeAPI:
     def set_downscale(self, on: bool) -> dict:
         """Turn shrinking of very large new images on or off for this machine."""
         return {"downscale": prefs.set("downscale_originals", bool(on))["downscale_originals"]}
+
+    def get_defaults(self) -> dict:
+        """Return the view defaults each launch starts from on this machine."""
+        return prefs.view_defaults()
+
+    def set_default(self, key: str, value) -> dict:
+        """Store one view default for the next launch; returns them all, or an error for a bad key or value."""
+        if key not in prefs.VIEW_DEFAULTS:
+            return {"ok": False, "error": "Unknown setting."}
+        try:
+            prefs.set(key, value)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "defaults": prefs.view_defaults()}
 
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
                      group: str = "", tag: str = "", color: str = "", order: str = "", known: list | None = None) -> dict:
@@ -805,7 +828,7 @@ def main():
 
     window = webview.create_window(
         WINDOW_TITLE,
-        html=HTML,
+        html=with_defaults(HTML),
         js_api=api,
         width=1200,
         height=800,

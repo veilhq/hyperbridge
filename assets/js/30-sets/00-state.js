@@ -84,7 +84,13 @@ function agoLabel(days) {
 
 function entriesLabel(count) { return count + (count === 1 ? " ENTRY" : " ENTRIES"); }
 
+// Starts from the launch defaults, then from any choice already made this session.
 function loadViewPrefs() {
+  if (window.hbDefault) {
+    var defaultSort = window.hbDefault("sets_sort", sortKey);
+    if (SORTS.indexOf(defaultSort) >= 0) sortKey = defaultSort;
+    tabsCollapsed = window.hbDefault("sets_rail_collapsed", tabsCollapsed) === true;
+  }
   try {
     var saved = JSON.parse(localStorage.getItem(SETS_VIEW_KEY) || "{}");
     if (SORTS.indexOf(saved.sort) >= 0) sortKey = saved.sort;

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Hyperbridge</title>
+<script type="application/json" id="hb-defaults">{}</script>
 <style>
 {{CSS}}
 </style>
@@ -75,6 +76,7 @@
           <button class="nav-tab nav-tab-folder settings-tab" id="settings-tabbtn-sources" type="button" role="tab" data-tab="sources" aria-controls="settings-tab-sources">Sources</button>
           <button class="nav-tab nav-tab-folder settings-tab" id="settings-tabbtn-tags" type="button" role="tab" data-tab="tags" aria-controls="settings-tab-tags">Tags</button>
           <button class="nav-tab nav-tab-folder settings-tab" id="settings-tabbtn-library" type="button" role="tab" data-tab="library" aria-controls="settings-tab-library">Library</button>
+          <button class="nav-tab nav-tab-folder settings-tab" id="settings-tabbtn-defaults" type="button" role="tab" data-tab="defaults" aria-controls="settings-tab-defaults">Defaults</button>
         </nav>
         <div class="settings-tab-panel" id="settings-tab-sources" role="tabpanel" aria-labelledby="settings-tabbtn-sources">
         <section class="settings-panel" aria-labelledby="sources-title">
@@ -198,6 +200,22 @@
             </span>
             <button class="switch" id="downscale-switch" type="button" role="switch" aria-checked="false" aria-labelledby="downscale-name" aria-describedby="downscale-desc"><span class="switch-goo"></span></button>
           </div>
+        </section>
+        </div>
+        <div class="settings-tab-panel" id="settings-tab-defaults" role="tabpanel" aria-labelledby="settings-tabbtn-defaults" hidden>
+        <section class="settings-panel" aria-labelledby="defaults-library-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="defaults-library-title">Library</h2>
+            <p class="settings-source-desc">How the library looks each time Hyperbridge opens on this machine. Changes made while it is open last until you close it; these are where it starts again.</p>
+          </header>
+          <div class="settings-list" id="defaults-library"></div>
+        </section>
+        <section class="settings-panel" aria-labelledby="defaults-sets-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="defaults-sets-title">Sets and viewer</h2>
+            <p class="settings-source-desc">Where the Sets view and the image viewer start. Defaults stay on this machine and are not synced.</p>
+          </header>
+          <div class="settings-list" id="defaults-sets"></div>
         </section>
         </div>
       </section>

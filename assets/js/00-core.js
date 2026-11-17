@@ -5,6 +5,13 @@
   var $ = function (selector) { return document.querySelector(selector); };
   window.$ = $;
 
+  // Reads the view defaults the app was launched with; a missing key returns the fallback.
+  var launchDefaults = {};
+  try { launchDefaults = JSON.parse(($("#hb-defaults") || {}).textContent || "{}") || {}; } catch (err) { launchDefaults = {}; }
+  window.hbDefault = function (key, fallback) {
+    return Object.prototype.hasOwnProperty.call(launchDefaults, key) ? launchDefaults[key] : fallback;
+  };
+
   // Re-tints the HyperKit cursors: SVG data URIs cannot reference CSS variables.
   function syncCursors(hex) {
     var ec = encodeURIComponent(hex);

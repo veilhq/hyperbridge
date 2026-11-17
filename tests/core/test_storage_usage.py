@@ -41,6 +41,48 @@ class PrefsTests(LibraryCase):
         with self.assertRaises(KeyError):
             prefs.set("nope", 1)
 
+    def test_view_defaults_validate_choices_and_types(self):
+        prefs.set("library_order", "title")
+        prefs.set("library_columns", -2)
+        prefs.set("sets_rail_collapsed", True)
+        self.assertEqual(prefs.view_defaults()["library_order"], "title")
+        self.assertEqual(prefs.view_defaults()["library_columns"], -2)
+        self.assertTrue(prefs.view_defaults()["sets_rail_collapsed"])
+        for key, value in (("library_order", "sideways"), ("library_columns", 9), ("library_columns", "1"), ("lightbox_fit", 0)):
+            with self.assertRaises(ValueError):
+                prefs.set(key, value)
+        self.assertEqual(prefs.get("library_order"), "title")
+
+    def test_disallowed_saved_values_fall_back_per_key(self):
+        (db.data_dir() / "preferences.json").write_text(
+            '{"library_order": "sideways", "library_group": "year", "library_columns": true}', encoding="utf-8")
+        values = prefs.load()
+        self.assertEqual(values["library_order"], prefs.DEFAULTS["library_order"])
+        self.assertEqual(values["library_group"], "year")
+        self.assertEqual(values["library_columns"], 0)
+
+    def test_view_defaults_leave_out_storage_preferences(self):
+        self.assertNotIn("downscale_originals", prefs.view_defaults())
+        self.assertEqual(set(prefs.view_defaults()), set(prefs.VIEW_DEFAULTS))
+
+
+class DefaultsApiTests(LibraryCase):
+    def test_set_default_round_trips_and_reports_errors(self):
+        api = hyperbridge.HyperbridgeAPI()
+        self.assertEqual(api.get_defaults()["sets_sort"], "recent")
+        result = api.set_default("sets_sort", "size")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["defaults"]["sets_sort"], "size")
+        self.assertFalse(api.set_default("sets_sort", "shape")["ok"])
+        self.assertFalse(api.set_default("downscale_originals", True)["ok"])
+        self.assertEqual(api.get_defaults()["sets_sort"], "size")
+
+    def test_launch_html_carries_the_saved_defaults(self):
+        prefs.set("lightbox_fit", "fit")
+        html = hyperbridge.with_defaults(hyperbridge.HTML)
+        self.assertNotIn(hyperbridge.DEFAULTS_SLOT, html)
+        self.assertIn('"lightbox_fit": "fit"', html)
+
 
 class UsageTests(LibraryCase):
     def test_usage_sums_assets_by_kind_and_the_database(self):

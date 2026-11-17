@@ -4,7 +4,11 @@
   var resizeTimer = null;
   var columnShift = 0;
   var zoomAnchor = null;
-  try { columnShift = parseInt(localStorage.getItem("hyperbridge-columns"), 10) || 0; } catch (err) { columnShift = 0; }
+  var defaultShift = window.hbDefault ? Number(window.hbDefault("library_columns", 0)) || 0 : 0;
+  try {
+    var savedShift = parseInt(localStorage.getItem("hyperbridge-columns"), 10);
+    columnShift = isNaN(savedShift) ? defaultShift : savedShift;
+  } catch (err) { columnShift = defaultShift; }
 
   // Columns that fit the width, moved by the zoom step the Operator chose with + and -.
   function fitColumns() {

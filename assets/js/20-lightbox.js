@@ -498,8 +498,12 @@
       button.setAttribute("data-tooltip", label);
       try { localStorage.setItem("hyperbridge-fit", mode); } catch (err) { /* ignore */ }
     }
-    var saved = "fill";
-    try { saved = localStorage.getItem("hyperbridge-fit") === "fit" ? "fit" : "fill"; } catch (err) { saved = "fill"; }
+    var fallback = window.hbDefault && window.hbDefault("lightbox_fit", "fill") === "fit" ? "fit" : "fill";
+    var saved = fallback;
+    try {
+      var stored = localStorage.getItem("hyperbridge-fit");
+      saved = stored === "fit" || stored === "fill" ? stored : fallback;
+    } catch (err) { saved = fallback; }
     apply(saved);
     button.addEventListener("click", function () { apply(lb.getAttribute("data-fit") === "fit" ? "fill" : "fit"); });
   }

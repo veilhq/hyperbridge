@@ -1,6 +1,11 @@
   var GROUP_CHOICES = [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]];
   var ORDER_CHOICES = [["color", "Color"], ["newest", "Newest"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]];
-  var DEFAULT_ORDER = "newest";
+
+  // The launch default for a view field when it is one of the choices, else the fallback.
+  function launchDefault(key, choices, fallback) {
+    var value = window.hbDefault ? window.hbDefault(key, fallback) : fallback;
+    return choices.some(function (choice) { return choice[0] === value; }) ? value : fallback;
+  }
 
   // Group and order choices persist; the radial menu reads and sets them through window.HyperbridgeView.
   function setupGroup() {
@@ -18,8 +23,8 @@
       load(true);
     }
 
-    state.group = read("hyperbridge-group", GROUP_CHOICES, "");
-    state.order = read("hyperbridge-order", ORDER_CHOICES, DEFAULT_ORDER);
+    state.group = read("hyperbridge-group", GROUP_CHOICES, launchDefault("library_group", GROUP_CHOICES, ""));
+    state.order = read("hyperbridge-order", ORDER_CHOICES, launchDefault("library_order", ORDER_CHOICES, "newest"));
     window.HyperbridgeView = {
       groups: GROUP_CHOICES,
       orders: ORDER_CHOICES,

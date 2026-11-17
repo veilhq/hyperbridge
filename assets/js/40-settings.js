@@ -169,9 +169,120 @@
     });
   }
 
+  var DEFAULT_FIELDS = [
+    { panel: "#defaults-library", key: "library_order", name: "Order", desc: "How entries are sorted.",
+      options: [["newest", "Newest"], ["color", "Color"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"]] },
+    { panel: "#defaults-library", key: "library_group", name: "Group by", desc: "Whether entries are gathered under headings.",
+      options: [["", "None"], ["color", "Color"], ["year", "Year"], ["source", "Source"]] },
+    { panel: "#defaults-library", key: "library_columns", name: "Columns", desc: "Columns added to or taken from what fits the window. Fit uses the window width alone.",
+      options: [[-2, "-2"], [-1, "-1"], [0, "Fit"], [1, "+1"], [2, "+2"]] },
+    { panel: "#defaults-sets", key: "sets_sort", name: "Sort sets", desc: "The order of set cards in the Sets view.",
+      options: [["recent", "Recent"], ["name", "Name"], ["size", "Size"]] },
+    { panel: "#defaults-sets", key: "sets_rail_collapsed", name: "Auto-hide the sidebar", desc: "Start with the set sidebar tucked away until you point at it." },
+    { panel: "#defaults-sets", key: "lightbox_fit", name: "Viewer", desc: "Whether an opened image fills the space or shows whole with margins.",
+      options: [["fill", "Fill"], ["fit", "Whole"]] }
+  ];
+  var defaults = null;
+  var defaultControls = {};
+
+  // Marks the saved value on each default's control.
+  function paintDefaults() {
+    if (!defaults) return;
+    DEFAULT_FIELDS.forEach(function (field) {
+      var control = defaultControls[field.key];
+      var value = defaults[field.key];
+      if (!field.options) { control.setAttribute("aria-checked", value ? "true" : "false"); return; }
+      var index = 0;
+      Array.prototype.forEach.call(control.children, function (button, position) {
+        var on = field.options[position][0] === value;
+        button.setAttribute("aria-pressed", on ? "true" : "false");
+        if (on) index = position;
+      });
+      control.style.setProperty("--segment-index", index);
+    });
+  }
+
+  // Shows the new value at once, stores it, and puts the old value back if the bridge refuses it.
+  function saveDefault(key, value, control) {
+    var bridge = api();
+    if (!bridge || !bridge.set_default || !defaults) return;
+    var previous = defaults[key];
+    defaults[key] = value;
+    paintDefaults();
+    control.setAttribute("aria-busy", "true");
+    function revert(message) {
+      defaults[key] = previous;
+      toast("error", message || "Could not save that default.");
+    }
+    Promise.resolve(bridge.set_default(key, value)).then(function (result) {
+      if (!result || !result.ok) { revert(result && result.error); return; }
+      defaults = result.defaults;
+    }).catch(function () { revert(); }).then(function () {
+      control.removeAttribute("aria-busy");
+      paintDefaults();
+    });
+  }
+
+  // Builds one row per default: a segmented control for a choice, a switch for on or off.
+  function buildDefaults() {
+    DEFAULT_FIELDS.forEach(function (field) {
+      var row = makeEl("div", "settings-source");
+      var text = makeEl("span", "settings-source-text");
+      var name = makeEl("span", "settings-source-name", field.name);
+      name.id = "default-" + field.key + "-name";
+      var desc = makeEl("span", "settings-source-desc", field.desc);
+      desc.id = "default-" + field.key + "-desc";
+      text.appendChild(name);
+      text.appendChild(desc);
+      row.appendChild(text);
+      var control;
+      if (field.options) {
+        control = makeEl("div", "segmented");
+        control.setAttribute("role", "group");
+        control.setAttribute("aria-labelledby", name.id);
+        control.style.setProperty("--segment-count", field.options.length);
+        field.options.forEach(function (option) {
+          var button = makeEl("button", "segmented-option", option[1]);
+          button.type = "button";
+          button.setAttribute("aria-pressed", "false");
+          button.addEventListener("click", function () {
+            if (defaults && defaults[field.key] === option[0]) return;
+            saveDefault(field.key, option[0], control);
+          });
+          control.appendChild(button);
+        });
+      } else {
+        control = makeEl("button", "switch");
+        control.type = "button";
+        control.setAttribute("role", "switch");
+        control.setAttribute("aria-checked", "false");
+        control.setAttribute("aria-labelledby", name.id);
+        control.setAttribute("aria-describedby", desc.id);
+        control.appendChild(makeEl("span", "switch-goo"));
+        control.addEventListener("click", function () {
+          saveDefault(field.key, control.getAttribute("aria-checked") !== "true", control);
+        });
+      }
+      defaultControls[field.key] = control;
+      row.appendChild(control);
+      $(field.panel).appendChild(row);
+    });
+  }
+
+  function loadDefaults() {
+    var bridge = api();
+    if (!bridge || !bridge.get_defaults) return;
+    Promise.resolve(bridge.get_defaults()).then(function (result) {
+      if (!result) return;
+      defaults = result;
+      paintDefaults();
+    }).catch(function () {});
+  }
+
   function load() {
     loadFollowed();
     loadStorage();
+    loadDefaults();
     var bridge = api();
     if (!bridge || !bridge.list_feed_sources) return Promise.resolve();
     return Promise.resolve(bridge.list_feed_sources()).then(function (result) {
@@ -561,6 +672,7 @@
     });
     initShare();
     initStorage();
+    buildDefaults();
     syncPoller = initSync();
     watchSyncActivity();
     library = $("#library");
