@@ -42,6 +42,10 @@ html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon
 .sets-tab-set { flex-direction: column; align-items: stretch; gap: var(--space-1); }
 .sets-tab-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .sets-tab-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sets-tab-set .sets-tab-name {
+  font-family: var(--font-body); font-size: calc(var(--fs-prose-ui) * var(--font-body-scale));
+  font-weight: var(--fw-semibold); letter-spacing: normal;
+}
 .sets-tab-count { margin-left: auto; flex: none; color: var(--text-dim); }
 .sets-tab-desc {
   font-family: var(--font-body); font-size: var(--fs-prose-sm); line-height: var(--lh-ui); letter-spacing: normal;
