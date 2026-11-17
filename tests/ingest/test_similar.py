@@ -30,12 +30,17 @@ class SimilarCase(LibraryCase):
         self.conn.execute("INSERT INTO set_entries (set_id, entry_id, placed_at) VALUES (?, ?, ?)", (set_id, entry, NOW))
         return entry
 
-    def feed_item(self, url, tags=(), collection="", title="", creator="", source_id="arena", state="new"):
+    def feed_item(self, url, tags=(), collection="", title="", creator="", source_id="arena", state="new", page_url=""):
         cursor = self.conn.execute(
             "INSERT INTO feed_items (source_id, url, thumb, width, height, title, creator, page_url, term, created_at,"
-            " source_ref, collection, posted_at, tags, state) VALUES (?, ?, ?, 10, 10, ?, ?, '', '', ?, '', ?, '', ?, ?)",
-            (source_id, url, url, title, creator, NOW, collection, json.dumps(list(tags)), state))
+            " source_ref, collection, posted_at, tags, state) VALUES (?, ?, ?, 10, 10, ?, ?, ?, '', ?, '', ?, '', ?, ?)",
+            (source_id, url, url, title, creator, page_url, NOW, collection, json.dumps(list(tags)), state))
         return cursor.lastrowid
+
+    def block_member(self, set_id, block_id, **fields):
+        entry = self.member(set_id, **fields)
+        self.conn.execute("UPDATE entries SET source_service = 'arena', source_ref = ? WHERE id = ?", (str(block_id), entry))
+        return entry
 
 
 class WordTests(unittest.TestCase):
@@ -261,6 +266,92 @@ class RefreshTests(SimilarCase):
         self.assertEqual((result["added"], result["jobs"], result["enabled"]), (2, 2, ["search", "arena"]))
         self.assertEqual(pulled, ["https://www.are.na/me/chan"])
         self.assertEqual(similar.list_items(self.conn, set_id)["total"], 2)
+
+
+def holder(slug, length, visibility="closed", owner="maker"):
+    return {"slug": slug, "title": slug.replace("-", " ").title(), "visibility": visibility, "counts": {"contents": length},
+            "owner": {"slug": owner}}
+
+
+HOLDERS = {101: [holder("raw-forms", 40), holder("everything", 50000), holder("secret", 30, "private")],
+           102: [holder("raw-forms", 40), holder("slabs", 12)]}
+
+
+def neighbor_fetcher(url, headers=None):
+    if "/connections" in url:
+        block = int(url.split("/blocks/")[1].split("/")[0])
+        return reply({"data": HOLDERS[block], "meta": {"total_pages": 1}})
+    if "/contents" in url:
+        slug = url.split("/channels/")[1].split("/")[0]
+        return reply({"data": [{"id": 900, "title": slug, "image": {"src": f"https://arena.example/{slug}.jpg"}}]})
+    return search_fetcher(url, headers)
+
+
+class NeighborTests(SimilarCase):
+    def setUp(self):
+        super().setUp()
+        self.set_id = self.make_set()
+        self.block_member(self.set_id, 101, tags=["concrete"])
+        self.block_member(self.set_id, 102, tags=["concrete"])
+
+    def shared(self):
+        rows = self.conn.execute("SELECT slug, shared FROM set_neighbors WHERE set_id = ?", (self.set_id,))
+        return {row["slug"]: row["shared"] for row in rows}
+
+    def test_neighbors_count_shared_blocks_and_skip_private_channels(self):
+        self.assertEqual(similar.find_neighbors(self.conn, self.set_id, neighbor_fetcher, random.Random(1)), 0)
+        self.assertEqual(self.shared(), {"raw-forms": 2, "everything": 1, "slabs": 1})
+
+    def test_a_failed_lookup_keeps_earlier_counts(self):
+        similar.find_neighbors(self.conn, self.set_id, neighbor_fetcher, random.Random(1))
+
+        def half(url, headers=None):
+            if "/blocks/102/" in url:
+                raise OSError("down")
+            return neighbor_fetcher(url, headers)
+        self.assertEqual(similar.find_neighbors(self.conn, self.set_id, half, random.Random(1)), 1)
+        self.assertEqual(self.shared()["raw-forms"], 2)
+
+    def test_close_channels_outweigh_giant_catch_alls(self):
+        similar.find_neighbors(self.conn, self.set_id, neighbor_fetcher, random.Random(1))
+        near = similar.neighbor_weights(self.conn, self.set_id)
+        self.assertGreater(near["slabs"][0], near["everything"][0])
+        self.assertGreater(near["raw-forms"][0], near["slabs"][0])
+
+    def test_neighbor_items_are_listed_without_matching_words_and_outrank_word_matches(self):
+        similar.find_neighbors(self.conn, self.set_id, neighbor_fetcher, random.Random(1))
+        words_only = self.feed_item("https://x/words.jpg", tags=["concrete"])
+        near = self.feed_item("https://x/near.jpg", title="untitled", page_url="https://www.are.na/maker/raw-forms")
+        self.feed_item("https://x/far.jpg", title="kittens", page_url="https://www.are.na/maker/elsewhere")
+        items = similar.list_items(self.conn, self.set_id)["items"]
+        self.assertEqual([item["id"] for item in items], [near, words_only])
+        self.assertEqual(items[0]["matched"], ["Raw Forms"])
+
+    def test_a_tagged_set_still_lists_neighbor_items(self):
+        self.conn.execute("UPDATE sets SET tags = '[\"brutalism\"]' WHERE id = ?", (self.set_id,))
+        similar.find_neighbors(self.conn, self.set_id, neighbor_fetcher, random.Random(1))
+        near = self.feed_item("https://x/near.jpg", tags=["kittens"], page_url="https://www.are.na/maker/slabs")
+        self.assertEqual([item["id"] for item in similar.list_items(self.conn, self.set_id)["items"]], [near])
+
+    def test_search_pulls_neighbors_and_one_phrase_from_its_closest_channel(self):
+        result = similar.search(self.conn, self.set_id, neighbor_fetcher, random.Random(1))
+        self.assertEqual(sorted(result["neighbors"]), ["https://www.are.na/maker/everything", "https://www.are.na/maker/raw-forms",
+                                                      "https://www.are.na/maker/slabs"])
+        self.assertEqual((len(result["queries"]), result["jobs"], result["failed"]), (1, 4, 0))
+        urls = {row[0] for row in self.conn.execute("SELECT url FROM feed_items WHERE set_id = ?", (self.set_id,))}
+        self.assertEqual(urls, {f"https://arena.example/{slug}.jpg" for slug in ("everything", "raw-forms", "slabs", "concrete-things")})
+
+    def test_refresh_reports_neighbors(self):
+        result = similar.refresh(self.conn, self.set_id, fetcher=neighbor_fetcher, rng=random.Random(1))
+        self.assertEqual(result["enabled"], ["neighbors", "search"])
+
+
+class QueryTermTests(unittest.TestCase):
+    def test_the_phrase_an_item_was_found_by_counts_less_than_its_own_tags(self):
+        row = {"tags": "[]", "collection": "Brutal Things", "term": "concrete", "creator": "", "title": ""}
+        self.assertEqual(similar._item_terms(row)["tag:concrete"], similar.QUERY_TERM_WEIGHT)
+        row["tags"] = json.dumps(["concrete"])
+        self.assertEqual(similar._item_terms(row)["tag:concrete"], 1.0)
 
 
 if __name__ == "__main__":

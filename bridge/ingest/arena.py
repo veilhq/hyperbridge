@@ -1,4 +1,4 @@
-"""Are.na sampling for the discovery feed: channels, followed channels and users, and channels related through shared blocks."""
+"""Are.na sampling for the discovery feed: channels, followed channels and users, and the channels that hold a given block."""
 
 import json
 import re
@@ -281,6 +281,24 @@ def search_channels(query, fetcher) -> list:
     found.sort(key=lambda item: (-overlap(item), -int(item.get("length") or 0)))
     owners = [((item.get("user") or {}).get("slug") or "channel") for item in found]
     return [f"https://www.are.na/{owner}/{item['slug']}" for owner, item in zip(owners, found)]
+
+
+CONNECTIONS = 50
+
+
+def block_channels(block_id, fetcher) -> list:
+    """Return the public channels that hold one block, each as {slug, url, title, length} (the v3 API, which needs no login)."""
+    data = _json(fetcher, f"{API_V3}/blocks/{int(block_id)}/connections?per={CONNECTIONS}")
+    found = []
+    for item in data.get("data") or []:
+        visibility = str(item.get("visibility") or item.get("status") or "").lower()
+        length = int((item.get("counts") or {}).get("contents") or item.get("length") or 0)
+        if not item.get("slug") or visibility == "private" or length < 2:
+            continue
+        owner = (item.get("owner") or item.get("user") or {}).get("slug") or "channel"
+        found.append({"slug": item["slug"], "url": f"https://www.are.na/{owner}/{item['slug']}",
+                      "title": _clean(item.get("title"), 200), "length": length})
+    return found
 
 
 def pull(url, fetcher, rng) -> list:
