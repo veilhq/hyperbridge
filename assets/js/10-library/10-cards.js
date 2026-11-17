@@ -84,6 +84,7 @@
     reserveSpace(img, item.width, item.height);
     card.appendChild(img);
     if (item.known_entry_id) card.appendChild(makeEl("span", "library-card-flag status-chip status-chip-outlined-accent", "Saved"));
+    if (item.aiLabel) card.appendChild(makeEl("span", "library-card-flag status-chip status-chip-outlined-accent", "AI label")).setAttribute("data-tooltip", item.aiLabel);
     var details = card.appendChild(makeEl("span", "library-card-details"));
     if (item.feedId) {
       if (item.title) details.appendChild(makeEl("span", "library-card-title", item.title));

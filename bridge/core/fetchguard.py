@@ -146,8 +146,8 @@ def _split(url: str):
     return scheme, parts.hostname, port or (443 if scheme == "https" else 80), path
 
 
-def _read_body(reader, max_bytes, deadline) -> bytes:
-    """Stream up to max_bytes from reader, honoring the deadline; raise too_large past the cap."""
+def _read_body(reader, max_bytes, deadline, partial=False) -> bytes:
+    """Stream up to max_bytes from reader, honoring the deadline; past the cap, raise too_large or, when partial, stop there."""
     chunks, total = [], 0
     while True:
         if time.monotonic() > deadline:
@@ -157,6 +157,9 @@ def _read_body(reader, max_bytes, deadline) -> bytes:
             return b"".join(chunks)
         total += len(chunk)
         if total > max_bytes:
+            if partial:
+                chunks.append(chunk[:len(chunk) - (total - max_bytes)])
+                return b"".join(chunks)
             raise FetchError("too_large", f"body exceeds {max_bytes} bytes")
         chunks.append(chunk)
 
@@ -171,8 +174,11 @@ def safe_fetch(
     opener=None,
     user_agent=DEFAULT_UA,
     headers=None,
+    partial=False,
 ) -> FetchResult:
     """GET url over http/https, refusing non-public addresses, and return a FetchResult.
+
+    partial returns the first max_bytes of a larger body instead of raising too_large.
 
     Each hop resolves the host once, requires every address to be public, and connects
     to the first validated IP (pinned). Redirects are re-validated up to max_redirects.
@@ -227,9 +233,9 @@ def safe_fetch(
             if not 200 <= status < 300:
                 raise FetchError("http_status", f"HTTP {status}")
             declared = headers.get("content-length", "")
-            if declared.strip().isdigit() and int(declared) > max_bytes:
+            if not partial and declared.strip().isdigit() and int(declared) > max_bytes:
                 raise FetchError("too_large", f"Content-Length {declared} exceeds {max_bytes}")
-            body = _read_body(reader, max_bytes, deadline)
+            body = _read_body(reader, max_bytes, deadline, partial)
             media = headers.get("content-type", "").split(";", 1)[0].strip().lower()
             return FetchResult(url, current, status, media, body)
         except FetchError:

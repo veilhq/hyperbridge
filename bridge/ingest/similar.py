@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from bridge.ingest import arena
 from bridge.ingest import capture
 from bridge.ingest import feed
+from bridge.ingest import labels
 from bridge.library import sets as set_store
 
 POOL_LIMIT = 5000
@@ -163,7 +164,7 @@ def rank(conn, set_id) -> tuple:
     for tag in set_tags(conn, set_id):
         required |= words(tag) | {_named("tag", tag)}
     rows = conn.execute(
-        "SELECT id, source_id, url, thumb, width, height, title, creator, page_url, term, collection, tags FROM feed_items"
+        "SELECT id, source_id, url, thumb, width, height, title, creator, page_url, term, collection, tags, ai_label FROM feed_items"
         " WHERE state = 'new' AND (set_id IS NULL OR set_id = ?) AND source_id = 'arena'"
         " ORDER BY id DESC LIMIT ?", (int(set_id), POOL_LIMIT)).fetchall()
     followed = {_bare(source["url"]) for source in arena.list_followed(conn)}
@@ -180,16 +181,22 @@ def rank(conn, set_id) -> tuple:
         if not shared or (required and not required & shared.keys()):
             continue
         score = sum(shared.values()) / math.sqrt(len(terms))
-        item = {key: row[key] for key in ("id", "source_id", "url", "thumb", "width", "height", "title", "creator", "page_url")}
+        item = {key: row[key] for key in ("id", "source_id", "url", "thumb", "width", "height", "title", "creator", "page_url", "ai_label")}
         item.update(score=round(score, 4), matched=top_terms(shared, MATCHED_TERMS), **_followable(row, followed))
         scored.append(item)
     scored.sort(key=lambda item: (-item["score"], -item["id"]))
     return scored, wanted
 
 
-def list_items(conn, set_id, offset=0, limit=60) -> dict:
-    """Return a page of unseen feed items ranked by likeness to a set, with the set's leading terms and whether a new search is due."""
+def list_items(conn, set_id, offset=0, limit=60, show_flagged=False) -> dict:
+    """Return a page of unseen feed items ranked by likeness to a set, with the set's leading terms and whether a new search is due.
+
+    Matches carrying an AI label are left out and counted as flagged unless show_flagged is set.
+    """
     scored, wanted = rank(conn, set_id)
+    flagged = sum(1 for item in scored if item["ai_label"])
+    if not show_flagged:
+        scored = [item for item in scored if not item["ai_label"]]
     offset, limit = max(0, int(offset)), max(1, min(int(limit), PAGE_LIMIT))
     newest = conn.execute("SELECT MAX(searched_at) FROM set_searches WHERE set_id = ?", (int(set_id),)).fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > feed.STALE_HOURS * 3600
@@ -197,7 +204,8 @@ def list_items(conn, set_id, offset=0, limit=60) -> dict:
     if own and not stale:
         searched = {phrase.lower() for phrase in _searched(conn, set_id)}
         stale = any(tag.lower() not in searched for tag in own)
-    return {"items": scored[offset:offset + limit], "total": len(scored), "stale": stale, "terms": own or top_terms(wanted)}
+    return {"items": scored[offset:offset + limit], "total": len(scored), "flagged": flagged, "stale": stale,
+            "terms": own or top_terms(wanted)}
 
 
 def _bare(url) -> str:
@@ -291,5 +299,6 @@ def refresh(conn, set_id, fetcher=None, rng=None) -> dict:
         pulled, round_failed, round_jobs = feed.pull_round(source_weights(conn, set_id, followed), fetcher, rng)
         added += feed.store(conn, pulled)
         failed, jobs = failed + round_failed, jobs + round_jobs
-    enabled = (["search"] if searched["queries"] else []) + (["arena"] if followed else [])
+    labels.check_new(conn, fetcher)
+    enabled =(["search"] if searched["queries"] else []) + (["arena"] if followed else [])
     return {"added": added, "failed": failed, "jobs": jobs, "enabled": enabled, "queries": searched["queries"]}

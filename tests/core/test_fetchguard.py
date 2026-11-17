@@ -198,6 +198,13 @@ class SizeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.reason, "too_large")
         self.assertLessEqual(endless.served, 100_000 + 2 * 64 * 1024)
 
+    def test_partial_returns_the_first_bytes(self):
+        endless = Endless()
+        script = Script([(200, {"content-length": "5000000"}, endless)])
+        body = script.fetch("http://example.com/", max_bytes=100_000, partial=True).body
+        self.assertEqual(len(body), 100_000)
+        self.assertLessEqual(endless.served, 100_000 + 2 * 64 * 1024)
+
     def test_content_length_cap_before_reading(self):
         endless = Endless()
         script = Script([(200, {"content-length": "5000"}, endless)])

@@ -340,15 +340,16 @@ class HyperbridgeAPI:
         result = self._feed_call("refresh_feed", lambda conn: feed.refresh(conn, replace=bool(replace)), None)
         return {"ok": False, "error": "Could not refresh the feed."} if result is None else {"ok": True, **result}
 
-    def list_feed(self, offset: int = 0, limit: int = 60) -> dict:
-        """Return unseen discovery feed items and whether a refresh is due."""
-        return self._feed_call("list_feed", lambda conn: feed.list_items(conn, offset, limit),
-                               {"items": [], "total": 0, "stale": False})
+    def list_feed(self, offset: int = 0, limit: int = 60, show_flagged: bool = False) -> dict:
+        """Return unseen discovery feed items, how many were held back for AI labels, and whether a refresh is due."""
+        return self._feed_call("list_feed", lambda conn: feed.list_items(conn, offset, limit, bool(show_flagged)),
+                               {"items": [], "total": 0, "flagged": 0, "stale": False})
 
-    def list_similar(self, set_id: int, offset: int = 0, limit: int = 60) -> dict:
-        """Return unseen feed items ranked by likeness to a set, with the set's leading terms."""
-        return self._feed_call("list_similar", lambda conn: similar.list_items(conn, int(set_id), offset, limit),
-                               {"items": [], "total": 0, "stale": False, "terms": []})
+    def list_similar(self, set_id: int, offset: int = 0, limit: int = 60, show_flagged: bool = False) -> dict:
+        """Return unseen feed items ranked by likeness to a set, with the set's leading terms and the AI-labeled count."""
+        return self._feed_call("list_similar",
+                               lambda conn: similar.list_items(conn, int(set_id), offset, limit, bool(show_flagged)),
+                               {"items": [], "total": 0, "flagged": 0, "stale": False, "terms": []})
 
     def refresh_similar(self, set_id: int) -> dict:
         """Pull new feed images, favoring the followed sources closest to a set."""

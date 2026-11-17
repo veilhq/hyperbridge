@@ -1,10 +1,33 @@
   var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr", pinterest: "Pinterest" };
   // The set ({ id, name }) the feed is narrowed to by Find similar; null for the full Discover feed.
   var feedSet = null;
+  // Whether images carrying an AI label are shown in the feed instead of held back.
+  var feedShowFlagged = false;
 
   function listFeedPage(offset, limit) {
     var bridge = api();
-    return Promise.resolve(feedSet ? bridge.list_similar(feedSet.id, offset, limit) : bridge.list_feed(offset, limit));
+    return Promise.resolve(feedSet ? bridge.list_similar(feedSet.id, offset, limit, feedShowFlagged)
+      : bridge.list_feed(offset, limit, feedShowFlagged));
+  }
+
+  // Says how many feed images are held back for an AI label, with the control that shows or hides them.
+  function paintFlagged() {
+    var count = (candidates && candidates.flagged) || 0;
+    var line = $("#find-flagged");
+    line.hidden = !count && !feedShowFlagged;
+    if (line.hidden) return;
+    $("#find-flagged-text").textContent = feedShowFlagged
+      ? "Showing images labeled as AI-generated. Images with no label are not caught."
+      : count + (count === 1 ? " image" : " images") + " hidden for an AI label. Images with no label are not caught.";
+    var toggle = $("#find-flagged-toggle");
+    toggle.textContent = feedShowFlagged ? "Hide" : "Show";
+    toggle.setAttribute("aria-pressed", feedShowFlagged ? "true" : "false");
+  }
+
+  function toggleFlagged() {
+    if (!candidates || !candidates.feed) return;
+    feedShowFlagged = !feedShowFlagged;
+    reloadFeed();
   }
 
   function pullFeed(replace) {
@@ -22,7 +45,7 @@
   function feedCandidate(item) {
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
       title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, matched: item.matched || null,
-      followUrl: item.follow_url || null, followLabel: item.follow_label || "", known_entry_id: null };
+      followUrl: item.follow_url || null, followLabel: item.follow_label || "", aiLabel: item.ai_label || "", known_entry_id: null };
   }
 
   // Returns the distinct unfollowed Are.na channels ({ url, label }) behind the given candidate indexes.
@@ -84,6 +107,7 @@
     $("#find-head-desc").textContent = feedSet
       ? noun + " like this set" + terms + ". Select the ones to add to it or dismiss."
       : noun + " from your sources. Select the ones to save or dismiss.";
+    paintFlagged();
   }
 
   // Lists the best-ranked set matches not on screen yet; a new search can rank finds above cards already shown.
@@ -129,6 +153,7 @@
       if (!result.items.length) current.finished = true;
       current.loaded += result.items.length;
       current.total = result.total;
+      current.flagged = result.flagged || 0;
       feedCount();
       return preloadFeed(result.items);
     }).then(function (items) {
@@ -177,7 +202,7 @@
 
   // Paints the feed's unseen images in the grid; choosing some saves or dismisses them.
   function showFeed(result, note, quiet) {
-    candidates = { feed: true, page_url: "", total: result.total, terms: result.terms || [], loaded: result.loaded || result.items.length, busy: false, finished: false, candidates: result.items.map(feedCandidate) };
+    candidates = { feed: true, page_url: "", total: result.total, flagged: result.flagged || 0, terms: result.terms || [], loaded: result.loaded || result.items.length, busy: false, finished: false, candidates: result.items.map(feedCandidate) };
     grid.removeAttribute("aria-busy");
     clearSelection();
     resetColumns();
@@ -206,6 +231,7 @@
     clearSelection();
     feedMessage("");
     $("#library-meta").hidden = true;
+    $("#find-flagged").hidden = true;
     resetColumns();
     for (var i = 0; i < 12; i++) {
       var tile = makeEl("div", "library-card loading-skeleton");
@@ -248,7 +274,7 @@
       if (!result || ticket !== findTicket) return null;
       return preloadFeed(result.items).then(function (items) {
         if (ticket !== findTicket) return;
-        showFeed({ items: items, total: result.total, terms: result.terms, loaded: result.items.length },
+        showFeed({ items: items, total: result.total, flagged: result.flagged, terms: result.terms, loaded: result.items.length },
           sourcesOff);
       });
     }).catch(function () {
@@ -297,7 +323,7 @@
       return preloadFeed(result.items).then(function (items) {
         if (ticket !== findTicket || !candidates || !candidates.feed) return;
         flip(function () {
-          showFeed({ items: items, total: result.total, terms: result.terms, loaded: result.items.length }, "", true);
+          showFeed({ items: items, total: result.total, flagged: result.flagged, terms: result.terms, loaded: result.items.length }, "", true);
           host.scrollTop = top;
         });
       });
@@ -308,6 +334,8 @@
     if (!candidates) return;
     candidates = null;
     feedSet = null;
+    feedShowFlagged = false;
+    $("#find-flagged").hidden = true;
     syncMore();
     findTicket++;
     $("#dock-find").hidden = !state.setId;

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from bridge.ingest import arena
 from bridge.ingest import capture
+from bridge.ingest import labels
 from bridge.ingest import pinterest
 from bridge.library import library
 from bridge.library import sets
@@ -91,6 +92,7 @@ def refresh(conn, fetcher=None, rng=None, replace=False) -> dict:
         added += store(conn, pulled)
         if added or not followed or round_failed == round_jobs:
             break
+    labels.check_new(conn, fetcher)
     return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else []}
 
 
@@ -118,16 +120,22 @@ def store(conn, items, set_id=None) -> int:
     return added
 
 
-def list_items(conn, offset=0, limit=60) -> dict:
-    """Return unseen feed items, oldest first so later pulls append, with whether the feed is due a refresh."""
-    total = conn.execute("SELECT COUNT(*) FROM feed_items WHERE state = 'new' AND set_id IS NULL AND source_id IN ('arena', 'tumblr', 'pinterest')").fetchone()[0]
+def list_items(conn, offset=0, limit=60, show_flagged=False) -> dict:
+    """Return unseen feed items, oldest first so later pulls append, with whether the feed is due a refresh.
+
+    Items carrying an AI label are left out and counted as flagged unless show_flagged is set.
+    """
+    unseen = "state = 'new' AND set_id IS NULL AND source_id IN ('arena', 'tumblr', 'pinterest')"
+    shown = unseen if show_flagged else unseen + " AND ai_label = ''"
+    total = conn.execute(f"SELECT COUNT(*) FROM feed_items WHERE {shown}").fetchone()[0]
+    flagged = conn.execute(f"SELECT COUNT(*) FROM feed_items WHERE {unseen} AND ai_label != ''").fetchone()[0]
     rows = conn.execute(
-        "SELECT id, source_id, url, thumb, width, height, title, creator, page_url FROM feed_items"
-        " WHERE state = 'new' AND set_id IS NULL AND source_id IN ('arena', 'tumblr', 'pinterest') ORDER BY id LIMIT ? OFFSET ?",
+        "SELECT id, source_id, url, thumb, width, height, title, creator, page_url, ai_label FROM feed_items"
+        f" WHERE {shown} ORDER BY id LIMIT ? OFFSET ?",
         (max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
     newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > STALE_HOURS * 3600
-    return {"items": [dict(row) for row in rows], "total": total, "stale": stale}
+    return {"items": [dict(row) for row in rows], "total": total, "flagged": flagged, "stale": stale}
 
 
 def dismiss(conn, ids) -> int:
