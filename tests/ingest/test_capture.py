@@ -604,6 +604,77 @@ class InstagramTests(unittest.TestCase):
         self.assertEqual(capture.instagram_media(page), ["https://cdn.example/full.jpg?a=1&b=2"])
 
 
+
+class PostLinkTests(LibraryCase):
+    X_DATA = {"text": "Night signage #Type", "created_at": "2026-03-04T10:00:00.000Z", "user": {"screen_name": "ada"},
+              "entities": {"hashtags": [{"text": "Type"}]},
+              "mediaDetails": [{"media_url_https": "https://pbs.twimg.com/media/A1.jpg"},
+                               {"media_url_https": "https://pbs.twimg.com/media/B2.jpg"}]}
+    SYNDICATION = "https://cdn.syndication.twimg.com/tweet-result?id=42&token=a"
+
+    def run_job(self, url, responses):
+        result = capture.add_link(self.conn, url)
+        job = self.conn.execute("SELECT id FROM jobs WHERE entry_id = ?", (result["entry_id"],)).fetchone()
+        fetcher = FakeFetcher(responses)
+        capture.run_capture(self.conn, job["id"], fetcher)
+        return self.conn.execute("SELECT * FROM entries WHERE id = ?", (result["entry_id"],)).fetchone(), fetcher
+
+    def test_fixer_and_original_links_share_one_canonical_key(self):
+        forms = ["https://x.com/Ada/status/42?s=20&t=abc", "https://twitter.com/ada/status/42/photo/1",
+                 "https://vxtwitter.com/ada/status/42", "https://d.fxtwitter.com/ada/status/42", "https://fixupx.com/ada/status/42"]
+        self.assertEqual({capture.normalize_url(url) for url in forms}, {"https://x.com/ada/status/42"})
+        forms = ["https://www.instagram.com/p/Abc_1/?igsh=xyz", "https://instagram.com/studio/p/Abc_1/",
+                 "https://ddinstagram.com/p/Abc_1/", "https://g.ddinstagram.com/p/Abc_1"]
+        self.assertEqual({capture.normalize_url(url) for url in forms}, {"https://www.instagram.com/p/Abc_1"})
+
+    def test_other_pages_on_those_hosts_keep_the_generic_key(self):
+        self.assertEqual(capture.normalize_url("https://x.com/ada/"), "https://x.com/ada")
+        self.assertEqual(capture.canonical_post_url("https://help.instagram.com/about/"), "")
+        self.assertEqual(capture.canonical_post_url("https://notx.com/ada/status/42"), "")
+
+    def test_fixer_link_saves_the_original_post_and_matches_it_later(self):
+        first = capture.add_link(self.conn, "https://vxtwitter.com/ada/status/42")
+        entry = self.conn.execute("SELECT source_url, domain FROM entries WHERE id = ?", (first["entry_id"],)).fetchone()
+        self.assertEqual(tuple(entry), ("https://x.com/ada/status/42", "x.com"))
+        second = capture.add_link(self.conn, "https://x.com/ada/status/42?s=20")
+        self.assertEqual((second["entry_id"], second["already_captured"]), (first["entry_id"], True))
+
+    def test_x_post_captures_details_and_every_image_without_the_page(self):
+        entry, fetcher = self.run_job("https://fxtwitter.com/ada/status/42", {
+            self.SYNDICATION: reply(self.SYNDICATION, json.dumps(self.X_DATA).encode(), "application/json"),
+            "https://pbs.twimg.com/media/A1.jpg": reply("", png_bytes(60, 40), "image/jpeg"),
+            "https://pbs.twimg.com/media/B2.jpg": reply("", png_bytes(40, 60), "image/jpeg"),
+        })
+        self.assertEqual(
+            (entry["state"], entry["creator"], entry["description"], entry["publisher"], entry["posted_at"]),
+            ("captured", "ada", "Night signage Type", "X", "2026-03-04"))
+        self.assertEqual((entry["source_service"], entry["source_ref"], entry["collection"]), ("x", "42", "ada"))
+        self.assertNotIn("https://x.com/ada/status/42", fetcher.calls)
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM assets WHERE entry_id = ? AND kind = 'original'", (entry["id"],)).fetchone()[0], 2)
+
+    def test_x_post_falls_back_to_the_page_when_the_embed_endpoint_fails(self):
+        entry, fetcher = self.run_job("https://x.com/ada/status/42", {
+            self.SYNDICATION: OSError("HTTP 404"),
+            "https://x.com/ada/status/42": reply("https://x.com/ada/status/42", SAMPLE_HTML, "text/html"),
+            "https://x.com/cover.png": reply("", png_bytes(), "image/png"),
+        })
+        self.assertEqual((entry["state"], entry["title"], entry["source_service"]), ("captured", "OG Title", ""))
+
+    def test_instagram_post_captures_owner_and_caption(self):
+        media = {"shortcode": "Abc_1", "display_url": "https://cdn.example/ig.jpg", "owner": {"username": "studio"},
+                 "edge_media_to_caption": {"edges": [{"node": {"text": "New sign #Wayfinding"}}]}}
+        inner = json.dumps({"gql_data": {"shortcode_media": media}})
+        embed = ('<script>{"contextJSON":' + json.dumps(inner) + "}</script>").encode()
+        entry, _ = self.run_job("https://ddinstagram.com/p/Abc_1/", {
+            "https://www.instagram.com/p/Abc_1": reply("https://www.instagram.com/p/Abc_1", b"<title>Instagram</title>", "text/html"),
+            "https://www.instagram.com/p/Abc_1/embed/": reply("", embed, "text/html"),
+            "https://cdn.example/ig.jpg": reply("", png_bytes(), "image/jpeg"),
+        })
+        self.assertEqual(
+            (entry["state"], entry["creator"], entry["description"], entry["publisher"], entry["source_service"]),
+            ("captured", "studio", "New sign Wayfinding", "Instagram", "instagram"))
+
 class KeepDetailsTests(LibraryCase):
     def test_title_and_creator_from_a_discovery_card_survive_capture(self):
         url = "https://example.com/files/IMG_8841.png"

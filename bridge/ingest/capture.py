@@ -41,12 +41,38 @@ def _timestamp(now=None) -> str:
     return (now or datetime.now()).isoformat(timespec="seconds")
 
 
+_X_HOSTS = ("x.com", "twitter.com", "fxtwitter.com", "vxtwitter.com", "fixupx.com", "fixvx.com", "twittpr.com")
+_INSTAGRAM_HOSTS = ("instagram.com", "ddinstagram.com", "instagramez.com", "kkinstagram.com")
+_X_POST_PATH = re.compile(r"^/([A-Za-z0-9_]+)/status/(\d+)(?:/|$)")
+_INSTAGRAM_POST_PATH = re.compile(r"^/(?:[^/]+/)?(p|reel|tv)/([A-Za-z0-9_-]+)(?:/|$)")
+
+
+def _on_host(host, domains) -> bool:
+    return any(host == domain or host.endswith("." + domain) for domain in domains)
+
+
+def canonical_post_url(url) -> str:
+    """Return the original post URL for an X or Instagram post link, embed-fixer links included, or "" for anything else."""
+    parts = urlsplit(str(url or "").strip())
+    host = (parts.hostname or "").lower()
+    if _on_host(host, _X_HOSTS):
+        match = _X_POST_PATH.match(parts.path)
+        return "https://x.com/%s/status/%s" % (match.group(1).lower(), match.group(2)) if match else ""
+    if _on_host(host, _INSTAGRAM_HOSTS):
+        match = _INSTAGRAM_POST_PATH.match(parts.path)
+        return "https://www.instagram.com/%s/%s" % match.groups() if match else ""
+    return ""
+
+
 def normalize_url(url) -> str:
     """Return a canonical form of an http(s) URL used as the dedupe key."""
     parts = urlsplit(str(url).strip())
     scheme = parts.scheme.lower()
     if scheme not in ("http", "https") or not parts.hostname:
         raise ValueError(f"Only http and https URLs can be captured: {url!r}")
+    post = canonical_post_url(url)
+    if post:
+        return post
     host = parts.hostname.lower()
     if ":" in host:
         host = f"[{host}]"
@@ -95,7 +121,7 @@ def add_link(conn, url, now=None) -> dict:
         cursor = conn.execute(
             "INSERT INTO entries (uid, source_url, source_key, domain, state, created_at, updated_at)"
             " VALUES (?, ?, ?, ?, 'pending', ?, ?)",
-            (storage.new_uid(), str(url).strip(), key, domain, stamp, stamp),
+            (storage.new_uid(), canonical_post_url(url) or str(url).strip(), key, domain, stamp, stamp),
         )
         entry_id = cursor.lastrowid
         conn.execute(
@@ -712,26 +738,49 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
 
     Returns the page's keyword tags for the caller to add alongside the source tags.
     """
+    from bridge.ingest import social
+
     url = entry["source_key"] or entry["source_url"]
-    response = fetcher(url)
-    if _is_image(response):
-        response = _fetch_full_size(fetcher, url, response)
-        name = unquote(urlsplit(response.final_url or url).path.rsplit("/", 1)[-1])
-        embedded = {key: value for key, value in image_info(response.body).items() if not entry[key]}
-        _apply_metadata(conn, entry, {"title": readable_name(name), **embedded}, _timestamp())
-        _store_image(conn, entry, response.body)
-        return []
-    base = getattr(response, "final_url", "") or url
-    values = extract_metadata(response.body, base)
-    embed_url = instagram_embed_url(base)
-    if embed_url:
+    post = None
+    post_id = social.x_post_id(url)
+    if post_id:
         try:
-            posted = instagram_media(fetcher(embed_url).body)
-        except Exception:  # noqa: BLE001 - the page's own preview image still applies
-            posted = []
-        if posted:
-            values["image_urls"] = posted[:MAX_IMAGES]
-            values["image_url"] = posted[0]
+            post = social.x_post(fetcher, post_id)
+        except Exception:  # noqa: BLE001 - the page reader and screenshot still apply
+            post = None
+    if post:
+        base = url
+        values = extract_metadata(b"", url)
+        values["image_urls"] = post["images"][:MAX_IMAGES]
+        values["image_url"] = values["image_urls"][0] if values["image_urls"] else ""
+    else:
+        response = fetcher(url)
+        if _is_image(response):
+            response = _fetch_full_size(fetcher, url, response)
+            name = unquote(urlsplit(response.final_url or url).path.rsplit("/", 1)[-1])
+            embedded = {key: value for key, value in image_info(response.body).items() if not entry[key]}
+            _apply_metadata(conn, entry, {"title": readable_name(name), **embedded}, _timestamp())
+            _store_image(conn, entry, response.body)
+            return []
+        base = getattr(response, "final_url", "") or url
+        values = extract_metadata(response.body, base)
+        embed_url = instagram_embed_url(base)
+        if embed_url:
+            try:
+                embed = fetcher(embed_url).body
+                posted = instagram_media(embed)
+            except Exception:  # noqa: BLE001 - the page's own preview image still applies
+                embed, posted = b"", []
+            if posted:
+                values["image_urls"] = posted[:MAX_IMAGES]
+                values["image_url"] = posted[0]
+            try:
+                post = social.instagram_post(embed)
+            except Exception:  # noqa: BLE001 - the startup backfill retries the details
+                post = None
+    if post:
+        values.update({key: value for key, value in social.entry_fields(post).items() if value})
+        social.mark_source(conn, entry["id"], post)
     _apply_metadata(conn, entry, values, _timestamp())
     if values["posted_at"] and not entry["posted_at"]:
         conn.execute("UPDATE entries SET posted_at = ? WHERE id = ?", (values["posted_at"], entry["id"]))
