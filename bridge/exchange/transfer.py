@@ -40,11 +40,11 @@ def _entry_record(conn, row) -> dict:
     ]
     record["assets"] = []
     for asset in conn.execute(
-        "SELECT position, kind, path, width, height, bytes FROM assets WHERE entry_id = ? ORDER BY position, kind",
+        "SELECT position, kind, path, width, height, bytes, source_url FROM assets WHERE entry_id = ? ORDER BY position, kind",
         (row["id"],),
     ):
         if (db.data_dir() / asset["path"]).is_file():
-            record["assets"].append({name: asset[name] for name in ("position", "kind", "path", "width", "height", "bytes")})
+            record["assets"].append({name: asset[name] for name in ("position", "kind", "path", "width", "height", "bytes", "source_url")})
     return record
 
 
@@ -146,7 +146,8 @@ def _copy_assets(archive, record: dict) -> list[dict]:
                 shutil.copyfileobj(source, out)
             written.append(target)
             rows.append({"position": int(match.group(3)), "kind": match.group(2), "path": storage.relative_path(target),
-                         "width": asset.get("width"), "height": asset.get("height"), "bytes": info.file_size})
+                         "width": asset.get("width"), "height": asset.get("height"), "bytes": info.file_size,
+                         "source_url": str(asset.get("source_url") or "")[:2000]})
     except Exception:
         for path in written:
             path.unlink(missing_ok=True)
@@ -200,8 +201,8 @@ def _insert_entry(conn, record: dict, rows: list[dict]) -> int:
         conn.execute("INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?, ?)", (entry_id, tag_id))
     for row in rows:
         conn.execute(
-            "INSERT INTO assets (entry_id, position, kind, path, width, height, bytes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (entry_id, row["position"], row["kind"], row["path"], row["width"], row["height"], row["bytes"]),
+            "INSERT INTO assets (entry_id, position, kind, path, width, height, bytes, source_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (entry_id, row["position"], row["kind"], row["path"], row["width"], row["height"], row["bytes"], row["source_url"]),
         )
     return entry_id
 

@@ -17,6 +17,7 @@ def local_steps(conn) -> list:
         ("file name titles", lambda: capture.fix_file_name_titles(conn)),
         ("swatches", lambda: swatches.backfill(conn)),
         ("fingerprints", lambda: fingerprints.backfill(conn)),
+        ("image facts", lambda: capture.backfill_image_facts(conn)),
         ("animated thumbnails", lambda: capture.refresh_animated_thumbnails(conn)),
     ]
 

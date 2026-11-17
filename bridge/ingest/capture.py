@@ -569,6 +569,40 @@ def _downscale(body: bytes, image_format: str, width: int, height: int):
     return (smaller, image.width, image.height) if len(smaller) < len(body) else (body, width, height)
 
 
+def image_facts(body: bytes) -> tuple:
+    """Return (frame count, total animation milliseconds or None for a still, 1 when the first frame has see-through pixels else 0)."""
+    from PIL import Image
+
+    with Image.open(io.BytesIO(body)) as image:
+        frames = max(1, int(getattr(image, "n_frames", 1) or 1))
+        duration = None
+        if frames > 1:
+            duration = 0
+            for index in range(frames):
+                image.seek(index)
+                duration += int(image.info.get("duration", 0) or 0)
+            image.seek(0)
+        alpha = 0
+        if "A" in image.getbands() or "transparency" in image.info:
+            alpha = int(image.convert("RGBA").getchannel("A").getextrema()[0] < 255)
+    return frames, duration, alpha
+
+
+def backfill_image_facts(conn) -> int:
+    """Record image facts for stored originals that have none yet; return how many were filled. Missing files are retried next time."""
+    rows = conn.execute("SELECT id, path FROM assets WHERE kind = 'original' AND frames IS NULL").fetchall()
+    filled = 0
+    for row in rows:
+        try:
+            facts = image_facts((db.data_dir() / row["path"]).read_bytes())
+        except Exception:  # noqa: BLE001 - an unreadable file is retried on a later run
+            continue
+        conn.execute("UPDATE assets SET frames = ?, duration_ms = ?, has_alpha = ? WHERE id = ?", (*facts, row["id"]))
+        filled += 1
+    conn.commit()
+    return filled
+
+
 def _write_thumbnail(body: bytes, target_dir_uid: str):
     """Write a thumbnail (webp, else jpeg) and return (path, width, height)."""
     from PIL import Image
@@ -663,8 +697,8 @@ def refresh_animated_thumbnails(conn) -> int:
     return changed
 
 
-def _store_image(conn, entry, body: bytes, position: int = 0) -> None:
-    """Validate an image and store it at a position; position 0 also gets the grid thumbnail."""
+def _store_image(conn, entry, body: bytes, position: int = 0, source_url: str = "") -> None:
+    """Validate an image and store it at a position with the URL it came from; position 0 also gets the grid thumbnail."""
     image_format, width, height = _open_image(body)
     if prefs.get("downscale_originals"):
         body, width, height = _downscale(body, image_format, width, height)
@@ -680,16 +714,16 @@ def _store_image(conn, entry, body: bytes, position: int = 0) -> None:
             stale.unlink(missing_ok=True)
     original = storage.asset_path(uid, "original", position, _FORMAT_SUFFIX[image_format])
     original.write_bytes(body)
-    rows = [("original", original, width, height, len(body), *fingerprints.fingerprint(body))]
+    rows = [("original", original, width, height, len(body), *fingerprints.fingerprint(body), source_url, *image_facts(body))]
     if position == 0:
         thumb, thumb_width, thumb_height = _write_thumbnail(body, uid)
         swatches.store(conn, entry["id"], body)
-        rows.append(("thumbnail", thumb, thumb_width, thumb_height, thumb.stat().st_size, None, None))
-    for kind, path, row_width, row_height, size, digest, visual in rows:
+        rows.append(("thumbnail", thumb, thumb_width, thumb_height, thumb.stat().st_size, None, None, "", None, None, None))
+    for kind, path, row_width, row_height, size, *details in rows:
         conn.execute(
-            "INSERT INTO assets (entry_id, position, kind, path, width, height, bytes, sha256, dhash)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (entry["id"], position, kind, storage.relative_path(path), row_width, row_height, size, digest, visual),
+            "INSERT INTO assets (entry_id, position, kind, path, width, height, bytes, sha256, dhash, source_url, frames, duration_ms, has_alpha)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (entry["id"], position, kind, storage.relative_path(path), row_width, row_height, size, *details),
         )
 
 
@@ -760,7 +794,7 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
             name = unquote(urlsplit(response.final_url or url).path.rsplit("/", 1)[-1])
             embedded = {key: value for key, value in image_info(response.body).items() if not entry[key]}
             _apply_metadata(conn, entry, {"title": readable_name(name), **embedded}, _timestamp())
-            _store_image(conn, entry, response.body)
+            _store_image(conn, entry, response.body, 0, response.final_url or url)
             return []
         base = getattr(response, "final_url", "") or url
         values = extract_metadata(response.body, base)
@@ -795,7 +829,7 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
             if digest in fetched:
                 continue
             fetched.add(digest)
-            _store_image(conn, entry, image.body, stored)
+            _store_image(conn, entry, image.body, stored, getattr(image, "final_url", "") or image_url)
             if not stored:
                 gaps = {key: value for key, value in image_info(image.body).items() if not values.get(key)}
                 _apply_metadata(conn, entry, gaps, _timestamp())

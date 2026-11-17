@@ -558,6 +558,61 @@ class WorkerTests(LibraryCase):
         self.assertEqual(self.conn.execute("SELECT state FROM jobs").fetchone()[0], "done")
 
 
+
+class AssetDetailsTests(LibraryCase):
+    def originals(self, entry_id):
+        return self.conn.execute(
+            "SELECT position, source_url, frames, duration_ms, has_alpha FROM assets"
+            " WHERE entry_id = ? AND kind = 'original' ORDER BY position", (entry_id,)).fetchall()
+
+    def run_job(self, url, responses):
+        result = capture.add_link(self.conn, url)
+        job = self.conn.execute("SELECT id FROM jobs WHERE entry_id = ?", (result["entry_id"],)).fetchone()
+        capture.run_capture(self.conn, job["id"], FakeFetcher(responses))
+        return result["entry_id"]
+
+    def test_facts_tell_stills_animations_and_transparency_apart(self):
+        from PIL import Image
+
+        self.assertEqual(capture.image_facts(png_bytes()), (1, None, 0))
+        self.assertEqual(capture.image_facts(animated_gif_bytes((20, 10))), (3, 240, 0))
+        clear = io.BytesIO()
+        Image.new("RGBA", (8, 8), (255, 0, 0, 0)).save(clear, "PNG")
+        self.assertEqual(capture.image_facts(clear.getvalue()), (1, None, 1))
+        self.assertEqual(capture.image_facts(png_bytes(mode="RGBA")), (1, None, 0))
+
+    def test_page_images_keep_the_url_each_was_fetched_from(self):
+        page = (b'<meta property="og:image" content="https://cdn.example/1.png">'
+                b'<meta property="og:image" content="https://cdn.example/2.png">')
+        entry_id = self.run_job(PAGE_URL, {
+            PAGE_URL: reply(PAGE_URL, page, "text/html"),
+            "https://cdn.example/1.png": reply("https://cdn.example/final-1.png", png_bytes(), "image/png"),
+            "https://cdn.example/2.png": reply("", png_bytes(30, 30), "image/png"),
+        })
+        self.assertEqual([tuple(row) for row in self.originals(entry_id)],
+                         [(0, "https://cdn.example/final-1.png", 1, None, 0), (1, "https://cdn.example/2.png", 1, None, 0)])
+
+    def test_direct_image_links_keep_the_full_size_url(self):
+        small = "https://pbs.twimg.com/media/A1.jpg?name=small"
+        large = "https://pbs.twimg.com/media/A1.jpg?name=orig"
+        entry_id = self.run_job(small, {
+            small: reply(small, png_bytes(), "image/jpeg"),
+            large: reply(large, png_bytes(200, 100), "image/jpeg"),
+        })
+        self.assertEqual(self.originals(entry_id)[0]["source_url"], large)
+
+    def test_pasted_images_have_no_source_url_but_get_facts(self):
+        entry_id = capture.add_image(self.conn, animated_gif_bytes((20, 10)), "spin.gif")["entry_id"]
+        self.assertEqual(tuple(self.originals(entry_id)[0]), (0, "", 3, 240, 0))
+
+    def test_backfill_fills_facts_once_and_skips_missing_files(self):
+        entry_id = capture.add_image(self.conn, png_bytes())["entry_id"]
+        self.conn.execute("UPDATE assets SET frames = NULL, duration_ms = NULL, has_alpha = NULL WHERE entry_id = ?", (entry_id,))
+        self.conn.execute("INSERT INTO assets (entry_id, position, kind, path) VALUES (?, 1, 'original', 'assets/zz/missing.png')", (entry_id,))
+        self.assertEqual(capture.backfill_image_facts(self.conn), 1)
+        self.assertEqual(tuple(self.originals(entry_id)[0])[2:], (1, None, 0))
+        self.assertEqual(capture.backfill_image_facts(self.conn), 0)
+
 if __name__ == "__main__":
     unittest.main()
 

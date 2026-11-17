@@ -45,8 +45,8 @@ class TransferCase(unittest.TestCase):
             path = storage.asset_path(uid, "original", 0, "png")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"image-" + title.encode())
-            conn.execute("INSERT INTO assets (entry_id, position, kind, path, width, height, bytes) VALUES (?, 0, 'original', ?, 4, 3, 10)",
-                         (entry_id, storage.relative_path(path)))
+            conn.execute("INSERT INTO assets (entry_id, position, kind, path, width, height, bytes, source_url)"
+                         " VALUES (?, 0, 'original', ?, 4, 3, 10, ?)", (entry_id, storage.relative_path(path), f"https://cdn.example/{title}.png"))
             conn.execute("INSERT INTO tags (name) VALUES (?)", (f"tag{index}",))
             conn.execute("INSERT INTO entry_tags (entry_id, tag_id) VALUES (?, ?)", (entry_id, index + 1))
         conn.execute("INSERT INTO entries (uid, state, created_at, updated_at) VALUES (?, 'pending', ?, ?)", (storage.new_uid(), NOW, NOW))
@@ -73,8 +73,9 @@ class ExportImportTests(TransferCase):
         self.assertEqual((result["added"], result["skipped"], result["sets"]), (2, 0, 1))
         row = conn.execute("SELECT id, title, swatches FROM entries WHERE uid = ?", (uids[0],)).fetchone()
         self.assertEqual((row["title"], row["swatches"]), ("First", '["#ff0000"]'))
-        asset = conn.execute("SELECT path FROM assets WHERE entry_id = ?", (row["id"],)).fetchone()
+        asset = conn.execute("SELECT path, source_url FROM assets WHERE entry_id = ?", (row["id"],)).fetchone()
         self.assertEqual((self.main / asset["path"]).read_bytes(), b"image-First")
+        self.assertEqual(asset["source_url"], "https://cdn.example/First.png")
         self.assertEqual(conn.execute("SELECT t.name FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE et.entry_id = ?", (row["id"],)).fetchone()[0], "tag0")
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM set_entries").fetchone()[0], 1)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM followed_sources").fetchone()[0], 1)
