@@ -12,7 +12,7 @@
 .sets-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
 .sets-list::-webkit-scrollbar { display: none; }
 /* The app mark heads the sidebar at its right edge, inset to match the tabs below it. */
-.sets-rail-mark { flex: none; width: auto; height: var(--icon-xl); margin: 0 var(--space-3); align-self: flex-end; color: var(--text-muted); }
+.sets-rail-mark { flex: none; width: auto; height: var(--icon-xl); margin: 0 var(--space-3) calc(var(--space-4) * -1); align-self: flex-end; color: var(--text-muted); }
 .sets-rail-tools { display: flex; align-items: center; gap: var(--space-1); flex: none; }
 .sets-rail-tools .sets-collapse { margin-left: auto; }
 .sets-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
