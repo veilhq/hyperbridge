@@ -36,9 +36,12 @@
     columnShift = next - fit;
     try { localStorage.setItem("hyperbridge-columns", String(columnShift)); } catch (err) { /* ignore */ }
     zoomAnchor = pickAnchor();
-    document.dispatchEvent(new CustomEvent("hyperbridge:relayout"));
-    if (state.group) flip(function () { grid.style.columns = String(next); holdAnchor(); });
-    else relayoutColumns();
+    if (state.group) {
+      document.dispatchEvent(new CustomEvent("hyperbridge:relayout"));
+      flip(function () { grid.style.columns = String(next); holdAnchor(); });
+    } else {
+      relayoutColumns(next);
+    }
     zoomAnchor = null;
   }
 
@@ -65,11 +68,11 @@
     zoomAnchor = null;
   }
 
-  // Empties the grid and sets up fixed columns for the feed.
-  function resetColumns() {
+  // Empties the grid and sets up fixed columns, the given count or what fits now.
+  function resetColumns(count) {
     grid.textContent = "";
     grid.setAttribute("data-columns", "true");
-    for (var i = 0, count = columnCount(); i < count; i++) grid.appendChild(makeEl("div", "library-grid-column"));
+    for (var i = 0, total = count || columnCount(); i < total; i++) grid.appendChild(makeEl("div", "library-grid-column"));
   }
 
   // Adds an element to the shortest column, at its top when asked.
@@ -127,11 +130,13 @@
     });
   }
 
-  // Re-deals the cards into the right number of columns after the window changes width.
-  function relayoutColumns() {
+  // Re-deals the cards into the given number of columns, or what fits after the window changes width.
+  // A zoom passes its count so a layout shift during the re-deal cannot cancel it.
+  function relayoutColumns(count) {
     if (!grid.hasAttribute("data-columns") || grid.querySelector(".loading-skeleton")) return;
     if (candidates && (!candidates.feed || candidates.busy)) return;
-    if (columnCount() === grid.querySelectorAll(".library-grid-column").length) return;
+    var want = typeof count === "number" ? count : columnCount();
+    if (want === grid.querySelectorAll(".library-grid-column").length) return;
     document.dispatchEvent(new CustomEvent("hyperbridge:relayout"));
     var cards = Array.prototype.slice.call(grid.querySelectorAll(".library-card"));
     var order = {};
@@ -141,7 +146,7 @@
       return candidates ? Number(first) - Number(second) : order[first] - order[second];
     });
     flip(function () {
-      resetColumns();
+      resetColumns(want);
       cards.forEach(function (card) { placeInColumn(card); });
       holdAnchor();
     });
