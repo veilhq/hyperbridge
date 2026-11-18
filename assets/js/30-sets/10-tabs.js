@@ -30,7 +30,7 @@ function renderTabs() {
   markTab($("#sets-latest"), feedOpen === "latest" && !browsing);
   markTab($("#sets-all"), selectedId === null && !feedOpen && !browsing);
   markTab($("#sets-browse"), browsing);
-  labelView($("#sets-browse"), "Sets", sets.length);
+  $("#sets-count").textContent = sets.length;
 }
 
 // Shows the open set's title, description, size, tags and pin at the top of the library.
@@ -139,14 +139,11 @@ function openDiscover() { openFeedView("discover"); }
 
 function openLatest() { openFeedView("latest"); }
 
-// Shows how many Latest images are new since the last visit as a badge on its icon; nothing when there are none.
+// Shows how many Latest images are new since the last visit on its tab; nothing when there are none.
 function paintLatestCount(count) {
   var badge = $("#latest-count");
   badge.textContent = count > 0 ? (count > 99 ? "99+" : String(count)) : "";
   badge.hidden = !(count > 0);
-  var label = count > 0 ? "Latest - " + count + " new" : "Latest";
-  $("#sets-latest").setAttribute("aria-label", label);
-  $("#sets-latest").setAttribute("data-tooltip", label);
 }
 
 // Checks the next batch of followed sources for new posts, then updates the Latest tab's count.

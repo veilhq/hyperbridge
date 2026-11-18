@@ -11,14 +11,8 @@
 .sets-stack { flex: 1 1 auto; min-height: 0; }
 .sets-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
 .sets-list::-webkit-scrollbar { display: none; }
-/* The app mark sits at the top right; the fixed views split the full sidebar width into equal cells below it. */
-.sets-rail-head { display: flex; flex-direction: column; gap: var(--space-2); flex: none; margin-bottom: var(--space-3); }
-.sets-rail-mark { flex: none; width: auto; height: var(--icon-xl); margin-right: var(--space-3); align-self: flex-end; color: var(--text-muted); }
-.sets-views { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-1); }
-.sets-view { position: relative; width: auto; }
-.sets-view.content-card-active { color: var(--selected); background: var(--selected-wash); }
-.sets-view-fresh { position: absolute; top: 0; left: calc(50% + var(--icon-md) / 2); line-height: var(--lh-tight); color: var(--live); }
-.sets-view-fresh[hidden] { display: none; }
+/* The app mark heads the sidebar at its right edge, inset to match the tabs below it. */
+.sets-rail-mark { flex: none; width: auto; height: var(--icon-xl); margin: 0 var(--space-3); align-self: flex-end; color: var(--text-muted); }
 .sets-rail-tools { display: flex; align-items: center; gap: var(--space-1); flex: none; }
 .sets-rail-tools .sets-collapse { margin-left: auto; }
 .sets-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
@@ -36,8 +30,9 @@
 
 @media (prefers-reduced-motion: reduce) { .sets-rail, .sets-collapse .icon-glyph { transition: none; } }
 html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon-glyph { transition: none; }
-/* Set entries are flat rows below the views, one per set with its description. */
+/* Sidebar entries are flat rows: the fixed views on top, a rule, then one row per set with its description. */
 .sets-stack { display: flex; flex-direction: column; gap: var(--space-1); }
+.sets-stack-rule { width: 100%; margin: var(--space-2) 0; border: 0; border-top: var(--border-hair) solid var(--border); }
 .sets-tab {
   display: flex; align-items: center; gap: var(--space-2); width: 100%; box-sizing: border-box;
   padding: var(--space-2) var(--space-3); text-align: left; font-family: var(--font); font-size: var(--fs-mono);
@@ -56,6 +51,8 @@ html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon
   font-weight: var(--fw-semibold); letter-spacing: normal;
 }
 .sets-tab-count { margin-left: auto; flex: none; color: var(--text-dim); }
+.sets-tab-fresh { color: var(--live); }
+.sets-tab-fresh[hidden] { display: none; }
 .sets-tab-desc {
   font-family: var(--font-body); font-size: var(--fs-prose-sm); line-height: var(--lh-ui); letter-spacing: normal;
   color: var(--text-dim); white-space: normal;

@@ -44,19 +44,11 @@
   }
   window.applyAccent = applyAccent;
 
-  // Names a sidebar view icon with its count, for its tooltip and screen readers.
-  function labelView(button, word, count) {
-    if (!button) return;
-    var label = word + " - " + count;
-    button.setAttribute("aria-label", label);
-    button.setAttribute("data-tooltip", label);
-  }
-  window.labelView = labelView;
-
-  // Shows the entry total on the All view icon.
+  // Shows the entry total beside the All set.
   function renderStats(stats) {
     var count = stats && typeof stats.entries === "number" ? stats.entries : 0;
-    labelView($("#sets-all"), "All", count);
+    var countEl = $("#all-count");
+    if (countEl) countEl.textContent = count;
   }
   window.renderStats = renderStats;
 
