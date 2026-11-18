@@ -85,7 +85,11 @@
     card.appendChild(img);
     if (item.known_entry_id || item.aiLabel || item.fresh) {
       var flags = card.appendChild(makeEl("span", "library-card-flags"));
-      if (item.fresh) flags.appendChild(makeEl("span", "library-card-fresh")).setAttribute("data-tooltip", "New since your last visit");
+      if (item.fresh) {
+        var fresh = flags.appendChild(makeEl("span", "status-chip status-chip-filled library-card-fresh"));
+        fresh.setAttribute("data-tooltip", "New since your last visit");
+        fresh.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/></svg>';
+      }
       if (item.known_entry_id) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "Captured")).setAttribute("data-tooltip", "Already in the library");
       if (item.aiLabel) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "AI label")).setAttribute("data-tooltip", item.aiLabel);
     }
