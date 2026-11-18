@@ -6,7 +6,8 @@ from bridge.ingest import capture
 from bridge.library import library
 
 _SERVICE_TAGS = {"arena": "are.na", "x": "x", "pinterest": "pinterest", "tumblr": "tumblr", "instagram": "instagram"}
-_URL_TITLE = re.compile(r"^(https?://|www\.)\S+$", re.I)
+_SITE_SERVICES = frozenset(("rss",))
+_URL_TITLE =re.compile(r"^(https?://|www\.)\S+$", re.I)
 _HASHTAG = r"(?<![\w&/])#([^\W\d_]\w*)"
 _EDGE_GAP = r"[\s.,;:|]*"
 _TAG_LINE = re.compile(rf"{_EDGE_GAP}(?:{_HASHTAG}{_EDGE_GAP})+")
@@ -34,8 +35,8 @@ def strip_hashtags(text) -> str:
 def source_tags(row) -> list[str]:
     """Return tags implied by an entry's source: its service or site, and each part of its board, section or channel."""
     service = row["source_service"] or ""
-    names = [_SERVICE_TAGS.get(service, service)] if service else []
-    if not service:
+    names = [_SERVICE_TAGS.get(service, service)] if service and service not in _SITE_SERVICES else []
+    if not names:
         domain = re.sub(r"^www\.", "", row["domain"] or "")
         names.append(domain)
     names.extend(part for part in str(row["collection"] or "").split(" / "))

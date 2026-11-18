@@ -83,17 +83,20 @@ def post_details(post) -> dict:
             "posted_at": str(post.get("date-gmt") or "")[:10], "tags": list(post.get("tags") or [])}
 
 
-def items(blog_url, fetcher, rng) -> list:
-    """Return feed items from a random stretch of a blog's posts, one per image."""
+def items(blog_url, fetcher, rng, newest=False) -> list:
+    """Return feed items from a random stretch of a blog's posts, or its newest posts when asked, one per image."""
     host = target(blog_url)
     if not host:
         return []
-    total = int(_read(fetcher, host, 0, 1).get("posts-total") or 0)
-    data = _read(fetcher, host, rng.randint(0, max(0, total - PAGE)), PAGE)
+    if newest:
+        data = _read(fetcher, host, 0, PAGE)
+    else:
+        total = int(_read(fetcher, host, 0, 1).get("posts-total") or 0)
+        data = _read(fetcher, host, rng.randint(0, max(0, total - PAGE)), PAGE)
     collection = str((data.get("tumblelog") or {}).get("title") or host)[:200]
     posts = [post for post in data["posts"] if post_images(post)]
     result = []
-    for post in rng.sample(posts, min(PER_BLOG, len(posts))):
+    for post in posts[:PER_BLOG] if newest else rng.sample(posts, min(PER_BLOG, len(posts))):
         details = post_details(post)
         tags = details["tags"]
         for full, preview, width, height in post_images(post)[:4]:

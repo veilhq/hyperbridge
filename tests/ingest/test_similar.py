@@ -260,7 +260,7 @@ class RefreshTests(SimilarCase):
                 "title": "", "creator": "", "page_url": "", "term": "", "tags": ["concrete"]}
         original = feed.pull
         pulled = []
-        feed.pull = lambda url, fetcher, rng: pulled.append(url) or [item]
+        feed.pull = lambda url, fetcher, rng, kind="": pulled.append(url) or [item]
         self.addCleanup(setattr, feed, "pull", original)
         result = similar.refresh(self.conn, set_id, fetcher=search_fetcher, rng=random.Random(1))
         self.assertEqual((result["added"], result["jobs"], result["enabled"]), (2, 2, ["search", "arena"]))

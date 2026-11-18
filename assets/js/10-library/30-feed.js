@@ -1,6 +1,9 @@
-  var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr", pinterest: "Pinterest" };
+  var FEED_SOURCE_NAMES = { commons: "Wikimedia Commons", met: "The Met", arena: "Are.na", tumblr: "Tumblr", pinterest: "Pinterest", rss: "RSS" };
   // The set ({ id, name }) the feed is narrowed to by Find similar; null for the full Discover feed.
   var feedSet = null;
+  // Latest shows the dated sources newest first; latestSince is the previous visit its new images are marked against.
+  var feedLatest = false;
+  var latestSince = "";
   // How feed images carrying an AI label appear: held back (hide), blurred until picked (blur), or as is (show).
   var FEED_AI_MODES = ["hide", "blur", "show"];
   var feedAiMode = (function () {
@@ -14,6 +17,7 @@
   function listFeedPage(offset, limit) {
     var bridge = api();
     var withFlagged = feedAiMode !== "hide";
+    if (feedLatest) return Promise.resolve(bridge.list_latest(offset, limit, withFlagged, latestSince));
     return Promise.resolve(feedSet ? bridge.list_similar(feedSet.id, offset, limit, withFlagged)
       : bridge.list_feed(offset, limit, withFlagged));
   }
@@ -48,6 +52,7 @@
 
   function pullFeed(replace) {
     var bridge = api();
+    if (feedLatest) return Promise.resolve(bridge.refresh_latest());
     return Promise.resolve(feedSet ? bridge.refresh_similar(feedSet.id) : bridge.refresh_feed(replace));
   }
 
@@ -62,7 +67,7 @@
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
       title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, matched: item.matched || null,
       followUrl: item.follow_url || null, followLabel: item.follow_label || "", aiLabel: item.ai_label || "", veiled: Boolean(item.ai_label) && feedAiMode === "blur",
-      known_entry_id: item.known_entry_id || null };
+      known_entry_id: item.known_entry_id || null, fresh: Boolean(item.fresh) };
   }
 
   // Returns the distinct unfollowed Are.na channels ({ url, label }) behind the given candidate indexes.
@@ -121,8 +126,10 @@
     var count = candidates.total;
     var noun = count + (count === 1 ? " new image" : " new images");
     var terms = candidates.terms && candidates.terms.length ? " (" + candidates.terms.join(", ") + ")" : "";
+    if (feedLatest) noun = count + (count === 1 ? " image" : " images");
     $("#find-head-desc").textContent = feedSet
       ? noun + " like this set" + terms + ". Select the ones to add to it or dismiss."
+      : feedLatest ? noun + " from your sources, newest posts first. Pinterest boards stay in Discover."
       : noun + " from your sources. Select the ones to save or dismiss.";
     paintFlagged();
   }
@@ -201,7 +208,7 @@
     var button = $("#library-more");
     if (!button) return;
     button.hidden = !(candidates && candidates.feed && candidates.finished && !candidates.busy && candidates.candidates.length);
-    $("#feed-more").textContent = feedSet ? "Find more" : "Discover more";
+    $("#feed-more").textContent = feedSet ? "Find more" : feedLatest ? "Check more sources" : "Discover more";
   }
 
   function discoverMore() {
@@ -229,6 +236,7 @@
     var count = result.total;
     var empty = feedSet
       ? "Nothing like this set in the feed yet. Tag its images to sharpen the match, or refresh to pull more."
+      : feedLatest ? "No dated posts from your sources yet. Refresh to check them."
       : "Nothing new yet. Tag or group some images to steer the feed, then refresh.";
     feedMessage(count ? "" : (note || empty));
   }
@@ -237,7 +245,8 @@
   function refreshNote(pulled) {
     if (!pulled || !pulled.ok) return "Could not refresh the feed.";
     if (feedSet && !pulled.enabled.length) return "Give this set some tags (Edit on its card), or add tagged or titled images, so there is something to search for.";
-    if (!pulled.enabled.length || !pulled.jobs) return "Discover pulls from the Are.na channels, Pinterest boards and Tumblr blogs on your followed list. Add one with the sliders icon.";
+    if (feedLatest && (!pulled.enabled.length || !pulled.jobs)) return "Latest follows the Are.na channels, Tumblr blogs and site feeds on your followed list. Add one with the sliders icon.";
+    if (!pulled.enabled.length || !pulled.jobs) return "Discover pulls from the Are.na channels, Pinterest boards, Tumblr blogs and site feeds on your followed list. Add one with the sliders icon.";
     if (pulled.failed >= pulled.jobs) return "Could not reach the sources. Check the internet connection and refresh.";
     return "";
   }
@@ -259,14 +268,18 @@
     $("#find-head-desc").textContent = "Finding images...";
   }
 
-  // Opens the Discover feed, or with a set ({ id, name }) the feed ranked by likeness to that set;
-  // it pulls from the sources first when it is empty or out of date.
-  function openFeed(forceRefresh, target) {
+  // Opens the Discover feed, with a set ({ id, name }) the feed ranked by likeness to that set, or with
+  // latest the newest posts first; it pulls from the sources first when it is empty or out of date.
+  function openFeed(forceRefresh, target, latest) {
     var bridge = api();
     if (!bridge || !bridge.list_feed) return;
     var ticket = ++findTicket;
     state.ticket++;
-    feedSet = target || null;
+    feedLatest = Boolean(latest);
+    feedSet = feedLatest ? null : (target || null);
+    var marked = feedLatest && !forceRefresh && bridge.mark_latest_seen
+      ? Promise.resolve(bridge.mark_latest_seen()).then(function (since) { latestSince = since || ""; })
+      : Promise.resolve();
     state.setId = feedSet ? feedSet.id : null;
     setFinding(false);
     $("#dock-find").hidden = true;
@@ -274,12 +287,12 @@
     emptyEl.hidden = true;
     $("#library").setAttribute("data-finding", "true");
     $("#find-head").hidden = false;
-    $("#find-head-title").textContent = feedSet ? "Like " + feedSet.name : "Discover";
+    $("#find-head-title").textContent = feedSet ? "Like " + feedSet.name : feedLatest ? "Latest" : "Discover";
     setExitLabel(feedSet ? "Back to set" : "Back to library");
     $("#find-refresh").hidden = false;
     showFeedLoading();
     var sourcesOff = "";
-    listFeedPage(0, PAGE_SIZE).then(function (first) {
+    marked.catch(function () {}).then(function () { return listFeedPage(0, PAGE_SIZE); }).then(function (first) {
       if (ticket !== findTicket) return null;
       if (!forceRefresh && first.total && !first.stale) return first;
       return pullFeed(true).then(function (pulled) {
@@ -351,6 +364,7 @@
     if (!candidates) return;
     candidates = null;
     feedSet = null;
+    feedLatest = false;
     $("#find-flagged").hidden = true;
     syncMore();
     findTicket++;

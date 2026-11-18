@@ -20,12 +20,13 @@
         if (wasSimilar) navigate.wait(load(true));
       });
     });
-    $("#find-refresh").addEventListener("click", function () { openFeed(true, feedSet); });
+    $("#find-refresh").addEventListener("click", function () { openFeed(true, feedSet, feedLatest); });
     $("#feed-more").addEventListener("click", discoverMore);
     Array.prototype.forEach.call($("#find-ai").children, function (button) {
       button.addEventListener("click", function () { chooseFeedAi(button.getAttribute("data-mode")); });
     });
     document.addEventListener("hyperbridge:feed", function () { openFeed(false); });
+    document.addEventListener("hyperbridge:latest", function () { openFeed(false, null, true); });
     document.addEventListener("hyperbridge:similar", function (event) { openFeed(false, event.detail); });
     window.addEventListener("resize", function () {
       clearTimeout(resizeTimer);

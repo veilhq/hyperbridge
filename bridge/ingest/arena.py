@@ -55,13 +55,21 @@ def _text(value) -> str:
     return value or ""
 
 
-def channel_blocks(slug, fetcher, rng):
-    """Return (title, blocks) from a random page of a channel, so large channels are reached beyond their first page."""
+def channel_blocks(slug, fetcher, rng, newest=False):
+    """Return (title, blocks) from a random page of a channel, or with newest set its first and last pages newest first."""
     info = _json(fetcher, f"{API_V3}/channels/{slug}")
     length = int((info.get("counts") or {}).get("contents") or 0)
-    pages = min(MAX_PAGES, max(1, -(-length // PAGE_SIZE)))
-    data = _json(fetcher, _contents_url(slug, rng.randint(1, pages)))
+    pages = max(1, -(-length // PAGE_SIZE))
+    if newest:
+        blocks = [block for page in sorted({1, pages}) for block in _json(fetcher, _contents_url(slug, page)).get("data") or []]
+        return info.get("title") or "", newest_first(blocks)
+    data = _json(fetcher, _contents_url(slug, rng.randint(1, min(MAX_PAGES, pages))))
     return info.get("title") or "", data.get("data") or []
+
+
+def newest_first(blocks) -> list:
+    """Return blocks ordered by when they were added, newest first, whichever way the API listed them."""
+    return sorted(blocks, key=lambda block: str(block.get("connected_at") or block.get("created_at") or ""), reverse=True)
 
 
 def _usable(block) -> bool:
@@ -85,14 +93,14 @@ def _block_fields(block) -> dict:
             **block_details(block)}
 
 
-def channel_items(channel_url, fetcher, rng) -> list:
-    """Return feed items sampled from one channel."""
+def channel_items(channel_url, fetcher, rng, newest=False) -> list:
+    """Return feed items sampled from one channel, or its newest blocks when asked."""
     found = target(channel_url)
     if not found or found[0] != "channel":
         return []
-    title, blocks = channel_blocks(found[1], fetcher, rng)
+    title, blocks = channel_blocks(found[1], fetcher, rng, newest)
     blocks = [block for block in blocks if _usable(block)]
-    blocks = rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
+    blocks = blocks[:PER_CHANNEL] if newest else rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
     return [{
         "source_id": "arena", "url": block["image"]["src"],
         "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
@@ -101,18 +109,25 @@ def channel_items(channel_url, fetcher, rng) -> list:
     } for block in blocks]
 
 
-def user_items(user_url, fetcher, rng) -> list:
-    """Return feed items from a random page of the images a followed user has saved (the v3 API, which needs no login)."""
+def user_items(user_url, fetcher, rng, newest=False) -> list:
+    """Return feed items from a random page of the images a followed user has saved (the v3 API, which needs no login).
+
+    With newest set, the newest blocks across the first and last pages are used instead.
+    """
     found = target(user_url)
     if not found or found[0] != "user":
         return []
     url = f"{API_V3}/users/{found[1]}/contents?per={PAGE_SIZE}&page="
     first = _json(fetcher, url + "1")
-    pages = min(MAX_PAGES, max(1, int((first.get("meta") or {}).get("total_pages") or 1)))
-    page = rng.randint(1, pages)
-    data = first if page == 1 else _json(fetcher, url + str(page))
-    blocks = [block for block in data.get("data") or [] if (block.get("image") or {}).get("src")]
-    blocks = rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
+    total = max(1, int((first.get("meta") or {}).get("total_pages") or 1))
+    if newest:
+        blocks = (first.get("data") or []) + ((_json(fetcher, url + str(total)).get("data") or []) if total > 1 else [])
+        blocks = [block for block in newest_first(blocks) if (block.get("image") or {}).get("src")][:PER_CHANNEL]
+    else:
+        page = rng.randint(1, min(MAX_PAGES, total))
+        data = first if page == 1 else _json(fetcher, url + str(page))
+        blocks = [block for block in data.get("data") or [] if (block.get("image") or {}).get("src")]
+        blocks = rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
     return [{
         "source_id": "arena", "url": block["image"]["src"],
         "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
@@ -301,12 +316,13 @@ def block_channels(block_id, fetcher) -> list:
     return found
 
 
-def pull(url, fetcher, rng) -> list:
+def pull(url, fetcher, rng, newest=False) -> list:
     """Return feed items for a followed or inferred Are.na link, whether it is a channel or a user."""
     found = target(url)
     if not found:
         return []
-    return channel_items(url, fetcher, rng) if found[0] == "channel" else user_items(url, fetcher, rng)
+    reader = channel_items if found[0] == "channel" else user_items
+    return reader(url, fetcher, rng, newest)
 
 
 def list_followed(conn) -> list:

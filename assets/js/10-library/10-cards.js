@@ -76,15 +76,16 @@
     card.type = "button";
     card.setAttribute("data-id", index);
     if (item.feedId) card.setAttribute("data-key", "feed-" + item.feedId);
-    card.setAttribute("aria-label", "Select image " + (index + 1));
+    card.setAttribute("aria-label", "Select image " + (index + 1) + (item.fresh ? ", new" : ""));
     var img = document.createElement("img");
     img.className = "library-card-image";
     img.src = item.thumb;
     img.alt = "";
     reserveSpace(img, item.width, item.height);
     card.appendChild(img);
-    if (item.known_entry_id || item.aiLabel) {
+    if (item.known_entry_id || item.aiLabel || item.fresh) {
       var flags = card.appendChild(makeEl("span", "library-card-flags"));
+      if (item.fresh) flags.appendChild(makeEl("span", "library-card-fresh")).setAttribute("data-tooltip", "New since your last visit");
       if (item.known_entry_id) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "Captured")).setAttribute("data-tooltip", "Already in the library");
       if (item.aiLabel) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "AI label")).setAttribute("data-tooltip", item.aiLabel);
     }

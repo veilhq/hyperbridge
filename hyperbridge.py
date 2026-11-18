@@ -60,7 +60,6 @@ from bridge.library import swatches  # noqa: E402
 from bridge.exchange import sync  # noqa: E402
 from bridge.exchange import lan  # noqa: E402
 from bridge.exchange import transfer  # noqa: E402
-from bridge.ingest import tumblr  # noqa: E402
 
 _MIME = {".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 _MAX_PAGE = 200
@@ -68,10 +67,10 @@ _MAX_BULK = 1000
 
 
 def _follower(link: str):
-    """Pick the follow function for a link: Are.na, Pinterest, or else a Tumblr blog."""
+    """Pick the follow function for a link: Are.na, Pinterest, or else a Tumblr blog or a site's RSS feed."""
     if arena.target(link):
         return arena.follow
-    return pinterest.follow if pinterest.is_pinterest(link) else tumblr.follow
+    return pinterest.follow if pinterest.is_pinterest(link) else feed.follow_site
 
 
 def _fts_query(text: str) -> str:
@@ -361,6 +360,24 @@ class HyperbridgeAPI:
         result = self._feed_call("refresh_similar", lambda conn: similar.refresh(conn, int(set_id)), None)
         return {"ok": False, "error": "Could not refresh the feed."} if result is None else {"ok": True, **result}
 
+    def refresh_latest(self) -> dict:
+        """Read the newest posts of the next batch of dated followed sources into the feed."""
+        result = self._feed_call("refresh_latest", feed.refresh_latest, None)
+        return {"ok": False, "error": "Could not check your sources."} if result is None else {"ok": True, **result}
+
+    def list_latest(self, offset: int = 0, limit: int = 60, show_flagged: bool = False, since: str | None = None) -> dict:
+        """Return unseen images from dated sources, newest posted first, each marked fresh when new since the given visit."""
+        return self._feed_call("list_latest", lambda conn: feed.list_latest(conn, offset, limit, bool(show_flagged), since),
+                               {"items": [], "total": 0, "flagged": 0, "stale": False})
+
+    def latest_status(self) -> dict:
+        """Return how many Latest images are new since the last visit."""
+        return self._feed_call("latest_status", feed.latest_status, {"fresh": 0})
+
+    def mark_latest_seen(self) -> str:
+        """Record a Latest visit and return the one before it."""
+        return self._feed_call("mark_latest_seen", feed.mark_latest_seen, "")
+
     def dismiss_feed(self, ids: list) -> int:
         """Hide feed items the Operator does not want."""
         return self._feed_call("dismiss_feed", lambda conn: feed.dismiss(conn, list(ids or [])[:_MAX_BULK]), 0)
@@ -375,7 +392,7 @@ class HyperbridgeAPI:
         return self._feed_call("list_followed", arena.list_followed, [])
 
     def follow_source(self, url: str) -> dict:
-        """Follow an Are.na channel or user link, a Pinterest board, or a Tumblr blog for the discovery feed."""
+        """Follow an Are.na channel or user link, a Pinterest board, a Tumblr blog, or a site's RSS feed for the discovery feed."""
         try:
             conn = db.connect()
             try:

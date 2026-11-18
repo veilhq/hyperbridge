@@ -49,6 +49,8 @@ html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon
   font-weight: var(--fw-semibold); letter-spacing: normal;
 }
 .sets-tab-count { margin-left: auto; flex: none; color: var(--text-dim); }
+.sets-tab-fresh { color: var(--live); }
+.sets-tab-fresh[hidden] { display: none; }
 .sets-tab-desc {
   font-family: var(--font-body); font-size: var(--fs-prose-sm); line-height: var(--lh-ui); letter-spacing: normal;
   color: var(--text-dim); white-space: normal;

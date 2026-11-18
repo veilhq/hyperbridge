@@ -55,6 +55,7 @@ function initSets() {
   setupMenus();
   setupViewEvents();
   $("#sets-discover").addEventListener("click", openDiscover);
+  $("#sets-latest").addEventListener("click", openLatest);
   $("#sets-all").addEventListener("click", function () { select(null); });
   $("#sets-browse").addEventListener("click", openBrowse);
   $("#sets-new").addEventListener("click", startNew);
@@ -96,8 +97,9 @@ function initSets() {
     if (browsing && settingsOpen()) setBrowsing(false);
   }).observe($("#library"), { attributes: true, attributeFilter: ["data-settings"] });
   renderAll();
-  if (api()) refresh();
-  else window.addEventListener("pywebviewready", refresh);
+  paintLatestCount(0);
+  if (api()) { refresh(); startLatestPolling(); }
+  else window.addEventListener("pywebviewready", function () { refresh(); startLatestPolling(); });
 }
 
 initSets();

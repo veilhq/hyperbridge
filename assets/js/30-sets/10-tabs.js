@@ -26,7 +26,8 @@ function renderTabs() {
       (active ? ' aria-current="true"' : "") + ">" + '<span class="sets-tab-head"><span class="sets-tab-name">' + esc(item.name) + '</span><span class="sets-tab-count">' + item.count + "</span></span>" +
       (item.description ? '<span class="sets-tab-desc">' + esc(item.description) + "</span>" : "") + "</button>";
   }).join("");
-  markTab($("#sets-discover"), feedOpen && !browsing);
+  markTab($("#sets-discover"), feedOpen === "discover" && !browsing);
+  markTab($("#sets-latest"), feedOpen === "latest" && !browsing);
   markTab($("#sets-all"), selectedId === null && !feedOpen && !browsing);
   markTab($("#sets-browse"), browsing);
   $("#sets-count").textContent = sets.length;
@@ -121,15 +122,46 @@ function select(id) {
   });
 }
 
-function openDiscover() {
+// Opens a feed view in the library: "discover" for the shuffled pull, "latest" for newest posts first.
+function openFeedView(view) {
   navigate(function () {
-    var changed = !feedOpen || settingsOpen();
+    var changed = feedOpen !== view || settingsOpen();
     headEditing = false;
-    feedOpen = true;
+    feedOpen = view;
     selectedId = null;
     setBrowsing(false);
-    if (changed) announce("hyperbridge:feed");
+    if (view === "latest") paintLatestCount(0);
+    if (changed) announce(view === "latest" ? "hyperbridge:latest" : "hyperbridge:feed");
   });
+}
+
+function openDiscover() { openFeedView("discover"); }
+
+function openLatest() { openFeedView("latest"); }
+
+// Shows how many Latest images are new since the last visit on its tab; nothing when there are none.
+function paintLatestCount(count) {
+  var badge = $("#latest-count");
+  badge.textContent = count > 0 ? (count > 99 ? "99+" : String(count)) : "";
+  badge.hidden = !(count > 0);
+}
+
+// Checks the next batch of followed sources for new posts, then updates the Latest tab's count.
+function pollLatest() {
+  var bridge = api();
+  if (!bridge || !bridge.refresh_latest) return;
+  Promise.resolve(bridge.refresh_latest()).then(function () { return bridge.latest_status(); }).then(function (status) {
+    paintLatestCount(feedOpen === "latest" ? 0 : (status && status.fresh) || 0);
+  }).catch(function () {});
+}
+
+function startLatestPolling() {
+  var bridge = api();
+  if (bridge && bridge.latest_status) {
+    Promise.resolve(bridge.latest_status()).then(function (status) { paintLatestCount((status && status.fresh) || 0); }).catch(function () {});
+  }
+  setTimeout(pollLatest, LATEST_FIRST_POLL_MS);
+  setInterval(pollLatest, LATEST_POLL_MS);
 }
 
 function refresh() {

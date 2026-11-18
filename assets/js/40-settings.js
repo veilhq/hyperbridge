@@ -7,7 +7,8 @@
   var view, list, library, opener, followList, followInput, followError;
   var followed = [];
   var FOLLOW_PAGE = 48;
-  var KIND_LABELS = { channel: "Channels", user: "Users", pinterest: "Boards", tumblr: "Blogs" };
+  var KIND_LABELS = { channel: "Channels", user: "Users", pinterest: "Boards", tumblr: "Blogs", rss: "Sites" };
+  var KIND_CHIPS = { user: "User", pinterest: "Board", tumblr: "Blog", rss: "Site" };
   var followKind = "";
   var followShown = FOLLOW_PAGE;
 
@@ -103,7 +104,7 @@
         }).catch(function () { toast("error", "Could not remove."); });
       });
       row.appendChild(text);
-      row.appendChild(makeEl("span", "status-chip status-chip-outlined-muted", item.kind === "user" ? "User" : item.kind === "pinterest" ? "Board" : item.kind === "tumblr" ? "Blog" : "Channel"));
+      row.appendChild(makeEl("span", "status-chip status-chip-outlined-muted", KIND_CHIPS[item.kind] || "Channel"));
       row.appendChild(remove);
       followList.appendChild(row);
     });
@@ -699,6 +700,7 @@
     }, true);
     document.addEventListener("hyperbridge:filter", function () { setOpen(false); });
     document.addEventListener("hyperbridge:feed", function () { setOpen(false); });
+    document.addEventListener("hyperbridge:latest", function () { setOpen(false); });
     document.addEventListener("hyperbridge:sets", function () { setOpen(false); });
   }
 
