@@ -11,8 +11,14 @@
 .sets-stack { flex: 1 1 auto; min-height: 0; }
 .sets-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
 .sets-list::-webkit-scrollbar { display: none; }
-/* The app mark heads the sidebar at its right edge, inset to match the tabs below it. */
-.sets-rail-mark { flex: none; width: auto; height: var(--icon-xl); margin: 0 var(--space-3) var(--space-2); align-self: flex-end; color: var(--text-muted); }
+/* The app mark heads the sidebar, with the fixed views as an icon row beside it. */
+.sets-rail-head { display: flex; align-items: center; gap: var(--space-3); flex: none; padding-inline: var(--space-2); }
+.sets-rail-mark { flex: none; width: auto; height: var(--icon-xl); color: var(--text-muted); }
+.sets-views { display: flex; align-items: center; gap: var(--space-1); }
+.sets-view { position: relative; }
+.sets-view.content-card-active { color: var(--selected); background: var(--selected-wash); }
+.sets-view-fresh { position: absolute; top: 0; right: 0; translate: 40% -40%; line-height: var(--lh-tight); color: var(--live); }
+.sets-view-fresh[hidden] { display: none; }
 .sets-rail-tools { display: flex; align-items: center; gap: var(--space-1); flex: none; }
 .sets-rail-tools .sets-collapse { margin-left: auto; }
 .sets-collapse .icon-glyph { transition: rotate var(--motion-base) var(--ease); }
@@ -30,7 +36,7 @@
 
 @media (prefers-reduced-motion: reduce) { .sets-rail, .sets-collapse .icon-glyph { transition: none; } }
 html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon-glyph { transition: none; }
-/* Sidebar entries are flat rows: the fixed views on top, a rule, then one row per set with its description. */
+/* Set entries are flat rows below the rule, one per set with its description. */
 .sets-stack { display: flex; flex-direction: column; gap: var(--space-1); }
 .sets-stack-rule { width: 100%; margin: var(--space-2) 0; border: 0; border-top: var(--border-hair) solid var(--border); }
 .sets-tab {
@@ -51,8 +57,6 @@ html.a11y-reduce-motion .sets-rail, html.a11y-reduce-motion .sets-collapse .icon
   font-weight: var(--fw-semibold); letter-spacing: normal;
 }
 .sets-tab-count { margin-left: auto; flex: none; color: var(--text-dim); }
-.sets-tab-fresh { color: var(--live); }
-.sets-tab-fresh[hidden] { display: none; }
 .sets-tab-desc {
   font-family: var(--font-body); font-size: var(--fs-prose-sm); line-height: var(--lh-ui); letter-spacing: normal;
   color: var(--text-dim); white-space: normal;
