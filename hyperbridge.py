@@ -29,6 +29,7 @@ WINDOW_TITLE = "Hyperbridge"
 
 sys.path.insert(0, str(HYPERSPACE_ROOT / ".hyperkit" / "python"))
 from hyper_logging import setup_logger  # noqa: E402
+from window_chrome import apply_window_chrome  # noqa: E402
 from palette import GRADIENT_MAPS, build_palette_oklch  # noqa: E402
 
 logger = setup_logger("hyperbridge")
@@ -822,31 +823,6 @@ class HyperbridgeAPI:
         return {"ok": True, "entry_id": result["entry_id"], "already_captured": result["already_captured"]}
 
 
-def _apply_window_chrome(title: str):
-    """Force a dark title bar and set the icon via the Windows DWM API."""
-    try:
-        import ctypes
-
-        hwnd = ctypes.windll.user32.FindWindowW(None, title)
-        if not hwnd:
-            return
-        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-        val = ctypes.c_int(1)
-        ctypes.windll.dwmapi.DwmSetWindowAttribute(
-            hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
-        )
-        if ICON_FILE.exists():
-            IMAGE_ICON = 1
-            LR_LOADFROMFILE = 0x0010
-            WM_SETICON = 0x0080
-            hicon = ctypes.windll.user32.LoadImageW(0, str(ICON_FILE), IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
-            if hicon:
-                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 1, hicon)
-                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 0, hicon)
-    except Exception:
-        pass
-
-
 def _start_theme_watcher(window, api):
     """Poll Hypervisor's preferences.json and re-sync the accent when it changes."""
     prefs_file = HYPERVISOR_DIR / "preferences.json"
@@ -939,7 +915,7 @@ def main():
 
     def on_start():
         time.sleep(0.5)
-        _apply_window_chrome(WINDOW_TITLE)
+        apply_window_chrome(WINDOW_TITLE, ICON_FILE, logger)
         _start_theme_watcher(window, api)
         try:
             _watch_drops(window, api)
