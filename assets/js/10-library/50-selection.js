@@ -103,20 +103,19 @@
 
   function selectedIds() { return Array.from(selected); }
 
-  // Runs a bridge call per selected id and reports how many succeeded.
+  // Sends the selected ids in one bridge call and reports the result; a failed call counts as none done.
   function bulk(call, done) {
     var ids = selectedIds();
-    return Promise.all(ids.map(function (id) {
-      return Promise.resolve(call(id)).then(function (ok) { return !!ok; }).catch(function () { return false; });
-    })).then(function (results) {
-      done(results.filter(Boolean).length, ids.length);
+    return Promise.resolve(call(ids)).catch(function () { return null; }).then(function (result) {
+      done(result, ids);
     });
   }
 
   function bulkPlace(item) {
     var bridge = api();
-    bulk(function (id) { return bridge.place_entry(id, item.id); }, function (ok, total) {
-      toast(ok === total ? "success" : "error", ok === total ? "Placed " + ok + "." : "Placed " + ok + " of " + total + ".");
+    bulk(function (ids) { return bridge.place_entries(ids, item.id); }, function (count, ids) {
+      var ok = count || 0;
+      toast(ok === ids.length ? "success" : "error", ok === ids.length ? "Placed " + ok + "." : "Placed " + ok + " of " + ids.length + ".");
       changed();
     });
   }
@@ -134,8 +133,8 @@
     var bridge = api();
     var setId = state.setId;
     if (!setId) return;
-    bulk(function (id) { return bridge.remove_entry(id, setId); }, function (ok) {
-      toast("success", "Removed " + ok + ".");
+    bulk(function (ids) { return bridge.remove_entries(ids, setId); }, function (count) {
+      toast("success", "Removed " + (count || 0) + ".");
       clearSelection();
       load(true);
       changed();
@@ -160,11 +159,12 @@
   function bulkDiscard() {
     if (candidates && candidates.feed) { dismissFeed(); return; }
     var bridge = api();
-    var ids = selectedIds();
-    bulk(function (id) { return bridge.discard_entry(id); }, function (ok, total) {
-      toast(ok === total ? "success" : "error", ok === total ? "Discarded " + ok + "." : "Discarded " + ok + " of " + total + ".");
+    bulk(function (ids) { return bridge.discard_entries(ids); }, function (gone, ids) {
+      gone = gone || [];
+      var all = gone.length === ids.length;
+      toast(all ? "success" : "error", all ? "Discarded " + gone.length + "." : "Discarded " + gone.length + " of " + ids.length + ".");
       clearSelection();
-      (ok === total ? playDiscard(ids) : Promise.resolve()).then(afterDiscard);
+      playDiscard(gone).then(afterDiscard);
     });
   }
 

@@ -32,6 +32,23 @@ def strip_hashtags(text) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
+def known_keywords(conn, keywords) -> list[str]:
+    """Return the page keywords that name a tag already in the library, as that tag is spelled; a plural matches its singular and back.
+
+    Number-only keywords are dropped, and a keyword with no matching tag never creates one.
+    """
+    names = []
+    for word in library.parse_tags(list(keywords or [])):
+        if library.NUMBER_ONLY.fullmatch(word):
+            continue
+        for form in library.tag_forms(word):
+            row = conn.execute("SELECT name FROM tags WHERE name = ?", (form,)).fetchone()
+            if row:
+                names.append(row["name"])
+                break
+    return names
+
+
 def source_tags(row) -> list[str]:
     """Return tags implied by an entry's source: its service or site, and each part of its board, section or channel."""
     service = row["source_service"] or ""
@@ -88,7 +105,7 @@ def _clean_description(conn, row, manual) -> list[str]:
 
 
 def enrich_entry(conn, row, extra_tags=()) -> bool:
-    """Strip hashtags from the description, then add source tags (plus extra tags, such as page keywords) to an untagged entry and a fallback title to an untitled one.
+    """Strip hashtags from the description, then add source tags (plus extra tags, such as post hashtags and known page keywords) to an untagged entry and a fallback title to an untitled one.
 
     Hashtag words become tags unless the entry's tags were edited by hand. Returns True when anything changed.
     """

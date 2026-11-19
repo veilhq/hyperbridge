@@ -191,33 +191,63 @@ def delete_set(set_id: int) -> bool:
         conn.close()
 
 
-def place(entry_id: int, set_id: int) -> bool:
-    """Place an entry in a set; placing twice is a no-op. False when either is missing."""
+def _in_transaction(conn, work):
+    """Run work(conn) inside one write transaction and return its result."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        result = work(conn)
+        conn.execute("COMMIT")
+        return result
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def place_many(entry_ids, set_id: int) -> int:
+    """Place entries in a set in one transaction; placing twice is a no-op. Returns how many are in the set now, 0 when the set is missing."""
+    def work(conn):
+        if _row(conn, set_id) is None:
+            return 0
+        count, stamp = 0, _now()
+        for entry_id in entry_ids:
+            if not conn.execute("SELECT 1 FROM entries WHERE id = ?", (entry_id,)).fetchone():
+                continue
+            count += 1
+            added = conn.execute(
+                "INSERT OR IGNORE INTO set_entries (set_id, entry_id, placed_at) VALUES (?, ?, ?)", (set_id, entry_id, stamp)).rowcount
+            if added:
+                conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (stamp, entry_id))
+        return count
+
     conn = db.connect()
     try:
-        has_entry = conn.execute("SELECT 1 FROM entries WHERE id = ?", (entry_id,)).fetchone()
-        if not has_entry or _row(conn, set_id) is None:
-            return False
-        added = conn.execute(
-            "INSERT OR IGNORE INTO set_entries (set_id, entry_id, placed_at) VALUES (?, ?, ?)",
-            (set_id, entry_id, _now()),
-        ).rowcount
-        if added:
-            conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (_now(), entry_id))
-        return True
+        return _in_transaction(conn, work)
     finally:
         conn.close()
+
+
+def remove_many(entry_ids, set_id: int) -> int:
+    """Take entries out of a set in one transaction; the entries stay in the library. Returns how many were removed."""
+    def work(conn):
+        count, stamp = 0, _now()
+        for entry_id in entry_ids:
+            if conn.execute("DELETE FROM set_entries WHERE set_id = ? AND entry_id = ?", (set_id, entry_id)).rowcount:
+                count += 1
+                conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (stamp, entry_id))
+        return count
+
+    conn = db.connect()
+    try:
+        return _in_transaction(conn, work)
+    finally:
+        conn.close()
+
+
+def place(entry_id: int, set_id: int) -> bool:
+    """Place an entry in a set; placing twice is a no-op. False when either is missing."""
+    return place_many([entry_id], set_id) == 1
 
 
 def remove(entry_id: int, set_id: int) -> bool:
     """Take an entry out of a set; the entry stays in the library."""
-    conn = db.connect()
-    try:
-        removed = conn.execute(
-            "DELETE FROM set_entries WHERE set_id = ? AND entry_id = ?", (set_id, entry_id)
-        ).rowcount > 0
-        if removed:
-            conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (_now(), entry_id))
-        return removed
-    finally:
-        conn.close()
+    return remove_many([entry_id], set_id) == 1

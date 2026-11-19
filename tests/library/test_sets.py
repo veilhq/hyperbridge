@@ -115,6 +115,26 @@ class SetTests(LibraryOpsCase):
         self.assertFalse(sets.remove(entry, target))
         self.assertIsNotNone(library.get_entry(entry))
 
+    def test_unsorted_lists_and_counts_entries_in_no_set(self):
+        import hyperbridge
+
+        placed, loose = self.add_entry("Placed"), self.add_entry("Loose")
+        sets.place(placed, sets.create_set("S")["set"]["id"])
+        api = hyperbridge.HyperbridgeAPI()
+        listed = api.list_entries(unsorted=True)
+        self.assertEqual(([e["id"] for e in listed["entries"]], listed["total"]), ([loose], 1))
+        self.assertEqual(api.list_entries()["total"], 2)
+        self.assertEqual(api.get_stats(), {"entries": 2, "unsorted": 1})
+
+    def test_place_and_remove_many_count_what_changed(self):
+        first, second = self.add_entry(), self.add_entry()
+        target = sets.create_set("S")["set"]["id"]
+        self.assertEqual(sets.place_many([first, second, 999], target), 2)
+        self.assertEqual(sets.place_many([first], 999), 0)
+        self.assertEqual(sets.list_sets()[0]["count"], 2)
+        self.assertEqual(sets.remove_many([first, 999], target), 1)
+        self.assertEqual(sets.list_sets()[0]["count"], 1)
+
     def test_rename_and_delete(self):
         first = sets.create_set("One")["set"]["id"]
         sets.create_set("Two")

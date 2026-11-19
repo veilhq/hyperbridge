@@ -28,7 +28,8 @@ function renderTabs() {
   }).join("");
   markTab($("#sets-discover"), feedOpen === "discover" && !browsing);
   markTab($("#sets-latest"), feedOpen === "latest" && !browsing);
-  markTab($("#sets-all"), selectedId === null && !feedOpen && !browsing);
+  markTab($("#sets-all"), selectedId === null && !feedOpen && !unsortedOpen && !browsing);
+  markTab($("#sets-unsorted"), unsortedOpen && !browsing);
   markTab($("#sets-browse"), browsing);
   $("#sets-count").textContent = sets.length;
 }
@@ -112,13 +113,27 @@ function openBrowse() {
 
 // Opens a set (null for All) in the library, telling the grid when the filter changed.
 function select(id) {
-  navigateIf(id !== selectedId || feedOpen || browsing || settingsOpen(), function () {
-    var changed = id !== selectedId || feedOpen || settingsOpen();
+  navigateIf(id !== selectedId || feedOpen || unsortedOpen || browsing || settingsOpen(), function () {
+    var changed = id !== selectedId || feedOpen || unsortedOpen || settingsOpen();
     if (id !== selectedId) headEditing = false;
     feedOpen = false;
+    unsortedOpen = false;
     selectedId = id;
     setBrowsing(false);
     if (changed) announce("hyperbridge:filter", { setId: id });
+  });
+}
+
+// Opens the library filtered to entries in no set, a queue for sorting new captures.
+function openUnsorted() {
+  navigateIf(!unsortedOpen || browsing || settingsOpen(), function () {
+    var changed = !unsortedOpen || settingsOpen();
+    headEditing = false;
+    feedOpen = false;
+    unsortedOpen = true;
+    selectedId = null;
+    setBrowsing(false);
+    if (changed) announce("hyperbridge:filter", { setId: null, unsorted: true });
   });
 }
 
@@ -128,6 +143,7 @@ function openFeedView(view) {
     var changed = feedOpen !== view || settingsOpen();
     headEditing = false;
     feedOpen = view;
+    unsortedOpen = false;
     selectedId = null;
     setBrowsing(false);
     if (view === "latest") paintLatestCount(0);

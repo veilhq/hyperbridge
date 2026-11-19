@@ -7,6 +7,7 @@
   var byName = false;
   var renaming = "";
   var confirming = "";
+  var tidyPlan = null;
   var listEl, filterEl, sortEl, errorEl, view;
 
   function api() { return window.pywebview && window.pywebview.api; }
@@ -138,13 +139,52 @@
     $("#tags-prune").disabled = !tags.some(function (item) { return item.count === 1; });
   }
 
+  // Labels the Tidy button with how many tags it would change, disabled when there are none.
+  function renderTidy() {
+    var button = $("#tags-tidy");
+    var count = tidyPlan ? tidyPlan.numbers.length + tidyPlan.merges.length : 0;
+    button.removeAttribute("data-armed");
+    button.setAttribute("data-tooltip", "Delete number-only tags and merge each plural into its singular");
+    button.textContent = count ? "Tidy " + count : "Tidy";
+    button.disabled = !count;
+  }
+
   function load() {
     var bridge = api();
     if (!bridge || !bridge.list_tags) return Promise.resolve();
-    return Promise.resolve(bridge.list_tags()).then(function (result) {
-      tags = result || [];
+    var plan = bridge.tidy_tags ? Promise.resolve(bridge.tidy_tags(false)).catch(function () { return null; }) : Promise.resolve(null);
+    return Promise.all([Promise.resolve(bridge.list_tags()), plan]).then(function (results) {
+      tags = results[0] || [];
+      tidyPlan = results[1] && !results[1].error ? results[1] : null;
       render();
+      renderTidy();
     }).catch(function () {});
+  }
+
+  // First click names what will change; a second click within a few seconds deletes number-only tags and merges plurals.
+  function tidy() {
+    var bridge = api();
+    if (!bridge || !tidyPlan) return;
+    var numbers = tidyPlan.numbers.length;
+    var merges = tidyPlan.merges.length;
+    if (!numbers && !merges) return;
+    var button = $("#tags-tidy");
+    if (button.getAttribute("data-armed") !== "true") {
+      var parts = [];
+      if (numbers) parts.push("delete " + numbers + (numbers === 1 ? " number" : " numbers"));
+      if (merges) parts.push("merge " + merges + (merges === 1 ? " plural" : " plurals"));
+      button.setAttribute("data-armed", "true");
+      button.textContent = "Confirm: " + parts.join(", ");
+      button.setAttribute("data-tooltip", tidyPlan.merges.slice(0, 6).map(function (pair) { return pair[0] + " > " + pair[1]; })
+        .concat(tidyPlan.numbers.slice(0, 6)).join(", ") || "Delete number-only tags and merge each plural into its singular");
+      window.setTimeout(function () { if (button.getAttribute("data-armed") === "true") renderTidy(); }, 4000);
+      return;
+    }
+    renderTidy();
+    Promise.resolve(bridge.tidy_tags(true)).then(function (result) {
+      if (!result || result.error) { toast("error", "Could not tidy tags."); return; }
+      return done("Tidied " + (result.numbers.length + result.merges.length) + " tags.");
+    }).catch(function () { toast("error", "Could not tidy tags."); });
   }
 
   function prune() {
@@ -175,6 +215,7 @@
     filterEl.addEventListener("input", render);
     sortEl.addEventListener("click", function () { byName = !byName; render(); });
     $("#tags-prune").addEventListener("click", prune);
+    $("#tags-tidy").addEventListener("click", tidy);
     new MutationObserver(function () { if (!view.hidden) { renaming = ""; confirming = ""; load(); } })
       .observe(view, { attributes: true, attributeFilter: ["hidden"] });
   }

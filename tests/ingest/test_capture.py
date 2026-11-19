@@ -284,10 +284,12 @@ class RunCaptureTests(LibraryCase):
     def test_camera_boilerplate_is_not_a_description(self):
         self.assertNotIn("description", capture.image_info(self.exif_jpeg()))
 
-    def test_a_page_keeps_its_date_and_keywords_and_its_image_fills_gaps(self):
+    def test_a_page_keeps_its_date_and_known_keywords_and_its_image_fills_gaps(self):
         entry_id, job_id = self.queue()
+        self.conn.execute("INSERT INTO tags (name) VALUES ('Poster')")
         page = (b'<meta property="og:title" content="Poster"><meta property="og:image" content="https://cdn.example/1.jpg">'
-                b'<meta property="article:published_time" content="2024-03-08"><meta name="keywords" content="posters">')
+                b'<meta property="article:published_time" content="2024-03-08">'
+                b'<meta name="keywords" content="posters, 2024, unheard of">')
         fetcher = FakeFetcher({
             "https://example.com/post": reply(PAGE_URL, page, "text/html"),
             "https://cdn.example/1.jpg": reply("https://cdn.example/1.jpg", self.exif_jpeg(), "image/jpeg"),
@@ -298,7 +300,7 @@ class RunCaptureTests(LibraryCase):
                          ("Poster", "2024-03-08", "2024", "Ada Lovelace"))
         tags = {row[0] for row in self.conn.execute(
             "SELECT t.name FROM tags t JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = ?", (entry_id,))}
-        self.assertEqual(tags, {"example.com", "posters"})
+        self.assertEqual(tags, {"example.com", "Poster"})
 
     def test_non_image_body_is_rejected(self):
         url = "https://example.com/fake.png"
@@ -356,6 +358,72 @@ class RunCaptureTests(LibraryCase):
         job = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         self.assertEqual(job["state"], "failed")
         self.assertIn("blocked address", job["error"])
+
+    def test_a_passing_error_requeues_the_job_with_a_wait(self):
+        from bridge.core.fetchguard import FetchError
+
+        entry_id, job_id = self.queue()
+        fetcher = FakeFetcher({PAGE_URL: FetchError("timeout", "read timed out")})
+        capture.run_capture(self.conn, job_id, fetcher)
+        job = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        self.assertEqual((job["state"], job["attempts"]), ("queued", 1))
+        self.assertGreater(job["run_after"], capture._timestamp())
+        self.assertIn("FetchError[timeout]", job["error"])
+        self.assertEqual(self.entry(entry_id)["state"], "pending")
+        self.assertIsNone(capture.claim_next_job(self.conn))
+
+    def test_a_passing_error_fails_on_the_last_attempt(self):
+        from bridge.core.fetchguard import FetchError
+
+        entry_id, job_id = self.queue()
+        self.conn.execute("UPDATE jobs SET attempts = ? WHERE id = ?", (capture.MAX_ATTEMPTS - 1, job_id))
+        fetcher = FakeFetcher({PAGE_URL: FetchError("http_status", "HTTP 503")})
+        capture.run_capture(self.conn, job_id, fetcher)
+        self.assertEqual(self.entry(entry_id)["state"], "failed")
+        self.assertEqual(self.conn.execute("SELECT state FROM jobs WHERE id = ?", (job_id,)).fetchone()[0], "failed")
+
+    def test_a_refused_page_fails_at_once(self):
+        from bridge.core.fetchguard import FetchError
+
+        entry_id, job_id = self.queue()
+        capture.run_capture(self.conn, job_id, FakeFetcher({PAGE_URL: FetchError("http_status", "HTTP 403")}))
+        self.assertEqual(self.entry(entry_id)["state"], "failed")
+
+    def test_retry_failed_requeues_failed_link_entries(self):
+        entry_id, job_id = self.queue()
+        capture.run_capture(self.conn, job_id, FakeFetcher({PAGE_URL: RuntimeError("blocked address")}))
+        self.assertEqual(capture.retry_failed(self.conn), 1)
+        self.assertEqual(self.entry(entry_id)["state"], "pending")
+        self.assertEqual(capture.retry_failed(self.conn), 0)
+
+
+class FailureTextTests(unittest.TestCase):
+    def test_passing_errors_are_timeouts_drops_and_busy_servers(self):
+        from bridge.core.fetchguard import FetchError
+
+        for reason, message in (("timeout", ""), ("dns", ""), ("network", ""), ("http_status", "HTTP 429"), ("http_status", "HTTP 502")):
+            self.assertTrue(capture.passing_error(FetchError(reason, message)), (reason, message))
+        for reason, message in (("http_status", "HTTP 404"), ("too_large", ""), ("blocked_address", "")):
+            self.assertFalse(capture.passing_error(FetchError(reason, message)), (reason, message))
+
+    def test_a_wrapped_cause_counts(self):
+        from bridge.core.fetchguard import FetchError
+
+        try:
+            try:
+                raise FetchError("timeout")
+            except FetchError as inner:
+                raise capture.CaptureError("No preview image could be fetched") from inner
+        except capture.CaptureError as outer:
+            self.assertTrue(capture.passing_error(outer))
+            self.assertIn("<- FetchError[timeout]", capture.error_text(outer))
+
+    def test_stored_errors_read_as_sentences(self):
+        self.assertEqual(capture.failure_reason(""), "")
+        self.assertEqual(capture.failure_reason("FetchError[http_status]: HTTP 404"), "The page is gone (HTTP 404).")
+        self.assertEqual(capture.failure_reason("FetchError[http_status]: HTTP 503"), "The site had a server error (HTTP 503).")
+        self.assertEqual(capture.failure_reason("FetchError[timeout]: timeout"), "The site took too long to answer.")
+        self.assertEqual(capture.failure_reason("something odd"), "Could not read the page.")
 
 
 class ScreenshotFallbackTests(RunCaptureTests):

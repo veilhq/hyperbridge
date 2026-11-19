@@ -191,8 +191,24 @@
       box.appendChild(makeEl("span", "status-chip status-chip-outlined-muted", "Pending"));
     } else if (entry.state === "failed") {
       box.appendChild(makeEl("span", "status-chip status-chip-outlined-accent lightbox-failed", "Failed"));
-      box.appendChild(makeEl("span", "lightbox-none", "Could not read the page. Fill in the fields."));
+      box.appendChild(makeEl("span", "lightbox-none", (entry.failure || "Could not read the page.") + (entry.source_url ? " Try again, or fill in the fields." : " Fill in the fields.")));
+      if (entry.source_url) {
+        var retry = makeEl("button", "action-button action-button-ghost lightbox-retry", "Try again");
+        retry.type = "button";
+        box.appendChild(retry);
+      }
     }
+  }
+
+  // Queues the open failed entry for another capture; it shows as pending until done.
+  function onRetry(event) {
+    var bridge = api();
+    if (!event.target.closest(".lightbox-retry") || !bridge || !bridge.recapture_entries || !current) return;
+    event.target.disabled = true;
+    Promise.resolve(bridge.recapture_entries([current.id])).then(function (count) {
+      if (!count) { toast("error", "Could not retry."); event.target.disabled = false; return; }
+      reloadEntry("Trying again.");
+    }).catch(function () { toast("error", "Could not retry."); event.target.disabled = false; });
   }
 
   // Loads one asset image through the bridge, remembering it for the session.
@@ -590,6 +606,7 @@
     byId("lb-sets").addEventListener("click", onPlaceMenu);
     byId("lb-sets").addEventListener("click", onSetRemove);
     byId("lb-sets").addEventListener("click", onSetCover);
+    byId("lb-status").addEventListener("click", onRetry);
     byId("f-cancel").addEventListener("click", function () {
       closeForm();
       render();

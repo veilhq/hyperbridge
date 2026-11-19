@@ -7,7 +7,8 @@
       emptyEl.hidden = true;
       return;
     }
-    emptyEl.textContent = state.query || state.tag || state.color ? "No matches." : "No entries.";
+    if (state.query || state.tag || state.color) emptyEl.textContent = "No matches.";
+    else emptyEl.textContent = state.unsorted ? "Every entry is in a set." : "No entries.";
     emptyEl.hidden = false;
   }
 
@@ -44,7 +45,7 @@
   function renderMeta() {
     var meta = $("#library-meta");
     if (!meta) return;
-    var show = state.setId !== null && state.total > 0;
+    var show = (state.setId !== null || state.unsorted) && state.total > 0;
     meta.hidden = !show;
     if (!show) return;
     var years = state.years;
@@ -142,13 +143,16 @@
     var grown = [];
     flip(function () {
       Object.keys(current).forEach(function (id) { if (!wanted[id]) current[id].remove(); });
+      // Swaps in place come before placements so the columns are measured after every swap.
+      var added = [];
       state.entries.forEach(function (entry, index) {
         var card = current[entry.id];
         if (card && state.partById[entry.id] === partOf(entry)) return;
         var fresh = makeCard(entry, grown);
         if (card) card.replaceWith(fresh);
-        else placeInColumn(fresh, index < lastKept);
+        else added.push({ card: fresh, top: index < lastKept });
       });
+      added.forEach(function (item) { placeInColumn(item.card, item.top); });
       grown.forEach(growCard);
     });
     restoreFocus(focusedId);
@@ -215,7 +219,7 @@
     var ticket = ++state.ticket;
     var offset = reset ? 0 : state.entries.length;
     state.loading = true;
-    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag, state.color, state.order, null, state.seed).then(function (result) {
+    return bridge.list_entries(state.query, offset, PAGE_SIZE, state.setId, state.group, state.tag, state.color, state.order, null, state.seed, state.unsorted).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];
@@ -238,7 +242,7 @@
     var held = {};
     state.entries.forEach(function (entry) { if (entry.thumb) held[entry.id] = entry.thumb; });
     state.loading = true;
-    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color, state.order, Object.keys(held).map(Number), state.seed).then(function (result) {
+    bridge.list_entries(state.query, 0, limit, state.setId, state.group, state.tag, state.color, state.order, Object.keys(held).map(Number), state.seed, state.unsorted).then(function (result) {
       if (ticket !== state.ticket) return;
       state.total = result.total;
       state.years = result.years || [];

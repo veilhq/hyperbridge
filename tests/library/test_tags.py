@@ -63,6 +63,17 @@ class TagManagementTests(LibraryCase):
         self.assertEqual(library.delete_single_use_tags(), 1)
         self.assertEqual(sorted(item["name"] for item in library.list_tags()), ["Posters", "poster"])
 
+    def test_tidy_previews_then_deletes_numbers_and_merges_plurals(self):
+        library.add_tags([self.first], "2024")
+        library.add_tags([self.first], "glass")
+        plan = library.tidy_tags()
+        self.assertEqual(plan, {"numbers": ["2024"], "merges": [["Posters", "poster"]]})
+        self.assertEqual(len(library.list_tags()), 5)
+        library.tidy_tags(apply=True)
+        self.assertEqual(sorted(item["name"] for item in library.list_tags()), ["glass", "lonely", "poster"])
+        self.assertEqual(self.tags(self.third), ["lonely", "poster"])
+        self.assertEqual(library.tidy_tags(), {"numbers": [], "merges": []})
+
     def test_changed_entries_are_stamped_and_marked_so_sync_and_enrichment_respect_them(self):
         self.conn.execute("UPDATE entries SET updated_at = '2026-01-01T00:00:00'")
         self.conn.commit()

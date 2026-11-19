@@ -20,6 +20,7 @@
       <button class="content-card sets-tab" id="sets-latest" type="button"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Latest<span class="sets-tab-count sets-tab-fresh" id="latest-count" data-tooltip="New since your last visit"></span></button>
       <button class="content-card sets-tab" id="sets-browse" type="button"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>Sets<span class="sets-tab-count" id="sets-count"></span></button>
       <button class="content-card sets-tab content-card-active" id="sets-all" type="button" aria-current="true"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 22H4a2 2 0 0 1-2-2V6"/><path d="m22 13-1.296-1.296a2.41 2.41 0 0 0-3.408 0L11 18"/><circle cx="12" cy="8" r="2"/><rect width="16" height="16" x="6" y="2" rx="2"/></svg>All<span class="sets-tab-count" id="all-count"></span></button>
+      <button class="content-card sets-tab" id="sets-unsorted" type="button" data-tooltip="Entries in no set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>Unsorted<span class="sets-tab-count" id="unsorted-count"></span></button>
       <hr class="sets-stack-rule">
       <div class="sets-list" id="sets-list"></div>
       </nav>
@@ -124,6 +125,7 @@
           <div class="settings-follow-form">
             <input class="form-input" id="tags-filter" placeholder="Filter tags" maxlength="40" aria-label="Filter tags" autocomplete="off">
             <button class="action-button action-button-ghost" id="tags-sort" type="button">Most used</button>
+            <button class="action-button action-button-ghost" id="tags-tidy" type="button" data-tooltip="Delete number-only tags and merge each plural into its singular">Tidy</button>
             <button class="action-button action-button-ghost" id="tags-prune" type="button">Delete single-use</button>
           </div>
           <span class="settings-follow-error" id="tags-error" role="alert" hidden></span>
@@ -210,6 +212,19 @@
               <span class="settings-source-desc" id="downscale-desc">New captures wider or taller than 3840 pixels are saved at that size instead. Images already in the library are left as they are.</span>
             </span>
             <button class="switch" id="downscale-switch" type="button" role="switch" aria-checked="false" aria-labelledby="downscale-name" aria-describedby="downscale-desc"><span class="switch-goo"></span></button>
+          </div>
+        </section>
+        <section class="settings-panel" aria-labelledby="captures-title">
+          <header class="settings-panel-head">
+            <h2 class="settings-subhead" id="captures-title">Captures</h2>
+            <p class="settings-source-desc">Links that hit a passing network error are tried again on their own, up to three times.</p>
+          </header>
+          <div class="settings-source">
+            <span class="settings-source-text">
+              <span class="settings-source-name">Failed captures</span>
+              <span class="settings-source-desc" id="failed-desc">Counting...</span>
+            </span>
+            <button class="action-button action-button-ghost" id="failed-retry" type="button" hidden>Retry all</button>
           </div>
         </section>
         </div>

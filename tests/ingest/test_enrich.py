@@ -30,6 +30,12 @@ class EnrichTests(LibraryCase):
     def row(self, entry_id):
         return self.conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
 
+    def test_known_keywords_match_existing_tags_and_fold_plurals(self):
+        for name in ("Lamp", "chairs", "art"):
+            self.conn.execute("INSERT INTO tags (name) VALUES (?)", (name,))
+        found = enrich.known_keywords(self.conn, ["lamps", "chair", "ART", "2024", "12/05", "unknown"])
+        self.assertEqual(found, ["Lamp", "chairs", "art"])
+
     def test_a_pinterest_pin_is_tagged_with_its_service_board_and_section(self):
         entry = self.add("a", source_service="pinterest", collection="Interiors / Lighting")
         self.assertTrue(enrich.enrich_entry(self.conn, self.row(entry)))

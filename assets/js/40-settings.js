@@ -170,6 +170,30 @@
     });
   }
 
+  // Shows how many entries failed to capture, with a button to try them all again.
+  function loadFailed() {
+    var bridge = api();
+    if (!bridge || !bridge.failed_count) return;
+    Promise.resolve(bridge.failed_count()).then(function (count) {
+      $("#failed-desc").textContent = count ? entries(count) + " could not be captured. Open one to see why." : "None. Every link was captured.";
+      $("#failed-retry").hidden = !count;
+    }).catch(function () {});
+  }
+
+  function initFailed() {
+    var button = $("#failed-retry");
+    button.addEventListener("click", function () {
+      var bridge = api();
+      if (!bridge || !bridge.retry_failed) return;
+      button.disabled = true;
+      Promise.resolve(bridge.retry_failed()).then(function (count) {
+        toast(count ? "success" : "error", count ? "Retrying " + entries(count) + "." : "Nothing to retry. Pasted and dropped images have no source link.");
+        if (count) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
+        loadFailed();
+      }).catch(function () { toast("error", "Could not retry."); }).then(function () { button.disabled = false; });
+    });
+  }
+
   var DEFAULT_FIELDS = [
     { panel: "#defaults-library", key: "library_order", name: "Order", desc: "How entries are sorted.",
       options: [["newest", "Newest"], ["color", "Color"], ["oldest", "Oldest"], ["title", "Title"], ["source", "Source"], ["random", "Random"]] },
@@ -285,6 +309,7 @@
   function load() {
     loadFollowed();
     loadStorage();
+    loadFailed();
     loadDefaults();
     var bridge = api();
     if (!bridge || !bridge.list_feed_sources) return Promise.resolve();
@@ -675,6 +700,7 @@
     });
     initShare();
     initStorage();
+    initFailed();
     buildDefaults();
     syncPoller = initSync();
     watchSyncActivity();

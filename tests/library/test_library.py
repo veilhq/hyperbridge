@@ -196,6 +196,11 @@ class DiscardTests(LibraryOpsCase):
     def test_missing_entry_returns_false(self):
         self.assertFalse(library.discard_entry(999))
 
+    def test_discards_many_and_reports_the_ids_removed(self):
+        first, second = self.add_entry(), self.add_entry()
+        self.assertEqual(library.discard_entries([first, 999, second]), [first, second])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

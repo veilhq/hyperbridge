@@ -7,7 +7,8 @@ import json
 import re
 import sqlite3
 import threading
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -22,7 +23,10 @@ DOWNSCALE_EDGE = 3840  # longest side kept when the downscale preference is on
 MAX_PIXELS = 50_000_000
 MAX_HTML_BYTES = 2_000_000
 MAX_IMAGES = 20
+IMAGE_FETCH_WORKERS = 4
 MAX_TITLE = 100
+MAX_ATTEMPTS = 3
+RETRY_DELAYS = (30, 120)  # seconds before the second and third try of a capture that hit a passing error
 _TRACKING_PARAMS = {"fbclid", "gclid", "ref"}
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 _FORMAT_MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "GIF": "image/gif", "WEBP": "image/webp"}
@@ -143,19 +147,29 @@ def requeue(conn, entry_ids) -> int:
     """
     stamp = _timestamp()
     queued = 0
-    for entry_id in entry_ids:
-        row = conn.execute(
-            "SELECT id, source_url, source_key, state FROM entries WHERE id = ?", (int(entry_id),)).fetchone()
-        if row is None or row["state"] == "pending" or not (row["source_key"] or row["source_url"]):
-            continue
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute("UPDATE entries SET state = 'pending' WHERE id = ?", (row["id"],))
-        conn.execute(
-            "INSERT INTO jobs (kind, entry_id, payload, state, created_at, updated_at) VALUES ('capture', ?, ?, 'queued', ?, ?)",
-            (row["id"], json.dumps({"url": row["source_key"] or row["source_url"], "recapture": True}), stamp, stamp))
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for entry_id in entry_ids:
+            row = conn.execute(
+                "SELECT id, source_url, source_key, state FROM entries WHERE id = ?", (int(entry_id),)).fetchone()
+            if row is None or row["state"] == "pending" or not (row["source_key"] or row["source_url"]):
+                continue
+            conn.execute("UPDATE entries SET state = 'pending' WHERE id = ?", (row["id"],))
+            conn.execute(
+                "INSERT INTO jobs (kind, entry_id, payload, state, created_at, updated_at) VALUES ('capture', ?, ?, 'queued', ?, ?)",
+                (row["id"], json.dumps({"url": row["source_key"] or row["source_url"], "recapture": True}), stamp, stamp))
+            queued += 1
         conn.execute("COMMIT")
-        queued += 1
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     return queued
+
+
+def retry_failed(conn) -> int:
+    """Queue a fresh capture for every failed entry that came from a link; returns how many were queued."""
+    ids = [row["id"] for row in conn.execute("SELECT id FROM entries WHERE state = 'failed'")]
+    return requeue(conn, ids) if ids else 0
 
 
 _IMAGE_META = (
@@ -770,7 +784,7 @@ def keep_details(conn, entry_id: int, title: str = "", creator: str = "") -> Non
 def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
     """Fetch the entry's page (or image), store assets and update its fields; screenshot when no image.
 
-    Returns the page's keyword tags for the caller to add alongside the source tags.
+    Returns (page keywords, post hashtags) for the caller to add alongside the source tags.
     """
     from bridge.ingest import social
 
@@ -795,7 +809,7 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
             embedded = {key: value for key, value in image_info(response.body).items() if not entry[key]}
             _apply_metadata(conn, entry, {"title": readable_name(name), **embedded}, _timestamp())
             _store_image(conn, entry, response.body, 0, response.final_url or url)
-            return []
+            return [], []
         base = getattr(response, "final_url", "") or url
         values = extract_metadata(response.body, base)
         embed_url = instagram_embed_url(base)
@@ -820,11 +834,11 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
         conn.execute("UPDATE entries SET posted_at = ? WHERE id = ?", (values["posted_at"], entry["id"]))
     stored = 0
     fetched = set()
-    for image_url in values["image_urls"]:
+    last_error = None
+    for image_url, image, failure in _fetch_images(fetcher, values["image_urls"]):
         try:
-            image = _fetch_full_size(fetcher, image_url)
-            if not _is_image(image):
-                raise CaptureError("Preview image URL did not return an image")
+            if failure is not None:
+                raise failure
             digest = hashlib.sha256(image.body).hexdigest()
             if digest in fetched:
                 continue
@@ -834,7 +848,8 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
                 gaps = {key: value for key, value in image_info(image.body).items() if not values.get(key)}
                 _apply_metadata(conn, entry, gaps, _timestamp())
             stored += 1
-        except Exception:  # noqa: BLE001 - one bad image does not fail the entry
+        except Exception as exc:  # noqa: BLE001 - one bad image does not fail the entry
+            last_error = exc
             continue
     if not stored and screenshotter is not None:
         try:
@@ -843,8 +858,32 @@ def _capture_entry(conn, entry, fetcher, screenshotter=None) -> list:
         except Exception:  # noqa: BLE001 - a missing screenshot leaves the entry without an image
             pass
     if values["image_urls"] and not stored:
-        raise CaptureError("No preview image could be fetched")
-    return values["tags"]
+        raise CaptureError("No preview image could be fetched") from last_error
+    return ([], values["tags"]) if post and post["tags"] else (values["tags"], [])
+
+
+def _fetch_image(fetcher, image_url):
+    """Fetch one listed image at its largest size; returns (response, None), or (None, the error)."""
+    try:
+        image = _fetch_full_size(fetcher, image_url)
+        if not _is_image(image):
+            raise CaptureError("Preview image URL did not return an image")
+        return image, None
+    except Exception as exc:  # noqa: BLE001 - the caller decides what one bad image means
+        return None, exc
+
+
+def _fetch_images(fetcher, urls):
+    """Yield (url, response, error) for each image URL in order, fetching a few at a time so at most that many bodies are held."""
+    if len(urls) < 2:
+        for url in urls:
+            yield (url, *_fetch_image(fetcher, url))
+        return
+    with ThreadPoolExecutor(max_workers=IMAGE_FETCH_WORKERS) as pool:
+        for start in range(0, len(urls), IMAGE_FETCH_WORKERS):
+            batch = urls[start:start + IMAGE_FETCH_WORKERS]
+            for url, result in zip(batch, pool.map(lambda item: _fetch_image(fetcher, item), batch)):
+                yield (url, *result)
 
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
@@ -961,27 +1000,40 @@ def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if job is None:
         raise ValueError(f"No job with id {job_id}")
+    attempts = job["attempts"]
     if job["state"] != "running":
+        attempts += 1
         conn.execute(
             "UPDATE jobs SET state = 'running', attempts = attempts + 1, updated_at = ? WHERE id = ?",
             (_timestamp(), job_id),
         )
     error = ""
-    page_tags = []
+    failure = None
+    keywords, post_tags = [], []
     try:
         entry = conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone()
         if entry is None:
             raise CaptureError("Entry no longer exists")
-        page_tags = _capture_entry(conn, entry, fetcher or default_fetcher(), screenshotter)
+        keywords, post_tags = _capture_entry(conn, entry, fetcher or default_fetcher(), screenshotter)
     except Exception as exc:  # noqa: BLE001 - any failure is recorded on the job
-        error = f"{type(exc).__name__}: {exc}"[:500]
+        failure = exc
+        error = error_text(exc)
     stamp = _timestamp()
+    if failure is not None and job["entry_id"] is not None and attempts < MAX_ATTEMPTS and passing_error(failure):
+        # The entry stays pending while the job waits for its next try.
+        wait = RETRY_DELAYS[min(attempts, len(RETRY_DELAYS)) - 1]
+        conn.execute(
+            "UPDATE jobs SET state = 'queued', error = ?, run_after = ?, updated_at = ? WHERE id = ?",
+            (error, _timestamp(datetime.now() + timedelta(seconds=wait)), stamp, job_id),
+        )
+        return
     entry_state, job_state = ("failed", "failed") if error else ("captured", "done")
     if error and job["entry_id"] is not None and _kept_image(conn, job, job["entry_id"]):
         entry_state = "captured"
     if not error and job["entry_id"] is not None:
         from bridge.ingest import enrich
-        enrich.enrich_entry(conn, conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone(), page_tags)
+        row = conn.execute("SELECT * FROM entries WHERE id = ?", (job["entry_id"],)).fetchone()
+        enrich.enrich_entry(conn, row, post_tags + enrich.known_keywords(conn, keywords))
     if job["entry_id"] is not None:
         conn.execute(
             "UPDATE entries SET state = ?, updated_at = ? WHERE id = ?",
@@ -991,6 +1043,67 @@ def run_capture(conn, job_id, fetcher=None, screenshotter=None) -> None:
         "UPDATE jobs SET state = ?, error = ?, updated_at = ? WHERE id = ?",
         (job_state, error, stamp, job_id),
     )
+
+
+_PASSING_REASONS = frozenset(("timeout", "network", "dns"))
+_PASSING_STATUS = re.compile(r"HTTP (408|425|429|5\d\d)\b")
+
+
+def _chain(exc):
+    """Yield an error and the errors it was raised from, outermost first."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        yield exc
+        exc = exc.__cause__
+
+
+def passing_error(exc) -> bool:
+    """Whether a capture failure looks temporary (a timeout, a dropped connection, a busy server) and worth another try."""
+    for item in _chain(exc):
+        reason = getattr(item, "reason", "")
+        if reason in _PASSING_REASONS or (reason == "http_status" and _PASSING_STATUS.search(str(item))):
+            return True
+    return False
+
+
+def error_text(exc) -> str:
+    """Return a job's stored error: each error in the chain with its type and fetch reason, outermost first."""
+    parts = []
+    for item in _chain(exc):
+        reason = getattr(item, "reason", "")
+        label = type(item).__name__ + (f"[{reason}]" if isinstance(reason, str) and reason else "")
+        parts.append(f"{label}: {item}")
+    return " <- ".join(parts)[:500]
+
+
+_FAILURE_TEXT = (
+    (re.compile(r"HTTP (404|410)\b"), "The page is gone (HTTP {0})."),
+    (re.compile(r"HTTP (401|403)\b"), "The site refused the request (HTTP {0})."),
+    (re.compile(r"HTTP (429)\b"), "The site asked for fewer requests (HTTP {0})."),
+    (re.compile(r"HTTP (5\d\d)\b"), "The site had a server error (HTTP {0})."),
+    (re.compile(r"HTTP (\d{3})\b"), "The site answered with an error (HTTP {0})."),
+    (re.compile(r"\[timeout\]|deadline exceeded|network timeout"), "The site took too long to answer."),
+    (re.compile(r"\[dns\]|cannot resolve|no addresses for"), "Could not find the site. Check the address and the connection."),
+    (re.compile(r"\[network\]"), "Could not reach the site."),
+    (re.compile(r"\[too_large\]"), "The page or image is too large to save."),
+    (re.compile(r"\[too_many_redirects\]"), "The page kept redirecting."),
+    (re.compile(r"\[blocked_address\]|\[scheme\]|blocked address"), "That address is not allowed."),
+    (re.compile(r"pixel limit|not a usable image|did not return an image"), "The image could not be read."),
+    (re.compile(r"No preview image could be fetched"), "None of the page's images could be fetched."),
+)
+
+
+def failure_reason(error) -> str:
+    """Turn a job's stored error into a short sentence for the viewer; empty when there is no error."""
+    text = str(error or "")
+    if not text:
+        return ""
+    for pattern, sentence in _FAILURE_TEXT:
+        match = pattern.search(text)
+        if match:
+            return sentence.format(*match.groups())
+    return "Could not read the page."
 
 
 def _kept_image(conn, job, entry_id) -> bool:
@@ -1008,7 +1121,8 @@ def claim_next_job(conn):
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute(
-            "SELECT id FROM jobs WHERE state = 'queued' ORDER BY created_at, id LIMIT 1"
+            "SELECT id FROM jobs WHERE state = 'queued' AND run_after <= ? ORDER BY created_at, id LIMIT 1",
+            (_timestamp(),),
         ).fetchone()
         if row is None:
             conn.execute("COMMIT")

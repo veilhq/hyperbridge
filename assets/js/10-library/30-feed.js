@@ -281,6 +281,7 @@
       ? Promise.resolve(bridge.mark_latest_seen()).then(function (since) { latestSince = since || ""; })
       : Promise.resolve();
     state.setId = feedSet ? feedSet.id : null;
+    state.unsorted = false;
     setFinding(false);
     $("#dock-find").hidden = true;
     renderFilter();

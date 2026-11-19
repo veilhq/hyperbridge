@@ -8,12 +8,18 @@
   var observer = null;
   var reparkTimer = null;
 
-  // Drops the image data of a card that has scrolled far away, pinning its exact fractional height so the grid does not shift.
-  function unload(img) {
+  // Measures an image that can be unloaded; null when it has no loaded source or no height.
+  function measureImage(img) {
+    if (!img.getAttribute("src") || !img.complete) return null;
     var height = img.getBoundingClientRect().height;
-    if (!img.getAttribute("src") || !img.complete || !height) return;
+    return height ? { img: img, height: height } : null;
+  }
+
+  // Drops the image data of a card that has scrolled far away, pinning its exact fractional height so the grid does not shift.
+  function unload(measured) {
+    var img = measured.img;
     sources.set(img, img.getAttribute("src"));
-    img.style.height = height + "px";
+    img.style.height = measured.height + "px";
     img.removeAttribute("src");
   }
 
@@ -29,10 +35,8 @@
   }
 
   // A far-off card keeps its layout height but skips style, layout and paint for everything inside it.
-  function park(card) {
-    if (card.hasAttribute("data-parked")) return;
-    var height = getComputedStyle(card).height;
-    if (!parseFloat(height)) return;
+  function park(card, height) {
+    if (card.hasAttribute("data-parked") || !parseFloat(height)) return;
     card.style.setProperty("--parked-height", height);
     card.setAttribute("data-parked", "true");
   }
@@ -82,17 +86,24 @@
     var grid = document.getElementById("library-grid");
     var scroller = document.getElementById("library");
     if (!grid || !scroller || !("IntersectionObserver" in window) || !("MutationObserver" in window)) return;
+    // Every leaving card is measured before any is changed, so a batch costs one layout instead of one per card.
     observer = new IntersectionObserver(function (changes) {
+      var leaving = [];
       changes.forEach(function (change) {
         var card = change.target;
-        var images = imagesOf(card);
-        if (change.isIntersecting) {
-          unpark(card);
-          for (var i = 0; i < images.length; i++) restore(images[i]);
-        } else {
-          for (var j = 0; j < images.length; j++) unload(images[j]);
-          park(card);
-        }
+        if (change.isIntersecting || card.hasAttribute("data-parked")) return;
+        var images = Array.prototype.map.call(imagesOf(card), measureImage).filter(Boolean);
+        leaving.push({ card: card, images: images, height: getComputedStyle(card).height });
+      });
+      changes.forEach(function (change) {
+        if (!change.isIntersecting) return;
+        var images = imagesOf(change.target);
+        unpark(change.target);
+        for (var i = 0; i < images.length; i++) restore(images[i]);
+      });
+      leaving.forEach(function (item) {
+        item.images.forEach(unload);
+        park(item.card, item.height);
       });
     }, { root: scroller, rootMargin: MARGIN });
     new MutationObserver(function (records) {

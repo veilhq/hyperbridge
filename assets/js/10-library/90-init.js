@@ -53,6 +53,7 @@
     setupGroup();
     document.addEventListener("hyperbridge:filter", function (event) {
       state.setId = event.detail.setId || null;
+      state.unsorted = Boolean(event.detail.unsorted);
       leaveCandidates();
       setFinding(false);
       $("#dock-find").hidden = !state.setId;

@@ -232,11 +232,13 @@ def mark_captured(conn, items) -> list:
 
 
 def dismiss(conn, ids) -> int:
-    """Hide feed items for good; returns how many changed."""
+    """Hide feed items for good in one statement per few hundred ids; returns how many changed."""
+    ids = [int(item_id) for item_id in ids]
     count = 0
-    for item_id in ids:
+    for start in range(0, len(ids), 500):
+        chunk = ids[start:start + 500]
         count += conn.execute(
-            "UPDATE feed_items SET state = 'dismissed' WHERE id = ? AND state = 'new'", (int(item_id),)).rowcount
+            f"UPDATE feed_items SET state = 'dismissed' WHERE state = 'new' AND id IN ({','.join('?' * len(chunk))})", chunk).rowcount
     return count
 
 

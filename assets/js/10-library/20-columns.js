@@ -70,18 +70,57 @@
 
   // Empties the grid and sets up fixed columns, the given count or what fits now.
   function resetColumns(count) {
+    placement = null;
     grid.textContent = "";
     grid.setAttribute("data-columns", "true");
     for (var i = 0, total = count || columnCount(); i < total; i++) grid.appendChild(makeEl("div", "library-grid-column"));
   }
 
+  // Column heights measured once per synchronous run of placements, then advanced by each card's predicted height.
+  var placement = null;
+
+  function startPlacement() {
+    var columns = Array.prototype.slice.call(grid.querySelectorAll(".library-grid-column"));
+    placement = { columns: columns, heights: columns.map(function (column) { return column.offsetHeight; }), width: columns.length ? columns[0].clientWidth : 0, chrome: null };
+    queueMicrotask(function () { placement = null; });
+  }
+
+  // Border and bottom margin a card adds around its reserved image box, read once per run.
+  function cardChrome(el) {
+    var style = getComputedStyle(el);
+    return { border: (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0), margin: parseFloat(style.marginBottom) || 0 };
+  }
+
+  function parseRatio(value) {
+    var parts = String(value || "").split("/");
+    var ratio = parseFloat(parts[0]) / (parts.length > 1 ? parseFloat(parts[1]) : 1);
+    return ratio > 0 && isFinite(ratio) ? ratio : 0;
+  }
+
+  // Height an element takes in a column, from the aspect ratio it reserves (inline, or 4 / 3 for pending and empty cards); null when unknown.
+  function predictedHeight(el) {
+    var own = parseRatio(el.style.aspectRatio);
+    var box = own ? el : el.querySelector(".library-card-image, .library-pending, .library-thumb-empty");
+    var ratio = own || (box && (parseRatio(box.style.aspectRatio) || (box.classList.contains("library-card-image") ? 0 : 4 / 3)));
+    if (!ratio || !placement.width) return null;
+    if (!placement.chrome) placement.chrome = cardChrome(el);
+    var border = placement.chrome.border;
+    return (own ? placement.width / ratio : (placement.width - border) / ratio + border) + placement.chrome.margin;
+  }
+
   // Adds an element to the shortest column, at its top when asked.
   function placeInColumn(el, top) {
-    var columns = grid.querySelectorAll(".library-grid-column");
-    var best = columns[0];
-    for (var i = 1; i < columns.length; i++) if (columns[i].offsetHeight < best.offsetHeight) best = columns[i];
+    if (!placement || !placement.columns[0] || !placement.columns[0].isConnected) startPlacement();
+    var heights = placement.heights;
+    var index = 0;
+    for (var i = 1; i < heights.length; i++) if (heights[i] < heights[index]) index = i;
+    var best = placement.columns[index];
     if (top && best.firstChild) best.insertBefore(el, best.firstChild);
     else best.appendChild(el);
+    var grown = predictedHeight(el);
+    // Anything without a reserved ratio is measured, and the run measures fresh from then on.
+    if (grown === null) placement = null;
+    else heights[index] += grown;
   }
 
   function motionSeconds(name) {

@@ -44,11 +44,13 @@
   }
   window.applyAccent = applyAccent;
 
-  // Shows the entry total beside the All set.
+  // Shows the entry total beside the All tab and the count of entries in no set beside Unsorted.
   function renderStats(stats) {
     var count = stats && typeof stats.entries === "number" ? stats.entries : 0;
     var countEl = $("#all-count");
     if (countEl) countEl.textContent = count;
+    var unsortedEl = $("#unsorted-count");
+    if (unsortedEl) unsortedEl.textContent = stats && typeof stats.unsorted === "number" ? stats.unsorted : 0;
   }
   window.renderStats = renderStats;
 
@@ -89,8 +91,10 @@
     if (api.get_stats) api.get_stats().then(renderStats);
   }
 
-  // Shared HyperKit cursor trail and companion box.
-  if (window.HvCursorTrail) window.HvCursorTrail.start(document.body);
+  // Shared HyperKit cursor trail and companion box; the trail's WebGL setup waits until the first frame is up.
+  if (window.HvCursorTrail) {
+    (window.requestIdleCallback || setTimeout)(function () { window.HvCursorTrail.start(document.body); }, { timeout: 1000 });
+  }
   if (window.HvCursorBox) window.HvCursorBox.start(document.body);
 
   if (window.pywebview && window.pywebview.api) {

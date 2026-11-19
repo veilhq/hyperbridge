@@ -19,6 +19,8 @@ var sets = [];
 var selectedId = null;
 // The feed view showing in the library: "discover", "latest", or false for none.
 var feedOpen = false;
+// Whether the library shows only entries in no set.
+var unsortedOpen = false;
 var LATEST_FIRST_POLL_MS = 60 * 1000;
 var LATEST_POLL_MS = 30 * 60 * 1000;
 var browsing = false;

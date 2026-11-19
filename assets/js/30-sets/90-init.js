@@ -57,6 +57,7 @@ function initSets() {
   $("#sets-discover").addEventListener("click", openDiscover);
   $("#sets-latest").addEventListener("click", openLatest);
   $("#sets-all").addEventListener("click", function () { select(null); });
+  $("#sets-unsorted").addEventListener("click", openUnsorted);
   $("#sets-browse").addEventListener("click", openBrowse);
   $("#sets-new").addEventListener("click", startNew);
   $("#sets-collapse").addEventListener("click", function () { setCollapsed(!tabsCollapsed); });

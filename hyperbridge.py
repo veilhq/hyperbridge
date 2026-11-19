@@ -156,13 +156,15 @@ class HyperbridgeAPI:
             return build_palette_oklch("#00ff41", "split")
 
     def get_stats(self) -> dict:
-        """Return library totals; a fresh connection per call keeps threads independent."""
+        """Return library totals, including how many entries are in no set; a fresh connection per call keeps threads independent."""
         conn = db.connect()
         try:
             entries = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+            unsorted = conn.execute(
+                "SELECT COUNT(*) FROM entries e WHERE NOT EXISTS (SELECT 1 FROM set_entries se WHERE se.entry_id = e.id)").fetchone()[0]
         finally:
             conn.close()
-        return {"entries": entries}
+        return {"entries": entries, "unsorted": unsorted}
 
     def get_storage(self) -> dict:
         """Return how much disk the library uses, by kind, and the machine's storage preferences."""
@@ -193,11 +195,11 @@ class HyperbridgeAPI:
 
     def list_entries(self, query: str = "", offset: int = 0, limit: int = 60, set_id: int | None = None,
                      group: str = "", tag: str = "", color: str = "", order: str = "", known: list | None = None,
-                     seed: int = 0) -> dict:
+                     seed: int = 0, unsorted: bool = False) -> dict:
         """Return a page of entries, newest first unless order is color, oldest, title, source or random; filtered by text, set, tag and color, and optionally grouped.
 
         known lists entry ids whose thumbnails the caller already holds; those entries come back with keep set and no thumb.
-        seed fixes the random order so every page of one shuffle agrees.
+        seed fixes the random order so every page of one shuffle agrees. unsorted keeps only entries in no set.
         """
         offset = max(0, int(offset or 0))
         limit = min(_MAX_PAGE, max(1, int(limit or 60)))
@@ -212,6 +214,8 @@ class HyperbridgeAPI:
         if set_id:
             clauses.append("e.id IN (SELECT entry_id FROM set_entries WHERE set_id = ?)")
             params.append(int(set_id))
+        elif unsorted:
+            clauses.append("NOT EXISTS (SELECT 1 FROM set_entries se WHERE se.entry_id = e.id)")
         if tag:
             clauses.append(
                 "e.id IN (SELECT et.entry_id FROM entry_tags et JOIN tags t ON t.id = et.tag_id WHERE t.name = ?)"
@@ -241,7 +245,7 @@ class HyperbridgeAPI:
                 f" WHERE e.id IN ({', '.join('?' * len(ids))})", ids).fetchall()} if ids else {}
             span = conn.execute(
                 f"SELECT MIN(e.year_label), MAX(e.year_label) FROM entries e {where}{' AND' if where else ' WHERE'} e.year_label != ''",
-                params).fetchone() if set_id else None
+                params).fetchone() if set_id or unsorted else None
         finally:
             conn.close()
         entries = []
@@ -270,6 +274,25 @@ class HyperbridgeAPI:
         finally:
             conn.close()
 
+    def failed_count(self) -> int:
+        """Return how many entries failed to capture."""
+        conn = db.connect()
+        try:
+            return conn.execute("SELECT COUNT(*) FROM entries WHERE state = 'failed'").fetchone()[0]
+        finally:
+            conn.close()
+
+    def retry_failed(self) -> int:
+        """Capture every failed link entry again; returns how many were queued."""
+        conn = db.connect()
+        try:
+            return capture.retry_failed(conn)
+        except Exception as err:
+            logger.warning("retry_failed failed: %s", err)
+            return 0
+        finally:
+            conn.close()
+
     def get_entry(self, entry_id: int) -> dict | None:
         """Return one entry's fields, assets, tags and sets for the lightbox."""
         return library.get_entry(int(entry_id))
@@ -293,6 +316,14 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("discard_entry failed: %s", err)
             return False
+
+    def discard_entries(self, entry_ids: list) -> list:
+        """Delete entries and their files in one transaction; returns the ids deleted."""
+        try:
+            return library.discard_entries([int(item) for item in list(entry_ids or [])[:_MAX_BULK]])
+        except Exception as err:
+            logger.warning("discard_entries failed: %s", err)
+            return []
 
     def discover_images(self, url: str) -> dict:
         """List the usable images on a pasted page for adding to a set."""
@@ -446,6 +477,14 @@ class HyperbridgeAPI:
             logger.warning("delete_tag failed: %s", err)
             return 0
 
+    def tidy_tags(self, apply: bool = False) -> dict:
+        """Preview, or with apply carry out, deleting number-only tags and merging plurals into their singulars."""
+        try:
+            return library.tidy_tags(bool(apply))
+        except Exception as err:
+            logger.warning("tidy_tags failed: %s", err)
+            return {"numbers": [], "merges": [], "error": "Could not tidy tags."}
+
     def delete_single_use_tags(self) -> int:
         """Remove every tag only one entry carries and return how many tags were removed."""
         try:
@@ -488,6 +527,22 @@ class HyperbridgeAPI:
     def remove_entry(self, entry_id: int, set_id: int) -> bool:
         """Take an entry out of a set."""
         return sets.remove(int(entry_id), int(set_id))
+
+    def place_entries(self, entry_ids: list, set_id: int) -> int:
+        """Place entries in a set in one transaction and return how many are in it."""
+        try:
+            return sets.place_many([int(item) for item in list(entry_ids or [])[:_MAX_BULK]], int(set_id))
+        except Exception as err:
+            logger.warning("place_entries failed: %s", err)
+            return 0
+
+    def remove_entries(self, entry_ids: list, set_id: int) -> int:
+        """Take entries out of a set in one transaction and return how many were removed."""
+        try:
+            return sets.remove_many([int(item) for item in list(entry_ids or [])[:_MAX_BULK]], int(set_id))
+        except Exception as err:
+            logger.warning("remove_entries failed: %s", err)
+            return 0
 
     def save_asset(self, asset_id: int) -> str:
         """Ask where to save one asset and copy it there; returns saved, cancelled or failed."""

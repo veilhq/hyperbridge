@@ -9,6 +9,7 @@ from datetime import datetime
 from bridge.core import db
 from bridge.core import storage
 from bridge.core import thumbserver
+from bridge.ingest import capture
 from bridge.library import fingerprints
 from bridge.library import swatches
 
@@ -75,9 +76,14 @@ def get_entry(entry_id: int) -> dict | None:
                 " WHERE se.entry_id = ? ORDER BY s.name COLLATE NOCASE", (entry_id,)
             )
         ]
+        failure = ""
+        if row["state"] == "failed":
+            job = conn.execute("SELECT error FROM jobs WHERE entry_id = ? ORDER BY id DESC LIMIT 1", (entry_id,)).fetchone()
+            failure = capture.failure_reason(job["error"] if job else "")
         return {
             "id": row["id"],
             "state": row["state"],
+            "failure": failure,
             "source_url": row["source_url"],
             "domain": row["domain"],
             "manual": _manual(row["manual_fields"]),
@@ -244,6 +250,48 @@ def delete_tag(name: str) -> int:
     return len(entry_ids)
 
 
+NUMBER_ONLY = re.compile(r"[\d\s.,:/-]+")
+
+
+def tag_forms(name) -> list[str]:
+    """Return a tag name lowercased, then its singular when it ends in s, else its plural."""
+    lower = str(name).lower()
+    return [lower, lower[:-1] if lower.endswith("s") and len(lower) > 3 else lower + "s"]
+
+
+def _tidy_plan(conn) -> dict:
+    """List the number-only tags and the plural tags whose singular is also a tag, as [plural, singular] pairs."""
+    names = [row["name"] for row in conn.execute("SELECT name FROM tags ORDER BY name COLLATE NOCASE")]
+    present = {name.lower(): name for name in names}
+    numbers, merges = [], []
+    for name in names:
+        if NUMBER_ONLY.fullmatch(name):
+            numbers.append(name)
+            continue
+        singular = tag_forms(name)[1]
+        if name.lower().endswith("s") and singular in present and not NUMBER_ONLY.fullmatch(singular):
+            merges.append([name, present[singular]])
+    return {"numbers": numbers, "merges": merges}
+
+
+def tidy_tags(apply=False) -> dict:
+    """Find, and with apply carry out, the tag cleanup: delete number-only tags and merge each plural into its singular.
+
+    Returns the plan: {"numbers": [...], "merges": [[plural, singular], ...]}.
+    """
+    conn = db.connect()
+    try:
+        plan = _tidy_plan(conn)
+    finally:
+        conn.close()
+    if apply:
+        for name in plan["numbers"]:
+            delete_tag(name)
+        for plural, singular in plan["merges"]:
+            rename_tag(plural, singular)
+    return plan
+
+
 def delete_single_use_tags() -> int:
     """Remove every tag that only one entry carries and return how many tags went."""
     conn = db.connect()
@@ -301,20 +349,35 @@ def update_entry(entry_id: int, fields: dict) -> dict | None:
 
 def discard_entry(entry_id: int) -> bool:
     """Delete an entry, its queued jobs and its asset folder, noting the deletion for sync; returns False when it is missing."""
+    return discard_entries([entry_id]) == [entry_id]
+
+
+def discard_entries(entry_ids) -> list[int]:
+    """Delete entries, their queued jobs and asset folders in one transaction, noting each deletion for sync; returns the ids deleted."""
     conn = db.connect()
+    removed = []
     try:
-        row = conn.execute("SELECT uid, state FROM entries WHERE id = ?", (entry_id,)).fetchone()
-        if row is None:
-            return False
-        conn.execute("DELETE FROM jobs WHERE entry_id = ?", (entry_id,))
-        conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-        if row["state"] != "pending":
-            conn.execute("INSERT OR REPLACE INTO entry_deletions (uid, deleted_at) VALUES (?, ?)", (row["uid"], _now()))
-        uid = row["uid"]
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            stamp = _now()
+            for entry_id in entry_ids:
+                row = conn.execute("SELECT uid, state FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                if row is None:
+                    continue
+                conn.execute("DELETE FROM jobs WHERE entry_id = ?", (entry_id,))
+                conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+                if row["state"] != "pending":
+                    conn.execute("INSERT OR REPLACE INTO entry_deletions (uid, deleted_at) VALUES (?, ?)", (row["uid"], stamp))
+                removed.append((entry_id, row["uid"]))
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
     finally:
         conn.close()
-    shutil.rmtree(storage.entry_dir(uid), ignore_errors=True)
-    return True
+    for _, uid in removed:
+        shutil.rmtree(storage.entry_dir(uid), ignore_errors=True)
+    return [entry_id for entry_id, _ in removed]
 
 
 def _slug(text: str) -> str:
