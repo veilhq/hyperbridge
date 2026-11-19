@@ -411,19 +411,26 @@ def full_size_urls(url: str) -> list:
     return [item for item in found if item != url]
 
 
+ARENA_CDN = "https://d2w9rnfcy7mm78.cloudfront.net/"
+
+
 def _arena_original(parts) -> list:
-    """Return the uncropped original for an Are.na image link, whose path is base64 JSON naming the file and its
-    resize edits (the page's preview image is cropped to 1200x630); empty when the path is not that form."""
+    """Return uncropped copies of an Are.na image link, whose path is base64 JSON naming the file and its edits (the
+    page's preview is cropped to 1200x630): the stored original, then the same edits without the resize step."""
     token = parts.path.strip("/")
     try:
         spec = json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)))
     except (ValueError, TypeError):
         return []
-    if not isinstance(spec, dict) or not spec.get("key") or "edits" not in spec:
+    if not isinstance(spec, dict) or not isinstance(spec.get("key"), str) or not spec["key"]:
         return []
-    plain = {key: value for key, value in spec.items() if key != "edits"}
-    encoded = base64.urlsafe_b64encode(json.dumps(plain, separators=(",", ":")).encode()).decode().rstrip("=")
-    return [parts._replace(path="/" + encoded, query="").geturl()]
+    found = [ARENA_CDN + quote(spec["key"].lstrip("/"))]
+    edits = spec.get("edits")
+    if isinstance(edits, dict) and "resize" in edits:
+        plain = {**spec, "edits": {key: value for key, value in edits.items() if key != "resize"}}
+        encoded = base64.urlsafe_b64encode(json.dumps(plain, separators=(",", ":")).encode()).decode().rstrip("=")
+        found.append(parts._replace(path="/" + encoded, query="").geturl())
+    return found
 
 
 def _fetch_full_size(fetcher, url: str, first=None):

@@ -855,12 +855,13 @@ class FullSizeTests(LibraryCase):
             return "https://images.are.na/" + base64.urlsafe_b64encode(json.dumps(spec).encode()).decode().rstrip("=")
 
         file = {"bucket": "arena_images", "key": "1/original_ab.jpg"}
-        preview = arena({**file, "edits": {"resize": {"width": 1200, "height": 630, "fit": "cover"}}})
+        quality = {"jpeg": {"quality": 80}, "rotate": None}
+        preview = arena({**file, "edits": {"resize": {"width": 1200, "height": 630, "fit": "cover"}, **quality}})
         found = capture.full_size_urls(preview + "?v=1")
-        self.assertEqual(len(found), 1)
-        token = found[0].rsplit("/", 1)[1]
-        self.assertEqual(json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))), file)
-        self.assertEqual(capture.full_size_urls(arena(file)), [])
+        self.assertEqual(found[0], capture.ARENA_CDN + "1/original_ab.jpg")
+        token = found[1].rsplit("/", 1)[1]
+        self.assertEqual(json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))), {**file, "edits": quality})
+        self.assertEqual(capture.full_size_urls(arena(file)), [capture.ARENA_CDN + "1/original_ab.jpg"])
         self.assertEqual(capture.full_size_urls("https://images.are.na/not-base64!"), [])
 
     def test_capture_stores_the_full_size_copy_and_falls_back_when_it_is_missing(self):
