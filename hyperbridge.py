@@ -742,6 +742,24 @@ class HyperbridgeAPI:
             logger.warning("clear_phone_token failed: %s", err)
             return {"status": "failed", "error": "Could not turn phone capture off."}
 
+    def new_browser_token(self) -> dict:
+        """Create (or replace) the browser bookmarklet token and return it once, with the port it sends to."""
+        try:
+            sync_state = self._sync()
+            return {"status": "ok", "token": sync_state.store.new_token("browser"), "port": sync_state.port}
+        except Exception as err:
+            logger.warning("new_browser_token failed: %s", err)
+            return {"status": "failed", "error": "Could not create the bookmarklet."}
+
+    def clear_browser_token(self) -> dict:
+        """Turn browser capture off by forgetting the bookmarklet token."""
+        try:
+            self._sync().store.clear_token("browser")
+            return {"status": "ok"}
+        except Exception as err:
+            logger.warning("clear_browser_token failed: %s", err)
+            return {"status": "failed", "error": "Could not turn browser capture off."}
+
     def unpair(self, machine_id: str) -> dict:
         """Forget a paired machine on this side."""
         try:

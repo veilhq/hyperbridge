@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from http.server import ThreadingHTTPServer
@@ -32,6 +33,9 @@ SIGNATURE_SKEW = 120
 ACTIVE_SECONDS = 6
 APP_TAG = "hyperbridge"
 DENIED = "That machine does not recognize this one. Pair the two again."
+SAVE_FAILED = "Hyperbridge could not save that link."
+SAVE_REFUSED = {403: "This bookmarklet is no longer valid. Make a new one in Hyperbridge settings.",
+                429: "Too many wrong tokens. Try again in a minute."}
 
 
 class PeerStore:
@@ -109,27 +113,39 @@ class PeerStore:
             self._data["peers"].pop(peer_id, None)
             self._write()
 
-    def new_phone_token(self) -> str:
-        """Replace the phone capture token with a fresh one and return it; only its hash is kept."""
+    def new_token(self, kind: str) -> str:
+        """Replace the capture token of one kind ("phone" or "browser") with a fresh one and return it; only its hash is kept."""
         token = secrets.token_urlsafe(24)
         with self._lock:
-            self._data["phone"] = {"hash": _token_hash(token)}
+            self._data[kind] = {"hash": _token_hash(token)}
             self._write()
         return token
 
-    def clear_phone_token(self) -> None:
+    def clear_token(self, kind: str) -> None:
         with self._lock:
-            self._data.pop("phone", None)
+            self._data.pop(kind, None)
             self._write()
 
-    def has_phone_token(self) -> bool:
+    def has_token(self, kind: str) -> bool:
         with self._lock:
-            return bool((self._data.get("phone") or {}).get("hash"))
+            return bool((self._data.get(kind) or {}).get("hash"))
+
+    def token_ok(self, kind: str, token: str) -> bool:
+        with self._lock:
+            stored = (self._data.get(kind) or {}).get("hash") or ""
+        return bool(stored and token) and hmac.compare_digest(stored.encode(), _token_hash(token).encode())
+
+    def new_phone_token(self) -> str:
+        return self.new_token("phone")
+
+    def clear_phone_token(self) -> None:
+        self.clear_token("phone")
+
+    def has_phone_token(self) -> bool:
+        return self.has_token("phone")
 
     def phone_token_ok(self, token: str) -> bool:
-        with self._lock:
-            stored = (self._data.get("phone") or {}).get("hash") or ""
-        return bool(stored and token) and hmac.compare_digest(stored.encode(), _token_hash(token).encode())
+        return self.token_ok("phone", token)
 
 
 def detect_kind() -> str:
@@ -309,25 +325,57 @@ class Sync:
 
     def _phone_allowed(self, request) -> bool:
         """Check the sender is on a private network and holds the phone token; repeated wrong tokens lock requests out briefly."""
+        status = self._token_status(request, "phone", request.headers.get("X-Token", ""), loopback_only=False)
+        if status:
+            request._reply(status)
+        return not status
+
+    def _token_status(self, request, kind: str, token: str, loopback_only: bool) -> int:
+        """Return 0 when the sender's address is allowed and the token of this kind matches, else the HTTP status to refuse with."""
         try:
             address = ipaddress.ip_address(request.client_address[0])
         except ValueError:
             address = None
-        if not address or not (address.is_private or address.is_loopback):
-            request._reply(403)
-            return False
+        if not address or not (address.is_loopback or (address.is_private and not loopback_only)):
+            return 403
         if time.monotonic() < self.token_locked_until:
-            request._reply(429)
-            return False
-        if self.store.phone_token_ok(request.headers.get("X-Token", "")):
+            return 429
+        if self.store.token_ok(kind, token):
             self.token_failures = 0
-            return True
+            return 0
         self.token_failures += 1
         if self.token_failures >= TOKEN_FAILURES:
             self.token_failures = 0
             self.token_locked_until = time.monotonic() + TOKEN_LOCKOUT_SECONDS
-        request._reply(403)
-        return False
+        return 403
+
+    def get(self, request) -> bool:
+        """Handle /save?t=token&u=link, the browser bookmarklet's popup; this machine only, answers with a small page."""
+        parts = urllib.parse.urlsplit(request.path)
+        if parts.path != "/save":
+            return False
+        query = urllib.parse.parse_qs(parts.query)
+        status = self._token_status(request, "browser", (query.get("t") or [""])[0], loopback_only=True)
+        if status:
+            request._reply_page(status, SAVE_REFUSED.get(status, SAVE_FAILED))
+            return True
+        link = (query.get("u") or [""])[0].strip()
+        if not link or len(link) > MAX_CAPTURE_URL_LENGTH:
+            request._reply_page(400, SAVE_FAILED)
+            return True
+        conn = db.connect()
+        try:
+            added = capture.add_link(conn, link)
+        except ValueError:
+            request._reply_page(400, SAVE_FAILED)
+            return True
+        finally:
+            conn.close()
+        if added["created"]:
+            self.received += 1
+            self.record_arrival(1, 1, "browser")
+        request._reply_page(200, "Saved to Hyperbridge." if added["created"] else "Already in Hyperbridge.", close=True)
+        return True
 
     def _on_pull(self, request) -> bool:
         if not self._signed_ok(request):
@@ -500,7 +548,8 @@ class Sync:
         seconds = self.pairing_seconds()
         return {"name": self.store.name, "pairing_seconds": seconds, "code": self.code if seconds else "",
                 "machines": list(self.machines().values()), "received": self.received,
-                "phone": {"enabled": self.store.has_phone_token(), "port": self.port, "addresses": lan.local_addresses()}}
+                "phone": {"enabled": self.store.has_phone_token(), "port": self.port, "addresses": lan.local_addresses()},
+                "browser": {"enabled": self.store.has_token("browser"), "port": self.port}}
 
     def stop(self) -> None:
         """Close the server and stop announcing; safe to call more than once."""

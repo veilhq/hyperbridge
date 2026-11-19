@@ -6,6 +6,7 @@ import socket
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from unittest import mock
@@ -324,6 +325,52 @@ class PhoneCaptureTests(SyncCase):
         token = self.there.store.new_phone_token()
         self.assertNotIn(token, (self.laptop / "sync.json").read_text(encoding="utf-8"))
         self.assertTrue(self.there.status()["phone"]["enabled"])
+
+
+class BrowserCaptureTests(SyncCase):
+    def save(self, link, token):
+        query = urllib.parse.urlencode({"t": token, "u": link})
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.there.port}/save?{query}", timeout=10) as reply:
+                return reply.status, reply.read().decode(), reply.headers
+        except urllib.error.HTTPError as err:
+            return err.code, err.read().decode(), err.headers
+
+    def test_bookmarklet_saves_the_page_once_and_closes(self):
+        token = self.there.store.new_token("browser")
+        status, page, headers = self.save("https://example.com/page", token)
+        self.assertEqual(status, 200)
+        self.assertIn("Saved to Hyperbridge.", page)
+        self.assertIn("window.close", page)
+        self.assertEqual((headers["Cache-Control"], headers["Referrer-Policy"]), ("no-store", "no-referrer"))
+        self.assertIn("Already in Hyperbridge.", self.save("https://example.com/page", token)[1])
+        self.assertEqual(self.there.arrivals, {"added": 1, "changed": 1, "source": "browser"})
+
+    def test_tokens_are_separate_and_revocable(self):
+        phone = self.there.store.new_phone_token()
+        self.assertEqual(self.save("https://example.com/a", phone)[0], 403)
+        browser = self.there.store.new_token("browser")
+        self.assertTrue(self.there.status()["browser"]["enabled"])
+        self.there.store.clear_token("browser")
+        status, page, _ = self.save("https://example.com/a", browser)
+        self.assertEqual(status, 403)
+        self.assertIn("no longer valid", page)
+        self.assertTrue(self.there.store.has_phone_token())
+
+    def test_bad_link_and_other_paths_are_refused(self):
+        token = self.there.store.new_token("browser")
+        self.assertEqual(self.save("not a link", token)[0], 400)
+        self.assertEqual(self.save("", token)[0], 400)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.there.port}/other", timeout=10)
+        caught.exception.close()
+        self.assertEqual(caught.exception.code, 404)
+
+    def test_only_this_computer_may_save(self):
+        token = self.there.store.new_token("browser")
+        request = mock.Mock(client_address=("192.168.1.20", 5000))
+        self.assertEqual(self.there._token_status(request, "browser", token, loopback_only=True), 403)
+        self.assertEqual(self.there._token_status(request, "browser", token, loopback_only=False), 0)
 
 
 class DiscoveryTests(SyncCase):

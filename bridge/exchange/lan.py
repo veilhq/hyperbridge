@@ -1,6 +1,7 @@
 """Local-network transfer: share this library for a few minutes, or fetch the entries it lacks from another machine."""
 
 import hmac
+import html
 import ipaddress
 import json
 import secrets
@@ -96,7 +97,7 @@ class Share:
 
 
 def _handler_for(share):
-    """Build the request handler for a server whose authorize(request) decides who may read; share.post(request) may add routes."""
+    """Build the request handler for a server whose authorize(request) decides who may read; share.get and share.post may add routes."""
 
     class Handler(BaseHTTPRequestHandler):
         timeout = 30
@@ -108,6 +109,21 @@ def _handler_for(share):
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _reply_page(self, status: int, message: str, close: bool = False) -> None:
+            """Answer with a minimal page showing one message; close shuts the popup window after a moment."""
+            script = "<script>setTimeout(function(){window.close();},1200);</script>" if close else ""
+            body = (f"<!doctype html><meta charset=utf-8><title>Hyperbridge</title>"
+                    f"<body style=\"font-family:system-ui;color-scheme:light dark;text-align:center;padding-top:2em\">"
+                    f"<p>{html.escape(message)}</p>{script}").encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
             self.end_headers()
             self.wfile.write(body)
 
@@ -127,7 +143,9 @@ def _handler_for(share):
 
         def do_GET(self):
             if self.path != "/manifest":
-                self._reply(404)
+                extra = getattr(share, "get", None)
+                if not (extra and extra(self)):
+                    self._reply(404)
                 return
             if not self._authorized():
                 return

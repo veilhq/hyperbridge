@@ -533,8 +533,32 @@
       phoneInfo.textContent = "Send to " + urls.join(" or ") + (phoneToken ? ". Token: " + phoneToken + " (shown once; header X-Token)." : ". The token is set; make a new one to see it again.");
     }
 
+    var browserInfo = $("#browser-info"), browserCreate = $("#browser-create"), browserOff = $("#browser-off");
+    var browserCopy = $("#browser-copy");
+    var bookmarklet = "";
+
+    // Builds the bookmarklet: it opens a small window on this computer's inbox, which saves the current page's link.
+    function makeBookmarklet(token, port) {
+      return "javascript:(function(){window.open('http://127.0.0.1:" + port + "/save?t=" + encodeURIComponent(token) +
+        "&u='+encodeURIComponent(location.href),'hyperbridge','width=420,height=180');})();";
+    }
+
+    // Shows the bookmarklet state; the bookmarklet itself can be copied only right after it is created.
+    function paintBrowser(browser) {
+      var enabled = !!(browser && browser.enabled);
+      browserCreate.textContent = enabled ? "New bookmarklet" : "Create bookmarklet";
+      browserOff.hidden = !enabled;
+      browserInfo.hidden = !enabled;
+      if (!enabled) bookmarklet = "";
+      browserCopy.hidden = !bookmarklet;
+      browserInfo.textContent = !enabled ? "" : bookmarklet
+        ? "Copy it now; it is shown once. Making a new one stops the old one working."
+        : "A bookmarklet is set; make a new one to copy it again.";
+    }
+
     function paint(status) {
       paintPhone(status.phone);
+      paintBrowser(status.browser);
       var pairing = status.pairing_seconds > 0;
       pairStart.hidden = pairing;
       pairStop.hidden = !pairing;
@@ -580,6 +604,21 @@
       var bridge = api();
       if (bridge && bridge.clear_phone_token) Promise.resolve(bridge.clear_phone_token()).then(function () { phoneToken = ""; poll(); });
     });
+    browserCreate.addEventListener("click", function () {
+      var bridge = api();
+      if (!bridge || !bridge.new_browser_token) return;
+      Promise.resolve(bridge.new_browser_token()).then(function (result) {
+        if (!result || result.status !== "ok") { toast("error", (result && result.error) || "Could not create the bookmarklet."); return; }
+        bookmarklet = makeBookmarklet(result.token, result.port);
+        copyText(bookmarklet, "Bookmarklet");
+        poll();
+      });
+    });
+    browserCopy.addEventListener("click", function () { if (bookmarklet) copyText(bookmarklet, "Bookmarklet"); });
+    browserOff.addEventListener("click", function () {
+      var bridge = api();
+      if (bridge && bridge.clear_browser_token) Promise.resolve(bridge.clear_browser_token()).then(function () { bookmarklet = ""; poll(); });
+    });
     pairStop.addEventListener("click", function () {
       var bridge = api();
       if (bridge && bridge.stop_pairing) Promise.resolve(bridge.stop_pairing()).then(poll);
@@ -610,7 +649,7 @@
     if (arrivals.changed > previous.changed) document.dispatchEvent(new CustomEvent("hyperbridge:changed"));
     var added = arrivals.added - previous.added;
     if (added > 0) {
-      var from = arrivals.source === "phone" ? "your phone" : arrivals.source || "another machine";
+      var from = arrivals.source === "phone" ? "your phone" : arrivals.source === "browser" ? "your browser" : arrivals.source || "another machine";
       toast("success", (added === 1 ? "1 new entry" : added + " new entries") + " from " + from + ".");
     }
   }
