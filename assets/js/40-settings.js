@@ -537,10 +537,17 @@
     var browserCopy = $("#browser-copy");
     var bookmarklet = "";
 
-    // Builds the bookmarklet: it opens a small window on this computer's inbox, which saves the current page's link.
+    // Builds the bookmarklet: it saves the page through an image request and shows a toast on the page (the image's width
+    // says saved or known); when the page blocks the image or the save fails, it opens a small window that says why.
     function makeBookmarklet(token, port) {
-      return "javascript:(function(){window.open('http://127.0.0.1:" + port + "/save?t=" + encodeURIComponent(token) +
-        "&u='+encodeURIComponent(location.href),'hyperbridge','width=420,height=180');})();";
+      var toastStyle = "position:fixed;z-index:2147483647;right:16px;bottom:16px;padding:10px 14px;border-radius:8px;" +
+        "background:#1d1d1f;color:#fff;font:14px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.3)";
+      return "javascript:(function(){var b='http://127.0.0.1:" + port + "/save?t=" + encodeURIComponent(token) +
+        "&u='+encodeURIComponent(location.href);" +
+        "function s(m){var d=document.createElement('div');d.textContent=m;d.style.cssText='" + toastStyle + "';" +
+        "document.body.appendChild(d);setTimeout(function(){d.remove();},2500);}" +
+        "var i=new Image();i.onload=function(){s(i.naturalWidth>1?'Already in Hyperbridge':'Saved to Hyperbridge');};" +
+        "i.onerror=function(){window.open(b,'hyperbridge','width=420,height=180');};i.src=b+'&f=img';})();";
     }
 
     // Shows the bookmarklet state; the bookmarklet itself can be copied only right after it is created.

@@ -350,32 +350,44 @@ class Sync:
         return 403
 
     def get(self, request) -> bool:
-        """Handle /save?t=token&u=link, the browser bookmarklet's popup; this machine only, answers with a small page."""
+        """Handle /save?t=token&u=link from the browser bookmarklet, this machine only; answers with a small page, or with
+        f=img an image 1 pixel wide when saved and 2 when already there, so the bookmarklet can read the result."""
         parts = urllib.parse.urlsplit(request.path)
         if parts.path != "/save":
             return False
         query = urllib.parse.parse_qs(parts.query)
-        status = self._token_status(request, "browser", (query.get("t") or [""])[0], loopback_only=True)
-        if status:
+        status, created = self._save_link(request, (query.get("t") or [""])[0], (query.get("u") or [""])[0])
+        if (query.get("f") or [""])[0] == "img":
+            if status == 200:
+                width = 1 if created else 2
+                request._reply(200, f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="1"/>'.encode(), "image/svg+xml")
+            else:
+                request._reply(status)
+        elif status == 200:
+            request._reply_page(200, "Saved to Hyperbridge." if created else "Already in Hyperbridge.", close=True)
+        else:
             request._reply_page(status, SAVE_REFUSED.get(status, SAVE_FAILED))
-            return True
-        link = (query.get("u") or [""])[0].strip()
+        return True
+
+    def _save_link(self, request, token: str, link: str) -> tuple[int, bool]:
+        """Add one link for the bookmarklet; returns the HTTP status and whether the link was new."""
+        status = self._token_status(request, "browser", token, loopback_only=True)
+        if status:
+            return status, False
+        link = link.strip()
         if not link or len(link) > MAX_CAPTURE_URL_LENGTH:
-            request._reply_page(400, SAVE_FAILED)
-            return True
+            return 400, False
         conn = db.connect()
         try:
             added = capture.add_link(conn, link)
         except ValueError:
-            request._reply_page(400, SAVE_FAILED)
-            return True
+            return 400, False
         finally:
             conn.close()
         if added["created"]:
             self.received += 1
             self.record_arrival(1, 1, "browser")
-        request._reply_page(200, "Saved to Hyperbridge." if added["created"] else "Already in Hyperbridge.", close=True)
-        return True
+        return 200, added["created"]
 
     def _on_pull(self, request) -> bool:
         if not self._signed_ok(request):

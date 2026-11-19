@@ -328,8 +328,8 @@ class PhoneCaptureTests(SyncCase):
 
 
 class BrowserCaptureTests(SyncCase):
-    def save(self, link, token):
-        query = urllib.parse.urlencode({"t": token, "u": link})
+    def save(self, link, token, image=False):
+        query = urllib.parse.urlencode({"t": token, "u": link, **({"f": "img"} if image else {})})
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{self.there.port}/save?{query}", timeout=10) as reply:
                 return reply.status, reply.read().decode(), reply.headers
@@ -345,6 +345,14 @@ class BrowserCaptureTests(SyncCase):
         self.assertEqual((headers["Cache-Control"], headers["Referrer-Policy"]), ("no-store", "no-referrer"))
         self.assertIn("Already in Hyperbridge.", self.save("https://example.com/page", token)[1])
         self.assertEqual(self.there.arrivals, {"added": 1, "changed": 1, "source": "browser"})
+
+    def test_image_reply_width_tells_saved_from_known(self):
+        token = self.there.store.new_token("browser")
+        status, body, headers = self.save("https://example.com/img", token, image=True)
+        self.assertEqual((status, headers["Content-Type"], headers["Cache-Control"]), (200, "image/svg+xml", "no-store"))
+        self.assertIn('width="1"', body)
+        self.assertIn('width="2"', self.save("https://example.com/img", token, image=True)[1])
+        self.assertEqual(self.save("https://example.com/img", "wrong", image=True)[0], 403)
 
     def test_tokens_are_separate_and_revocable(self):
         phone = self.there.store.new_phone_token()

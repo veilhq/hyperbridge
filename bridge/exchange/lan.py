@@ -105,10 +105,12 @@ def _handler_for(share):
         def log_message(self, *args):
             return
 
-        def _reply(self, status: int, body: bytes = b"{}") -> None:
+        def _reply(self, status: int, body: bytes = b"{}", content_type: str = "application/json") -> None:
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            if content_type != "application/json":
+                self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
