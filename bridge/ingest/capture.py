@@ -1,5 +1,6 @@
 """Link capture: normalize and queue URLs, extract page metadata, store images and thumbnails."""
 
+import base64
 import hashlib
 import html
 import io
@@ -405,7 +406,24 @@ def full_size_urls(url: str) -> list:
         found.append(parts._replace(path=_SHOPIFY_SIZE.sub(r"\1", parts.path), query="").geturl())
     elif "/wp-content/uploads/" in parts.path and _WORDPRESS_SIZE.search(parts.path):
         found.append(parts._replace(path=_WORDPRESS_SIZE.sub(r"\1", parts.path), query="").geturl())
+    elif host == "images.are.na":
+        found += _arena_original(parts)
     return [item for item in found if item != url]
+
+
+def _arena_original(parts) -> list:
+    """Return the uncropped original for an Are.na image link, whose path is base64 JSON naming the file and its
+    resize edits (the page's preview image is cropped to 1200x630); empty when the path is not that form."""
+    token = parts.path.strip("/")
+    try:
+        spec = json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)))
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(spec, dict) or not spec.get("key") or "edits" not in spec:
+        return []
+    plain = {key: value for key, value in spec.items() if key != "edits"}
+    encoded = base64.urlsafe_b64encode(json.dumps(plain, separators=(",", ":")).encode()).decode().rstrip("=")
+    return [parts._replace(path="/" + encoded, query="").geturl()]
 
 
 def _fetch_full_size(fetcher, url: str, first=None):

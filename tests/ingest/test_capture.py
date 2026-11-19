@@ -1,5 +1,6 @@
 """Tests for URL normalizing, queueing, metadata extraction and the capture pipeline."""
 
+import base64
 import hashlib
 import io
 import json
@@ -848,6 +849,19 @@ class FullSizeTests(LibraryCase):
             self.assertEqual(capture.full_size_urls(small), [full], small)
         self.assertEqual(capture.full_size_urls("https://example.com/cover.png"), [])
         self.assertEqual(capture.full_size_urls("https://i.pinimg.com/originals/ab/cd/ef.jpg"), [])
+
+    def test_arena_preview_maps_to_the_uncropped_original(self):
+        def arena(spec):
+            return "https://images.are.na/" + base64.urlsafe_b64encode(json.dumps(spec).encode()).decode().rstrip("=")
+
+        file = {"bucket": "arena_images", "key": "1/original_ab.jpg"}
+        preview = arena({**file, "edits": {"resize": {"width": 1200, "height": 630, "fit": "cover"}}})
+        found = capture.full_size_urls(preview + "?v=1")
+        self.assertEqual(len(found), 1)
+        token = found[0].rsplit("/", 1)[1]
+        self.assertEqual(json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))), file)
+        self.assertEqual(capture.full_size_urls(arena(file)), [])
+        self.assertEqual(capture.full_size_urls("https://images.are.na/not-base64!"), [])
 
     def test_capture_stores_the_full_size_copy_and_falls_back_when_it_is_missing(self):
         small, full = "https://i.pinimg.com/736x/ab/cd/ef.jpg", "https://i.pinimg.com/originals/ab/cd/ef.jpg"
