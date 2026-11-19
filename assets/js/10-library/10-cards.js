@@ -76,19 +76,24 @@
     card.type = "button";
     card.setAttribute("data-id", index);
     if (item.feedId) card.setAttribute("data-key", "feed-" + item.feedId);
-    card.setAttribute("aria-label", "Select image " + (index + 1) + (item.fresh ? ", new" : ""));
+    card.setAttribute("aria-label", "Select image " + (index + 1) + (item.fresh ? ", new" : "") + (item.fromCandidate ? ", from a new source" : ""));
     var img = document.createElement("img");
     img.className = "library-card-image";
     img.src = item.thumb;
     img.alt = "";
     reserveSpace(img, item.width, item.height);
     card.appendChild(img);
-    if (item.known_entry_id || item.aiLabel || item.fresh) {
+    if (item.known_entry_id || item.aiLabel || item.fresh || item.fromCandidate) {
       var flags = card.appendChild(makeEl("span", "library-card-flags"));
       if (item.fresh) {
         var fresh = flags.appendChild(makeEl("span", "status-chip status-chip-filled library-card-fresh"));
         fresh.setAttribute("data-tooltip", "New since your last visit");
         fresh.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/></svg>';
+      }
+      if (item.fromCandidate) {
+        var sprout = flags.appendChild(makeEl("span", "status-chip status-chip-filled library-card-fresh"));
+        sprout.setAttribute("data-tooltip", "New source: " + item.followLabel);
+        sprout.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>';
       }
       if (item.known_entry_id) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "Captured")).setAttribute("data-tooltip", "Already in the library");
       if (item.aiLabel) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "AI label")).setAttribute("data-tooltip", item.aiLabel);

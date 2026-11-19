@@ -207,7 +207,13 @@
     { panel: "#defaults-sets", key: "lightbox_fit", name: "Viewer", desc: "Whether an opened image fills the space or shows whole with margins.",
       options: [["fill", "Fill"], ["fit", "Whole"]] },
     { panel: "#defaults-discover", key: "feed_ai", name: "AI-labeled images", desc: "Hold them back, blur them until selected, or show them as they are.",
-      options: [["hide", "Hide"], ["blur", "Blur"], ["show", "Show"]] }
+      options: [["hide", "Hide"], ["blur", "Blur"], ["show", "Show"]] },
+    { panel: "#defaults-discover", key: "discover_new_sources", name: "New sources", desc: "How much of Discover comes from Are.na channels and people you do not follow yet, found from your saves and tags.",
+      options: [["off", "Off"], ["few", "Few"], ["some", "Some"], ["more", "More"]] },
+    { panel: "#defaults-discover", key: "discover_offer_keeps", name: "Offer to follow after", desc: "Images saved from a new source before Discover asks whether to follow it.",
+      options: [[2, "2"], [3, "3"], [5, "5"]] },
+    { panel: "#defaults-discover", key: "discover_drop_skips", name: "Drop a new source after", desc: "Images dismissed from a new source, with none saved, before it stops appearing.",
+      options: [[5, "5"], [8, "8"], [12, "12"]] }
   ];
   var defaults = null;
   var defaultControls = {};

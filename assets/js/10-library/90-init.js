@@ -22,6 +22,8 @@
     });
     $("#find-refresh").addEventListener("click", function () { openFeed(true, feedSet, feedLatest); });
     $("#feed-more").addEventListener("click", discoverMore);
+    $("#find-offer-yes").addEventListener("click", function () { answerOffer(true); });
+    $("#find-offer-no").addEventListener("click", function () { answerOffer(false); });
     Array.prototype.forEach.call($("#find-ai").children, function (button) {
       button.addEventListener("click", function () { chooseFeedAi(button.getAttribute("data-mode")); });
     });

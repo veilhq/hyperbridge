@@ -14,6 +14,9 @@ DEFAULTS = {
     "sets_sort": "recent",
     "sets_rail_collapsed": False,
     "feed_ai": "blur",
+    "discover_new_sources": "some",
+    "discover_offer_keeps": 3,
+    "discover_drop_skips": 8,
 }
 
 # Allowed values for preferences limited to a fixed set.
@@ -24,11 +27,14 @@ CHOICES = {
     "lightbox_fit": ("fill", "fit"),
     "sets_sort": ("recent", "name", "size"),
     "feed_ai": ("hide", "blur", "show"),
+    "discover_new_sources": ("off", "few", "some", "more"),
+    "discover_offer_keeps": (2, 3, 5),
+    "discover_drop_skips": (5, 8, 12),
 }
 
 # Preferences the app reads at launch as the starting view; the Defaults settings tab edits them.
 VIEW_DEFAULTS = ("library_order", "library_group", "library_columns", "lightbox_fit", "sets_sort", "sets_rail_collapsed",
-                 "feed_ai")
+                 "feed_ai", "discover_new_sources", "discover_offer_keeps", "discover_drop_skips")
 
 _lock = threading.Lock()
 

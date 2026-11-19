@@ -50,6 +50,7 @@ from bridge.ingest import discover  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import feed_sources  # noqa: E402
 from bridge.ingest import similar  # noqa: E402
+from bridge.ingest import sources  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
 from bridge.core import db  # noqa: E402
 from bridge.core import prefs  # noqa: E402
@@ -428,7 +429,9 @@ class HyperbridgeAPI:
         try:
             conn = db.connect()
             try:
-                return {"ok": True, "item": _follower(str(url or "").strip())(conn, str(url or ""), capture.default_fetcher())}
+                item = _follower(str(url or "").strip())(conn, str(url or ""), capture.default_fetcher())
+                sources.settle_followed(conn)
+                return {"ok": True, "item": item}
             finally:
                 conn.close()
         except ValueError as err:
@@ -436,6 +439,29 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("follow_source failed: %s", err)
             return {"ok": False, "error": "Could not follow that link."}
+
+    def next_follow_offer(self) -> dict | None:
+        """Return the one suggested source Discover should offer to follow, {url, label, keeps}, or None."""
+        if prefs.get("discover_new_sources") == "off":
+            return None
+        return self._feed_call("next_follow_offer", lambda conn: sources.next_offer(
+            conn, prefs.get("discover_offer_keeps"), prefs.get("discover_drop_skips")), None)
+
+    def answer_follow_offer(self, url: str, yes: bool) -> dict:
+        """Follow an offered source on yes, or turn it down for good on no."""
+        try:
+            conn = db.connect()
+            try:
+                def follow(conn, link):
+                    return _follower(link)(conn, link, capture.default_fetcher())
+                return dict(sources.answer(conn, str(url or ""), bool(yes), follow), ok=True)
+            finally:
+                conn.close()
+        except ValueError as err:
+            return {"ok": False, "error": str(err)}
+        except Exception as err:
+            logger.warning("answer_follow_offer failed: %s", err)
+            return {"ok": False, "error": "Could not follow that source."}
 
     def unfollow_source(self, source_id: int) -> bool:
         """Stop following a source."""

@@ -4,11 +4,13 @@ import json
 import random
 from datetime import datetime, timedelta
 
+from bridge.core import prefs
 from bridge.ingest import arena
 from bridge.ingest import capture
 from bridge.ingest import labels
 from bridge.ingest import pinterest
 from bridge.ingest import rss
+from bridge.ingest import sources
 from bridge.library import library
 from bridge.library import sets
 from bridge.ingest import tumblr
@@ -80,7 +82,7 @@ def pull_round(weights, fetcher, rng, kinds=None):
         for item in items:
             if item["url"] not in seen:
                 seen.add(item["url"])
-                pulled.append(item)
+                pulled.append(dict(item, origin_url=url))
     return pulled, failed, len(picked)
 
 
@@ -94,32 +96,42 @@ def prune(conn) -> int:
         (dismissed, unseen)).rowcount
 
 
-def refresh(conn, fetcher=None, rng=None, replace=False) -> dict:
-    """Pull images from the followed Are.na, Pinterest, Tumblr and site feed sources.
+def refresh(conn, fetcher=None, rng=None, replace=False, share=None) -> dict:
+    """Pull images from the followed Are.na, Pinterest, Tumblr and site feed sources, plus suggested sources for about
+    `share` of the draw (default: the New sources setting), each weighted by how often its images were kept or skipped.
 
     replace swaps the unseen feed for the new pull; otherwise the images are appended, retrying up to ROUNDS times until something new arrives.
     """
     fetcher = fetcher or capture.default_fetcher()
     rng = rng or random.Random()
     prune(conn)
-    sources = arena.list_followed(conn)
-    followed = [item["url"] for item in sources]
-    kinds = {item["url"]: item["kind"] for item in sources}
+    sources_followed = arena.list_followed(conn)
+    followed = [item["url"] for item in sources_followed]
+    kinds = {item["url"]: item["kind"] for item in sources_followed}
     try:
         arena.backfill_origins(conn, fetcher, rng)
     except Exception:  # noqa: BLE001 - missing origins only leave the library less described
         pass
+    share = sources.SHARES[prefs.get("discover_new_sources")] if share is None else share
+    if share > 0:
+        sources.settle_followed(conn)
+        try:
+            sources.discover(conn, fetcher, rng)
+        except Exception:  # noqa: BLE001 - finding no new sources leaves the followed ones
+            pass
+    weights, candidates = sources.mixed_weights(conn, followed, share)
     added = failed = jobs = 0
     for attempt in range(1 if replace else ROUNDS):
-        pulled, round_failed, round_jobs = pull_round({url: 1 for url in followed}, fetcher, rng, kinds)
+        pulled, round_failed, round_jobs = pull_round(weights, fetcher, rng, kinds)
         failed, jobs = failed + round_failed, jobs + round_jobs
-        if replace and (pulled or not followed):
+        if replace and (pulled or not weights):
             conn.execute("DELETE FROM feed_items WHERE state = 'new' AND set_id IS NULL")
         added += store(conn, pulled)
-        if added or not followed or round_failed == round_jobs:
+        sources.mark_pulled(conn, {item["origin_url"] for item in pulled} & candidates)
+        if added or not weights or round_failed == round_jobs:
             break
     labels.check_new(conn, fetcher)
-    return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if followed else []}
+    return {"added": added, "failed": failed, "jobs": jobs, "enabled": ["arena"] if weights else []}
 
 
 def refresh_latest(conn, fetcher=None, rng=None, batch=LATEST_BATCH) -> dict:
@@ -190,12 +202,13 @@ def store(conn, items, set_id=None) -> int:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO feed_items"
             " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at,"
-            " source_ref, collection, posted_at, tags, set_id, description, publisher)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " source_ref, collection, posted_at, tags, set_id, description, publisher, origin_url)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["source_id"], item["url"], item["thumb"], item["width"], item["height"], item["title"],
              item["creator"], item["page_url"], item["term"], _now(),
              item.get("source_ref", ""), item.get("collection", ""), item.get("posted_at", ""),
-             json.dumps(item.get("tags") or []), set_id, item.get("description", ""), item.get("publisher", "")),
+             json.dumps(item.get("tags") or []), set_id, item.get("description", ""), item.get("publisher", ""),
+             item.get("origin_url", "")),
         )
         added += cursor.rowcount
     return added
@@ -204,19 +217,33 @@ def store(conn, items, set_id=None) -> int:
 def list_items(conn, offset=0, limit=60, show_flagged=False) -> dict:
     """Return unseen feed items, oldest first so later pulls append, with whether the feed is due a refresh.
 
-    Items carrying an AI label are left out and counted as flagged unless show_flagged is set.
+    Items carrying an AI label are left out and counted as flagged unless show_flagged is set. Items from a suggested
+    source carry from_candidate and the source as follow_url and follow_label.
     """
     unseen = "state = 'new' AND set_id IS NULL AND source_id IN ('arena', 'tumblr', 'pinterest', 'rss')"
     shown = unseen if show_flagged else unseen + " AND ai_label = ''"
     total = conn.execute(f"SELECT COUNT(*) FROM feed_items WHERE {shown}").fetchone()[0]
     flagged = conn.execute(f"SELECT COUNT(*) FROM feed_items WHERE {unseen} AND ai_label != ''").fetchone()[0]
     rows = conn.execute(
-        "SELECT id, source_id, url, thumb, width, height, title, creator, page_url, ai_label FROM feed_items"
-        f" WHERE {shown} ORDER BY id LIMIT ? OFFSET ?",
+        "SELECT f.id, f.source_id, f.url, f.thumb, f.width, f.height, f.title, f.creator, f.page_url, f.ai_label,"
+        " c.url AS follow_url, c.label AS follow_label FROM feed_items f"
+        f" LEFT JOIN candidate_sources c ON c.url = f.origin_url AND c.state IN {sources.ACTIVE}"
+        f" WHERE f.id IN (SELECT id FROM feed_items WHERE {shown}) ORDER BY f.id LIMIT ? OFFSET ?",
         (max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
     newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > STALE_HOURS * 3600
-    return {"items": mark_captured(conn, [dict(row) for row in rows]), "total": total, "flagged": flagged, "stale": stale}
+    items = [_candidate_fields(dict(row)) for row in rows]
+    return {"items": mark_captured(conn, items), "total": total, "flagged": flagged, "stale": stale}
+
+
+def _candidate_fields(item) -> dict:
+    """Mark an item from a suggested source, or drop the empty follow fields from one that is not."""
+    if item["follow_url"]:
+        item["from_candidate"] = True
+        item["follow_label"] = item["follow_label"] or item["follow_url"].rsplit("/", 1)[-1]
+    else:
+        del item["follow_url"], item["follow_label"]
+    return item
 
 
 def mark_captured(conn, items) -> list:

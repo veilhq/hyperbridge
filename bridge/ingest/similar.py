@@ -7,12 +7,12 @@ import random
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from urllib.parse import urlsplit
 
 from bridge.ingest import arena
 from bridge.ingest import capture
 from bridge.ingest import feed
 from bridge.ingest import labels
+from bridge.ingest import sources
 from bridge.library import sets as set_store
 
 POOL_LIMIT = 5000
@@ -28,8 +28,6 @@ SHOWN_TERMS = 8
 MATCHED_TERMS = 3
 SOURCE_PULL = 4.0
 QUERY_TERM_WEIGHT = 0.3
-NEIGHBOR_BLOCKS = 8
-NEIGHBOR_WORKERS = 4
 NEIGHBOR_PULLS = 3
 NEIGHBOR_QUERIES = 1
 NEIGHBOR_WEIGHT = 2.0
@@ -223,9 +221,7 @@ def list_items(conn, set_id, offset=0, limit=60, show_flagged=False) -> dict:
             "terms": own or top_terms(wanted)}
 
 
-def _bare(url) -> str:
-    parts = urlsplit(str(url or "").lower())
-    return re.sub(r"^www\.", "", parts.netloc) + parts.path.rstrip("/")
+_bare = sources.bare
 
 
 def source_weights(conn, set_id, followed, wanted=None) -> dict:
@@ -278,45 +274,31 @@ def queries(wanted, rng, count=QUERIES, used=()) -> list:
 def _set_blocks(conn, set_id) -> list:
     """Return the Are.na block ids of the set's images, from their recorded origin or their saved source."""
     rows = conn.execute(
-        "SELECT DISTINCT COALESCE(o.block_id, CASE WHEN e.source_service = 'arena' AND e.source_ref != ''"
-        " THEN CAST(e.source_ref AS INTEGER) END) FROM set_entries se JOIN entries e ON e.id = se.entry_id"
+        f"SELECT DISTINCT {sources.BLOCK_ID} FROM set_entries se JOIN entries e ON e.id = se.entry_id"
         " LEFT JOIN entry_origins o ON o.entry_id = e.id WHERE se.set_id = ?", (int(set_id),)).fetchall()
     return sorted(int(row[0]) for row in rows if row[0])
-
-
-def _block_channels(block_id, fetcher):
-    try:
-        return arena.block_channels(block_id, fetcher)
-    except Exception:  # noqa: BLE001 - an unreadable block is tried again on a later refresh
-        return None
 
 
 def find_neighbors(conn, set_id, fetcher, rng) -> int:
     """Record the public Are.na channels holding a sample of the set's images and how many each holds; returns failed lookups."""
     blocks = _set_blocks(conn, set_id)
-    sample = rng.sample(blocks, min(NEIGHBOR_BLOCKS, len(blocks)))
+    sample = rng.sample(blocks, min(sources.NEIGHBOR_BLOCKS, len(blocks)))
     if not sample:
         return 0
-    with ThreadPoolExecutor(max_workers=NEIGHBOR_WORKERS) as pool:
-        found = list(pool.map(lambda block: _block_channels(block, fetcher), sample))
-    shared, channels = {}, {}
-    for holders in found:
-        for channel in holders or []:
-            shared[channel["slug"]] = shared.get(channel["slug"], 0) + 1
-            channels[channel["slug"]] = channel
+    channels, failed = sources.holders(sample, fetcher)
     stamp = datetime.now().isoformat(timespec="seconds")
     conn.executemany(
         "INSERT INTO set_neighbors (set_id, slug, url, title, shared, length, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT (set_id, slug) DO UPDATE SET url = excluded.url, title = excluded.title,"
         " shared = MAX(shared, excluded.shared), length = excluded.length, checked_at = excluded.checked_at",
-        [(int(set_id), slug, item["url"], item["title"], shared[slug], item["length"], stamp) for slug, item in channels.items()])
-    return sum(1 for holders in found if holders is None)
+        [(int(set_id), slug, item["url"], item["title"], item["shared"], item["length"], stamp) for slug, item in channels.items()])
+    return failed
 
 
 def neighbor_weights(conn, set_id) -> dict:
     """Return {slug: (weight, title, url)} for the set's neighbor channels; sharing more of the set counts up, sheer size down."""
     rows = conn.execute("SELECT slug, url, title, shared, length FROM set_neighbors WHERE set_id = ?", (int(set_id),)).fetchall()
-    return {row["slug"]: (row["shared"] / math.log(row["length"] + 10), row["title"], row["url"]) for row in rows if row["shared"] > 0}
+    return {row["slug"]: (sources.strength(row["shared"], row["length"]), row["title"], row["url"]) for row in rows if row["shared"] > 0}
 
 
 def _pull_one(url, fetcher, rng):

@@ -43,6 +43,39 @@
   }
 
   // Switches how AI-labeled images appear and keeps the choice on this machine.
+  // The suggested source Discover is offering to follow ({ url, label, keeps }), one at a time.
+  var followOffer = null;
+
+  // Asks for the next suggested source to offer in the main Discover feed and shows or hides the prompt.
+  function paintOffer() {
+    var bridge = api();
+    var line = $("#find-offer");
+    if (feedSet || feedLatest || !bridge || !bridge.next_follow_offer) { line.hidden = true; return; }
+    var ticket = findTicket;
+    Promise.resolve(bridge.next_follow_offer()).then(function (offer) {
+      if (ticket !== findTicket) return;
+      followOffer = offer || null;
+      line.hidden = !followOffer;
+      if (!followOffer) return;
+      var kept = followOffer.keeps + (followOffer.keeps === 1 ? " image" : " images");
+      $("#find-offer-text").textContent = "You have saved " + kept + " from " + followOffer.label + ". Follow it?";
+    }).catch(function () { line.hidden = true; });
+  }
+
+  // Follows the offered source on yes or turns it down for good on no, then offers the next one.
+  function answerOffer(yes) {
+    var bridge = api();
+    var offer = followOffer;
+    if (!bridge || !offer) return;
+    $("#find-offer").hidden = true;
+    followOffer = null;
+    Promise.resolve(bridge.answer_follow_offer(offer.url, yes)).then(function (result) {
+      if (!result || !result.ok) { toast("error", (result && result.error) || "Could not follow that source."); return; }
+      if (yes) toast("success", "Added " + offer.label + " to sources.");
+      paintOffer();
+    }).catch(function () { toast("error", "Could not follow that source."); });
+  }
+
   function chooseFeedAi(mode) {
     if (FEED_AI_MODES.indexOf(mode) < 0 || mode === feedAiMode) return;
     feedAiMode = mode;
@@ -67,7 +100,7 @@
     return { feedId: item.id, url: item.url, thumb: item.thumb || item.url, width: item.width, height: item.height,
       title: item.title, creator: item.creator, source: FEED_SOURCE_NAMES[item.source_id] || item.source_id, matched: item.matched || null,
       followUrl: item.follow_url || null, followLabel: item.follow_label || "", aiLabel: item.ai_label || "", veiled: Boolean(item.ai_label) && feedAiMode === "blur",
-      known_entry_id: item.known_entry_id || null, fresh: Boolean(item.fresh) };
+      known_entry_id: item.known_entry_id || null, fresh: Boolean(item.fresh), fromCandidate: Boolean(item.from_candidate) };
   }
 
   // Returns the distinct unfollowed Are.na channels ({ url, label }) behind the given candidate indexes.
@@ -233,6 +266,7 @@
     candidates.candidates.forEach(function (item, index) { placeInColumn(buildCandidate(item, index)); });
     if (!quiet) cascadeIn();
     feedCount();
+    paintOffer();
     var count = result.total;
     var empty = feedSet
       ? "Nothing like this set in the feed yet. Tag its images to sharpen the match, or refresh to pull more."
@@ -258,6 +292,7 @@
     feedMessage("");
     $("#library-meta").hidden = true;
     $("#find-flagged").hidden = true;
+    $("#find-offer").hidden = true;
     resetColumns();
     for (var i = 0; i < 12; i++) {
       var tile = makeEl("div", "library-card loading-skeleton");
@@ -367,6 +402,7 @@
     feedSet = null;
     feedLatest = false;
     $("#find-flagged").hidden = true;
+    $("#find-offer").hidden = true;
     syncMore();
     findTicket++;
     $("#dock-find").hidden = !state.setId;
