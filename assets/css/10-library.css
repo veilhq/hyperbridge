@@ -115,11 +115,8 @@ html.a11y-reduce-motion .library-card-grow { transition: none; }
 /* A candidate already in the library: blurred behind a centered duplicate mark; a fresh capture blurs in, then the mark lands. */
 .library-card[data-captured] .library-card-image { filter: blur(var(--space-4)); }
 .library-captured-mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.library-captured-icon {
-  display: flex; padding: var(--space-2); color: var(--text-bright); pointer-events: auto;
-  background: var(--bg); border: var(--border-hair) solid var(--border); border-radius: var(--radius);
-}
-.library-captured-icon .icon-glyph { width: var(--icon-xl); height: var(--icon-xl); }
+.library-captured-icon { display: flex; color: var(--text-bright); pointer-events: auto; }
+.library-captured-icon .icon-glyph { width: var(--icon-lg); height: var(--icon-lg); }
 @keyframes libraryCaptureBlur { from { filter: blur(0); } to { filter: blur(var(--space-4)); } }
 @keyframes libraryCaptureMark { from { opacity: 0; scale: 0.6; } to { opacity: 1; scale: 1; } }
 .library-card[data-captured="fresh"] .library-card-image { animation: libraryCaptureBlur var(--motion-linger) var(--ease) both; }
