@@ -292,6 +292,11 @@ def search_channels(query, fetcher) -> list:
 
     Uses the v2 search, which needs no login; a phrase that finds nothing is searched again word by word.
     """
+    return [channel["url"] for channel in search_channel_details(query, fetcher)]
+
+
+def search_channel_details(query, fetcher) -> list:
+    """Return the same search as search_channels, each channel as {slug, url, title, length}."""
     wanted = _TITLE_WORD.findall(query.lower())
 
     def overlap(item):
@@ -311,8 +316,8 @@ def search_channels(query, fetcher) -> list:
                     seen.add(item["slug"])
                     found.append(item)
     found.sort(key=lambda item: (-overlap(item), -int(item.get("length") or 0)))
-    owners = [((item.get("user") or {}).get("slug") or "channel") for item in found]
-    return [f"https://www.are.na/{owner}/{item['slug']}" for owner, item in zip(owners, found)]
+    return [{"slug": item["slug"], "url": f"https://www.are.na/{(item.get('user') or {}).get('slug') or 'channel'}/{item['slug']}",
+             "title": _clean(item.get("title"), 200), "length": int(item.get("length") or 0)} for item in found]
 
 
 CONNECTIONS = 50

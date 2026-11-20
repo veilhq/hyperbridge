@@ -244,7 +244,7 @@
       if (candidates && candidates.trail) {
         var tile = candidates.candidates[id];
         if (!tile) return [];
-        var trailItems = [{ label: "Follow the thread", action: function () { trailFrom(id); } }];
+        var trailItems = [{ label: "Follow the trail", action: function () { trailFrom(id); } }];
         var known = tile.entryId || tile.known_entry_id;
         if (known) trailItems.unshift({ label: "Open", action: function () { document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: known } })); } });
         return trailItems;
@@ -255,7 +255,7 @@
         var feedItems = [];
         var picked = candidates.candidates[id];
         if (!many && picked && picked.feedId) {
-          feedItems.push({ label: "Follow the thread", action: function () {
+          feedItems.push({ label: "Follow the trail", action: function () {
             document.dispatchEvent(new CustomEvent("hyperbridge:trail", { detail: { feed: picked.feedId, item: {
               url: picked.url, thumb: picked.thumb, title: picked.title, creator: picked.creator, known_entry_id: picked.known_entry_id } } }));
           } });
@@ -272,7 +272,7 @@
       if (selected.size > 1 && selected.has(id)) return bulkMenuItems();
       var items = [
         { label: "Open", action: function () { document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: id } })); } },
-        { label: "Follow the thread", action: function () { document.dispatchEvent(new CustomEvent("hyperbridge:trail", { detail: { entry: id } })); } },
+        { label: "Follow the trail", action: function () { document.dispatchEvent(new CustomEvent("hyperbridge:trail", { detail: { entry: id } })); } },
         { label: "Open source", action: function () { openSource(id); } },
         { label: "Download", action: function () {
           Promise.resolve(bridge.save_entry_assets(id)).then(reportSave).catch(function () { toast("error", "Could not save images."); });

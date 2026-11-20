@@ -96,7 +96,7 @@
     Promise.resolve(bridge.trail_hops(trailRef(origin))).then(function (result) {
       if (trail !== mine || trailStep() !== step) return null;
       step.hops = (result && result.hops) || [];
-      var waiting = step.hops.some(function (hop) { return hop.state === "unchecked"; });
+      var waiting = (result && result.pending) || step.hops.some(function (hop) { return hop.state === "unchecked"; });
       if (!waiting || trail.left === 0) return null;
       step.checking = true;
       renderTrailHead();
@@ -260,7 +260,8 @@
       take.setAttribute("aria-pressed", i === step.active ? "true" : "false");
       var kind = kindName(hop);
       take.setAttribute("data-tooltip", hop.state === "cooling" ? hop.label + " is resting: the site asked us to slow down"
-        : hop.state === "unchecked" ? "Not checked yet; opening it checks" : "Open the " + kind + " " + hop.label);
+        : hop.state === "unchecked" ? "Not checked yet; opening it checks"
+        : "Open the " + kind + " " + hop.label + (hop.via ? ", found by searching Are.na for " + hop.via : ""));
       take.appendChild(makeEl("span", "path-fork-key", i < 9 ? String(i + 1) : ""));
       take.insertAdjacentHTML("beforeend", trailGlyph(hop.state === "cooling" ? "cooling" : hopIcon(hop)));
       take.appendChild(makeEl("span", "path-fork-label", hop.label));
@@ -304,7 +305,7 @@
     var desc = step.checking ? "Checking where this image leads..."
       : step.loading ? (hop ? "Opening the " + kind + " " + hop.label + "..." : "Finding where this image leads...")
       : hop ? shown + (step.more ? "+" : "") + (shown === 1 ? " image" : " images") + " from the " + kind + " " + hop.label
-        + ". Select to save; right-click one to follow its thread."
+        + ". Select to save; right-click one to follow its trail."
       : "Where this image leads.";
     if (trail.left !== null) desc += " " + trail.left + (trail.left === 1 ? " check" : " checks") + " left on this trail.";
     $("#find-head-desc").textContent = desc;

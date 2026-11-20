@@ -188,6 +188,41 @@ class CheckTests(TrailCase):
                 self.assertEqual(self.web.calls, ["https://studio.example/"])
                 self.assertIsNone(self.conn.execute("SELECT 1 FROM trail_places WHERE url = 'https://studio.example/'").fetchone())
 
+    def test_tags_lead_out_to_are_na_channels_found_by_searching_them(self):
+        self.web.replies["https://api.are.na/v2/search/channels"] = reply({"channels": [
+            {"slug": "brutal-forms", "title": "Brutalism Forms", "length": 88, "user": {"slug": "curator"}},
+            {"slug": "concrete", "title": "Concrete", "length": 12, "user": {"slug": "curator"}}]})
+        start = self.feed_item(source_id="pinterest", url="https://i.pinimg.com/b.jpg", page_url="https://www.pinterest.com/me/board/",
+                               creator_handle="", source_link="", source_ref="56", tags=["brutalism", "ok"])
+        listed = trail.hops(self.conn, {"feed": start}, self.web)
+        self.assertTrue(listed["pending"])
+        result = trail.check(self.conn, {"feed": start}, "t1", self.web)
+        self.assertEqual(len(self.web.calls), 1)
+        self.assertIn("q=brutalism", self.web.calls[0])
+        channels = [hop for hop in result["hops"] if hop["kind"] == "channel"]
+        self.assertEqual([(hop["url"], hop["count"], hop["state"], hop["via"]) for hop in channels],
+                         [("https://www.are.na/curator/brutal-forms", 88, "ready", "brutalism")])
+        self.web.calls.clear()
+        again = trail.hops(self.conn, {"feed": start}, self.web)
+        self.assertFalse(again["pending"])
+        self.assertEqual(len([hop for hop in again["hops"] if hop["kind"] == "channel"]), 1)
+        self.assertEqual(self.web.calls, [])
+
+    def test_a_tag_search_that_fails_is_not_retried_today(self):
+        start = self.feed_item(source_id="pinterest", url="https://i.pinimg.com/c.jpg", page_url="https://www.pinterest.com/me/board/",
+                               creator_handle="", source_link="", source_ref="57", tags=["brutalism"])
+        trail.check(self.conn, {"feed": start}, "t1", self.web)
+        self.assertEqual(len(self.web.calls), 1)
+        self.assertFalse(trail.hops(self.conn, {"feed": start}, self.web)["pending"])
+
+    def test_tags_that_only_name_a_site_are_not_searched(self):
+        start = self.feed_item(source_id="pinterest", url="https://i.pinimg.com/d.jpg", page_url="https://www.pinterest.com/me/board/",
+                               creator_handle="", source_link="", source_ref="58",
+                               tags=["Are.na", "INSTAGRAM", "x", "brutalism"])
+        trail.check(self.conn, {"feed": start}, "t1", self.web)
+        self.assertEqual(len(self.web.calls), 1)
+        self.assertIn("q=brutalism", self.web.calls[0])
+
     def test_later_pages_are_read_only_when_asked(self):
         start = self.feed_item()
         trail.check(self.conn, {"feed": start}, "t1", self.web)

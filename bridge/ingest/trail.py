@@ -19,6 +19,10 @@ BUDGET = 40
 CACHE_DAYS = 1
 MAX_CHANNELS = 12
 MAX_TAGS = 5
+SEARCH_TAGS = 2
+TAG_CHANNELS = 3
+MIN_TAG = 3
+SITE_TAGS = frozenset({"are.na", "instagram", "x"})
 STEP_LIMIT = 200
 KEEP_TRAILS = 32
 FOLLOWABLE = ("channel", "user", "blog", "site")
@@ -163,6 +167,18 @@ def _remember(conn, url, kind, label, count, images=(), feed_url="", next_page="
          json.dumps(list(extra)), _now().isoformat(timespec="seconds")))
 
 
+def _search_tags(item) -> list:
+    """Return the tags an image's check searches Are.na for: its first few that are long enough to mean something.
+
+    Tags that only name a site (Are.na, Instagram, X) are skipped."""
+    return [tag for tag in item["tags"][:MAX_TAGS]
+            if len(tag.strip()) >= MIN_TAG and tag.strip().lower() not in SITE_TAGS][:SEARCH_TAGS]
+
+
+def _search_key(tag) -> str:
+    return f"search:{tag.strip().lower()}"
+
+
 def _followed(conn) -> set:
     return {sources.bare(row[0]) for row in conn.execute("SELECT url FROM followed_sources")}
 
@@ -200,6 +216,8 @@ def _place_hop(conn, place, fetcher, followed) -> dict | None:
            or sources.bare(place.get("feed_url") or "") in followed}
     if place.get("feed_url"):
         hop["feed_url"] = place["feed_url"]
+    if place.get("via"):
+        hop["via"] = place["via"]
     if "count" in place:
         hop.update(count=place["count"], state="ready")
     row = _cached(conn, place["url"])
@@ -217,17 +235,25 @@ def _place_hop(conn, place, fetcher, followed) -> dict | None:
 
 
 def hops(conn, ref, fetcher=None) -> dict:
-    """Return {hops} for an image: library places, then places on other sites from stored fields and checks made in
-    the last day. Makes no requests; places not yet checked come back unchecked, or cooling while their host is."""
+    """Return {hops, pending} for an image: library places, then places on other sites from stored fields and checks
+    made in the last day, including Are.na channels found by searching its tags. Makes no requests; places not yet
+    checked come back unchecked, or cooling while their host is, and pending says a check still has lookups to make."""
     item = load_item(conn, ref)
     if not item:
-        return {"hops": []}
+        return {"hops": [], "pending": False}
     followed = _followed(conn)
     places = _outside(item)
     block = _block_id(conn, item)
     held = _cached(conn, f"block:{block}") if block else None
     if held:
         places.extend(dict(channel, kind="channel") for channel in json.loads(held["extra"]))
+    pending = bool(block and not held)
+    for tag in _search_tags(item):
+        searched = _cached(conn, _search_key(tag))
+        if searched:
+            places.extend(dict(channel, kind="channel") for channel in json.loads(searched["extra"]))
+        else:
+            pending = True
     found, seen = [], set()
     for place in places:
         if place["url"] in seen:
@@ -236,7 +262,7 @@ def hops(conn, ref, fetcher=None) -> dict:
         hop = _place_hop(conn, place, fetcher, followed)
         if hop:
             found.append(hop)
-    return {"hops": _library_hops(conn, item) + found}
+    return {"hops": _library_hops(conn, item) + found, "pending": pending}
 
 
 def _store_images(conn, url, items) -> list:
@@ -305,7 +331,8 @@ def _fail_quietly(conn, place, err) -> str:
 def check(conn, ref, trail, fetcher) -> dict:
     """Check the unchecked places an image leads to, one request each and one at a time, within the trail's budget.
 
-    An Are.na image first looks up the channels holding it, whose counts come with the reply. Returns {hops, left}.
+    An Are.na image first looks up the channels holding it, and the first few tags are searched for Are.na channels;
+    both replies carry the channels' counts. Returns {hops, left}.
     """
     with _LOCK:
         counted = _counted(fetcher, trail, forced=False)
@@ -325,6 +352,19 @@ def check(conn, ref, trail, fetcher) -> dict:
                 except Exception as err:  # noqa: BLE001 - an unreadable block only leaves its channels out
                     if not checks.pushed_back(err):
                         _remember(conn, f"block:{block}", "block", "", 0)
+            for tag in _search_tags(item):
+                if _cached(conn, _search_key(tag)) or _cooling(fetcher, "api.are.na"):
+                    continue
+                try:
+                    found = arena.search_channel_details(tag, counted)[:TAG_CHANNELS]
+                    _remember(conn, _search_key(tag), "search", tag, len(found), extra=[
+                        {"url": place_for(channel["url"])["url"], "label": channel["title"] or channel["slug"],
+                         "count": channel["length"], "via": tag} for channel in found if place_for(channel["url"])])
+                except BudgetSpent:
+                    raise
+                except Exception as err:  # noqa: BLE001 - a failed search only leaves that tag's channels out
+                    if not checks.pushed_back(err):
+                        _remember(conn, _search_key(tag), "search", tag, 0)
             for hop in hops(conn, ref, fetcher)["hops"]:
                 if hop["state"] != "unchecked":
                     continue
