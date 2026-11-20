@@ -13,6 +13,7 @@
     $("#library-filter-color").addEventListener("click", function () { setColor(""); });
     document.addEventListener("hyperbridge:color", function (event) { setColor(event.detail.color); });
     $("#find-exit").addEventListener("click", function () {
+      if (trail) { exitTrail(); return; }
       if (candidates && candidates.feed && !feedSet) { $("#sets-all").click(); return; }
       var wasSimilar = Boolean(feedSet);
       navigate(function () {
@@ -64,13 +65,16 @@
       clearSelection();
       navigate.wait(load(true));
     });
-    document.addEventListener("hyperbridge:discarded", function (event) { playDiscard([event.detail.id]).then(afterDiscard); });
+    document.addEventListener("hyperbridge:discarded", function (event) {
+      if (!candidates) playDiscard([event.detail.id]).then(afterDiscard);
+    });
     document.addEventListener("hyperbridge:changed", function () {
       refresh();
       refreshStats();
       loadSets(); loadTags();
     });
     setupMenu();
+    setupTrail();
 
     state.cascade = true;
     if (api()) {

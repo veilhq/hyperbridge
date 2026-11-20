@@ -225,13 +225,23 @@ class KeepTests(TrailCase):
         step = trail.images(self.conn, {"kind": "channel", "url": "https://www.are.na/maker/my-chan"}, "t1", self.web)
         image = step["images"][0]
         self.conn.execute("INSERT INTO sets (name, created_at) VALUES ('Mine', '2026-01-01')")
-        result = trail.save(self.conn, image["id"], 1)
+        result = trail.save(self.conn, [image["id"]], 1)
         self.assertEqual((result["added"], result["placed"]), (1, 1))
+        entry_id = result["entry_ids"][str(image["id"])]
         row = self.conn.execute("SELECT title, collection, source_service, creator_handle FROM entries WHERE id = ?",
-                                (result["entry_id"],)).fetchone()
+                                (entry_id,)).fetchone()
         self.assertEqual(tuple(row), ("Block 1", "My Chan", "arena", "https://www.are.na/maker"))
         again = trail.images(self.conn, {"kind": "channel", "url": "https://www.are.na/maker/my-chan"}, "t1", self.web)
-        self.assertEqual(again["images"][0]["known_entry_id"], result["entry_id"])
+        self.assertEqual(again["images"][0]["known_entry_id"], entry_id)
+
+    def test_keeping_several_images_saves_each_once(self):
+        trail.check(self.conn, {"feed": self.feed_item()}, "t1", self.web)
+        step = trail.images(self.conn, {"kind": "channel", "url": "https://www.are.na/maker/my-chan"}, "t1", self.web)
+        ids = [image["id"] for image in step["images"]]
+        result = trail.save(self.conn, ids)
+        self.assertEqual(result["added"], len(ids))
+        self.assertEqual(sorted(result["entry_ids"]), sorted(str(feed_id) for feed_id in ids))
+        self.assertEqual(trail.save(self.conn, ids)["added"], 0)
 
 
 class PullFieldTests(TrailCase):

@@ -67,6 +67,15 @@
       <header class="set-head find-head" id="find-head" hidden>
         <h1 class="set-head-title" id="find-head-title"></h1>
         <p class="set-head-desc" id="find-head-desc"></p>
+        <nav class="find-trail" id="find-trail" aria-label="Thread" hidden>
+          <div class="find-trail-path" id="find-trail-path"></div>
+          <div class="find-trail-hops" id="find-trail-hops" role="group" aria-label="Where this image leads"></div>
+          <div class="set-head-meta find-flagged" id="find-trail-ask" role="status" hidden>
+            <span id="find-trail-ask-text"></span>
+            <button class="action-button" id="find-trail-yes" type="button">Same person</button>
+            <button class="action-button action-button-ghost" id="find-trail-no" type="button">Not them</button>
+          </div>
+        </nav>
         <div class="set-head-meta find-flagged" id="find-flagged" hidden>
           <span id="find-flagged-text"></span>
           <div class="segmented find-ai" id="find-ai" role="group" aria-label="AI-labeled images">
@@ -327,21 +336,6 @@
       </div>
       <div class="lightbox-caption" id="lb-caption"></div>
       <div class="lightbox-status" id="lb-status"></div>
-
-      <section class="lightbox-trail" id="lb-trail" aria-label="Thread" hidden>
-        <div class="lightbox-trail-path">
-          <button class="action-icon" id="lb-trail-back" type="button" aria-label="Back a step" data-tooltip="Back a step (Backspace)"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
-          <div class="lightbox-trail-crumbs" id="lb-trail-crumbs"></div>
-          <span class="lightbox-trail-position" id="lb-trail-position"></span>
-        </div>
-        <div class="lightbox-trail-keep" id="lb-trail-keep" hidden>
-          <button class="action-icon" id="lb-trail-save" type="button" aria-label="Keep" data-tooltip="Keep in the library"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/><path d="M12 7v6"/><path d="M15 10H9"/></svg></button>
-          <button class="action-icon" id="lb-trail-save-set" type="button" aria-label="Keep in a set" data-tooltip="Keep in a set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
-          <button class="action-icon" id="lb-trail-skip" type="button" aria-label="Skip" data-tooltip="Skip to the next image"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></button>
-        </div>
-        <div class="lightbox-label">Leads to <span class="lightbox-trail-left" id="lb-trail-left"></span></div>
-        <div class="lightbox-trail-hops" id="lb-trail-hops"></div>
-      </section>
 
       <section class="lightbox-field" id="lb-view">
         <div class="lightbox-label" id="lb-description-label" hidden>Description</div>

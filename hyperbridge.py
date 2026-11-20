@@ -131,7 +131,31 @@ def _grid_path(row) -> str | None:
     return original
 
 
-DEFAULTS_SLOT = '<script type="application/json" id="hb-defaults">{}</script>'
+def _with_entry_tiles(conn, images: list) -> list:
+    """Fill library images ({type: entry, id}) with what a grid tile shows; entries without a thumbnail are left out."""
+    ids = [image["id"] for image in images if image.get("type") == "entry"]
+    if not ids:
+        return images
+    rows = {row["id"]: row for row in conn.execute(
+        "SELECT e.id, e.title, e.creator, e.domain, a.path AS thumb_path, a.width, a.height,"
+        " o.path AS original_path, o.bytes AS original_bytes"
+        " FROM entries e LEFT JOIN assets a ON a.entry_id = e.id AND a.kind = 'thumbnail' AND a.position = 0"
+        " LEFT JOIN assets o ON o.entry_id = e.id AND o.kind = 'original' AND o.position = 0"
+        f" WHERE e.id IN ({', '.join('?' * len(ids))})", ids)}
+    tiles = []
+    for image in images:
+        if image.get("type") != "entry":
+            tiles.append(image)
+            continue
+        row = rows.get(image["id"])
+        thumb = _thumb_ref(_grid_path(row)) if row else None
+        if thumb:
+            tiles.append({"type": "entry", "id": row["id"], "title": row["title"], "creator": row["creator"] or row["domain"],
+                          "thumb": thumb, "width": row["width"], "height": row["height"]})
+    return tiles
+
+
+DEFAULTS_SLOT ='<script type="application/json" id="hb-defaults">{}</script>'
 
 
 def with_defaults(html: str) -> str:
@@ -481,14 +505,17 @@ class HyperbridgeAPI:
 
     def trail_images(self, place: dict, trail_id: str, more: bool = False) -> dict:
         """Return a place's images for a trail step, reading its next page when more is set."""
-        return self._feed_call("trail_images", lambda conn: trail.images(conn, dict(place or {}), str(trail_id),
-                                                                         capture.default_fetcher(), bool(more)),
-                               {"images": [], "more": False, "count": 0, "state": "failed", "places": []})
+        def read(conn):
+            result = trail.images(conn, dict(place or {}), str(trail_id), capture.default_fetcher(), bool(more))
+            result["images"] = _with_entry_tiles(conn, result["images"])
+            return result
+        return self._feed_call("trail_images", read, {"images": [], "more": False, "count": 0, "state": "failed", "places": []})
 
-    def trail_save(self, feed_id: int, set_id: int | None = None) -> dict:
-        """Keep a trail image in the library, optionally placing it in a set."""
-        result = self._feed_call("trail_save", lambda conn: trail.save(conn, int(feed_id), set_id), None)
-        return {"ok": False, "error": "Could not keep that image."} if result is None else {"ok": True, **result}
+    def trail_save(self, feed_ids: list, set_id: int | None = None) -> dict:
+        """Keep trail images in the library, optionally placing them in a set."""
+        ids = list(feed_ids if isinstance(feed_ids, (list, tuple)) else [feed_ids])[:_MAX_BULK]
+        result = self._feed_call("trail_save", lambda conn: trail.save(conn, ids, set_id), None)
+        return {"ok": False, "error": "Could not keep those images."} if result is None else {"ok": True, **result}
 
     def confirm_creator(self, name: str, url: str, creator_id: int | None = None) -> dict:
         """Link a profile link to a creator (made from the name when new) after the Operator says they are the same person."""

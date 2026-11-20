@@ -70,13 +70,16 @@
     return card;
   }
 
-  // Builds a candidate card for an image found on a pasted page; clicking always toggles its selection.
+  // Builds a candidate card for a found, feed or trail image; clicking toggles its selection, except that a
+  // library entry on a trail opens in the lightbox while nothing is selected.
   function buildCandidate(item, index) {
     var card = makeEl("button", "library-card");
     card.type = "button";
     card.setAttribute("data-id", index);
     if (item.feedId) card.setAttribute("data-key", "feed-" + item.feedId);
-    card.setAttribute("aria-label", "Select image " + (index + 1) + (item.fresh ? ", new" : "") + (item.fromCandidate ? ", from a new source" : ""));
+    if (item.entryId) card.setAttribute("data-entry", item.entryId);
+    card.setAttribute("aria-label", item.entryId ? "Open " + (item.title || "entry")
+      : "Select image " + (index + 1) + (item.fresh ? ", new" : "") + (item.fromCandidate ? ", from a new source" : ""));
     var img = document.createElement("img");
     img.className = "library-card-image";
     img.src = item.thumb;
@@ -101,7 +104,7 @@
     // A blurred AI-labeled image clears for good once it is selected.
     if (item.veiled) card.setAttribute("data-veiled", "true");
     var details = card.appendChild(makeEl("span", "library-card-details"));
-    if (item.feedId) {
+    if (item.feedId || item.entryId) {
       if (item.title) details.appendChild(makeEl("span", "library-card-title", item.title));
       details.appendChild(makeEl("span", "library-card-domain", item.creator || item.source));
       if (item.matched && item.matched.length) details.appendChild(makeEl("span", "library-card-domain", "Like: " + item.matched.join(", ")));
@@ -111,7 +114,9 @@
     if (selected.has(index)) card.setAttribute("data-selected", "true");
     card.addEventListener("click", function (event) {
       if (item.veiled) { item.veiled = false; card.removeAttribute("data-veiled"); }
-      if (event.shiftKey && anchorId !== null) selectRange(index);
+      if (item.entryId && !selected.size && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: item.entryId } }));
+      } else if (event.shiftKey && anchorId !== null) selectRange(index);
       else toggleSelected(index);
     });
     return card;
@@ -123,6 +128,7 @@
 
   // Opens the find view straight away with placeholder tiles while the page is read.
   function showFinding(pageUrl) {
+    clearTrail();
     candidates = { page_url: pageUrl, candidates: [] };
     clearSelection();
     emptyEl.hidden = true;

@@ -105,34 +105,6 @@ html.a11y-reduce-motion .lightbox-nav { animation: none !important; transition: 
 .hk-tooltip { z-index: calc(var(--z-modal) + 2); }
 @media (max-width: 52rem) { .lightbox-swatches { display: none; } }
 
-/* Trail mode: the path back, where the shown image leads, and keep or skip for images not yet saved. */
-.lightbox-trail[hidden], .lightbox-trail-keep[hidden] { display: none; }
-.lightbox-trail { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: var(--border-hair) solid var(--border); }
-.lightbox-trail-path { display: flex; align-items: center; gap: var(--space-2); }
-.lightbox-trail-crumbs { flex: 1; min-width: 0; color: var(--text-muted); letter-spacing: var(--track-body); overflow-wrap: anywhere; }
-.lightbox-trail-crumb { padding: 0; font: inherit; color: inherit; background: transparent; border: 0; }
-span.lightbox-trail-crumb { color: var(--text-bright); }
-.lightbox-trail-position, .lightbox-trail-left { color: var(--text-dim); letter-spacing: var(--track-body); text-transform: none; }
-.lightbox-trail-left { margin-left: var(--space-2); }
-.lightbox-trail-keep { display: flex; gap: var(--space-2); }
-.lightbox-trail-hops { display: flex; flex-direction: column; }
-.lightbox-hop { --row-grid: minmax(0, 1fr) auto; }
-.lightbox-hop-open {
-  display: grid; grid-template-columns: var(--space-3) var(--icon-sm) minmax(0, 1fr) auto; align-items: center; gap: var(--space-2);
-  min-width: 0; padding: var(--space-1) 0; font: inherit; color: var(--text); text-align: left; background: transparent; border: 0;
-}
-.lightbox-hop-open:hover .lightbox-hop-label { color: var(--interactive); }
-.lightbox-hop-open:focus-visible { outline: var(--border-rail) solid var(--focus); }
-.lightbox-hop-key, .lightbox-hop-count { color: var(--text-dim); }
-.lightbox-hop-kind { display: inline-flex; color: var(--text-muted); }
-.lightbox-hop-label { font-family: var(--font-body); font-size: var(--fs-prose-ui); line-height: var(--lh-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color var(--motion-base) var(--ease); }
-.lightbox-hop-count { display: inline-flex; }
-.lightbox-hop-action:disabled { opacity: 1; color: var(--selected); }
-.lightbox-hop-ask { display: flex; align-items: center; gap: var(--space-1); padding-left: calc(var(--space-3) + var(--icon-sm) + var(--space-4)); }
-.lightbox-hop-ask .lightbox-none { flex: 1; }
-@media (prefers-reduced-motion: reduce) { .lightbox-hop-label { transition: none; } }
-html.a11y-reduce-motion .lightbox-hop-label { transition: none; }
-
 /* Transitions: asset crossfade, exit, and a fade when content inside the open dialog changes. */
 .lightbox-image.is-swapping { opacity: 0; }
 @keyframes lightboxOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(var(--space-1)); } }

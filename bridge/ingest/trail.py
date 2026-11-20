@@ -420,12 +420,18 @@ def _read_next(conn, place, row, fetcher) -> None:
                  (json.dumps(merged), following, row["url"]))
 
 
-def save(conn, feed_id, set_id=None) -> dict:
-    """Keep a trail image in the library, optionally in a set, the same way Discover saves; returns {added, placed, entry_id}."""
-    conn.execute("UPDATE feed_items SET state = 'new' WHERE id = ? AND state = 'dismissed'", (int(feed_id),))
-    row = conn.execute("SELECT url FROM feed_items WHERE id = ?", (int(feed_id),)).fetchone()
-    if not row:
-        return {"added": 0, "placed": 0, "entry_id": None}
-    result = feed.accept(conn, [int(feed_id)], set_id)
-    known = feed.mark_captured(conn, [{"url": row["url"]}])[0]["known_entry_id"]
-    return dict(result, entry_id=known)
+def save(conn, feed_ids, set_id=None) -> dict:
+    """Keep trail images in the library, optionally in a set, the same way Discover saves.
+
+    Returns {added, placed, entry_ids} with entry_ids mapping each kept feed id to its library entry."""
+    ids = [int(feed_id) for feed_id in (feed_ids if isinstance(feed_ids, (list, tuple)) else [feed_ids])]
+    if not ids:
+        return {"added": 0, "placed": 0, "entry_ids": {}}
+    marks = ", ".join("?" * len(ids))
+    conn.execute(f"UPDATE feed_items SET state = 'new' WHERE id IN ({marks}) AND state = 'dismissed'", ids)
+    rows = conn.execute(f"SELECT id, url FROM feed_items WHERE id IN ({marks})", ids).fetchall()
+    if not rows:
+        return {"added": 0, "placed": 0, "entry_ids": {}}
+    result = feed.accept(conn, [row["id"] for row in rows], set_id)
+    known = feed.mark_captured(conn, [{"id": row["id"], "url": row["url"]} for row in rows])
+    return dict(result, entry_ids={str(item["id"]): item["known_entry_id"] for item in known if item["known_entry_id"]})

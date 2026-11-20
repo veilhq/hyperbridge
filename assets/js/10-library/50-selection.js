@@ -56,7 +56,7 @@
     $("#sel-accept").hidden = !picking;
     $("#sel-remove").hidden = picking || !state.setId;
     var feedMode = picking && candidates.feed;
-    $("#sel-add").hidden = (picking && !feedMode) || !setsCache.length;
+    $("#sel-add").hidden = (picking && !feedMode && !candidates.trail) || !setsCache.length;
     $("#sel-tag").hidden = picking || !tagsCache.length;
     $("#sel-save").hidden = picking;
     $("#sel-recapture").hidden = picking;
@@ -171,7 +171,8 @@
   function setMenuItems() {
     return setsCache.map(function (item) {
       return { label: escapeHtml(item.name), action: function () {
-        if (candidates && candidates.feed) acceptFeed(item.id);
+        if (candidates && candidates.trail) acceptTrail(item.id);
+        else if (candidates && candidates.feed) acceptFeed(item.id);
         else bulkPlace(item);
       } };
     });
@@ -223,6 +224,7 @@
         zoomColumns(-1);
       } else if (event.key === "Escape") {
         if (selected.size) clearSelection();
+        else if (trail) exitTrail();
         else if (candidates && candidates.feed) $("#sets-all").click();
         else if (candidates) navigate(leaveCandidates);
         else if (finding) setFinding(false);
@@ -239,6 +241,14 @@
     if (!window.HvContextMenu) return;
     window.HvContextMenu.register(".library-card[data-id]", function (card) {
       var id = Number(card.getAttribute("data-id"));
+      if (candidates && candidates.trail) {
+        var tile = candidates.candidates[id];
+        if (!tile) return [];
+        var trailItems = [{ label: "Follow the thread", action: function () { trailFrom(id); } }];
+        var known = tile.entryId || tile.known_entry_id;
+        if (known) trailItems.unshift({ label: "Open", action: function () { document.dispatchEvent(new CustomEvent("hyperbridge:open", { detail: { id: known } })); } });
+        return trailItems;
+      }
       if (candidates && candidates.feed) {
         var many = selected.size > 1 && selected.has(id);
         var channels = followableIn(many ? selectedIds() : [id]);

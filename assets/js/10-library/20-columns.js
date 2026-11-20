@@ -173,7 +173,7 @@
   // A zoom passes its count so a layout shift during the re-deal cannot cancel it.
   function relayoutColumns(count) {
     if (!grid.hasAttribute("data-columns") || grid.querySelector(".loading-skeleton")) return;
-    if (candidates && (!candidates.feed || candidates.busy)) return;
+    if (candidates && (!(candidates.feed || candidates.trail) || candidates.busy)) return;
     var want = typeof count === "number" ? count : columnCount();
     if (want === grid.querySelectorAll(".library-grid-column").length) return;
     document.dispatchEvent(new CustomEvent("hyperbridge:relayout"));

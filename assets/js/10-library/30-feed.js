@@ -240,11 +240,19 @@
   function syncMore() {
     var button = $("#library-more");
     if (!button) return;
+    if (candidates && candidates.trail && trail) {
+      var step = trailStep();
+      var hop = step.hops[step.active];
+      button.hidden = !(hop && step.more && !step.loading);
+      if (hop) $("#feed-more").textContent = "More from " + hop.label;
+      return;
+    }
     button.hidden = !(candidates && candidates.feed && candidates.finished && !candidates.busy && candidates.candidates.length);
     $("#feed-more").textContent = feedSet ? "Find more" : feedLatest ? "Check more sources" : "Discover more";
   }
 
   function discoverMore() {
+    if (candidates && candidates.trail) { trailMore(); return; }
     if (!candidates || !candidates.feed || candidates.busy) return;
     candidates.finished = false;
     candidates.manual = true;
@@ -310,6 +318,7 @@
     if (!bridge || !bridge.list_feed) return;
     var ticket = ++findTicket;
     state.ticket++;
+    clearTrail();
     feedLatest = Boolean(latest);
     feedSet = feedLatest ? null : (target || null);
     var marked = feedLatest && !forceRefresh && bridge.mark_latest_seen
@@ -397,6 +406,7 @@
   }
 
   function leaveCandidates() {
+    clearTrail();
     if (!candidates) return;
     candidates = null;
     feedSet = null;
@@ -455,6 +465,7 @@
 
   function acceptCandidates() {
     var bridge = api();
+    if (candidates && candidates.trail) { acceptTrail(null); return; }
     if (candidates && candidates.feed) { acceptFeed(state.setId); return; }
     if (!candidates || !state.setId || !selected.size) return;
     var chosen = selectedIds().sort(function (a, b) { return a - b; }).map(function (index) { return candidates.candidates[index]; });

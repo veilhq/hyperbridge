@@ -364,8 +364,6 @@
       }
       current = entry;
       assetIndex = 0;
-      lb.removeAttribute("data-loose");
-      byId("lb-image").onerror = null;
       closeForm();
       render();
       if (!lb.open) openDialog();
@@ -374,49 +372,27 @@
     }).catch(function () { toast("error", "Could not open entry."); return false; });
   }
 
-  // Shows an image that is not in the library (a trail image) from its link, with only its title and credit.
-  function showLoose(item) {
-    ticket++;
-    current = null;
-    lb.setAttribute("data-loose", "true");
-    lb.setAttribute("data-single", "true");
-    if (lb.open) replay(document.querySelector(".lightbox-rail"));
-    byId("lb-form").hidden = true;
-    byId("lb-view").hidden = true;
-    byId("lb-actions").hidden = true;
-    byId("lb-status").textContent = "";
-    byId("lb-swatches").hidden = true;
-    byId("lb-strip").textContent = "";
-    byId("lb-title").textContent = item.title || "Untitled";
-    var caption = byId("lb-caption");
-    caption.textContent = "";
-    [item.creator, item.collection].filter(Boolean).forEach(function (part, i) {
-      if (i) caption.appendChild(makeEl("span", "lightbox-caption-sep", " / "));
-      caption.appendChild(makeEl("span", "", part));
-    });
-    var image = byId("lb-image");
-    image.alt = item.title || "Trail image";
-    image.onerror = function () { image.onerror = null; if (item.thumb && image.src !== item.thumb) swapImage(image, item.thumb); };
-    if (!lb.open) { image.removeAttribute("src"); openDialog(); }
-    swapImage(image, item.url || item.thumb);
-    lb.focus();
-  }
-
   function cycleAsset(step) {
     if (!current || current.assets.length < 2) return;
     assetIndex = (assetIndex + step + current.assets.length) % current.assets.length;
     renderImage();
   }
 
-  // Moves to the neighbouring card in the grid; stops at either end.
+  // Moves to the neighboring entry card in the grid; stops at either end. On a trail only library tiles count.
   function moveEntry(step) {
     if (!current) return;
-    var cards = Array.prototype.slice.call(document.querySelectorAll("#library-grid [data-id]"));
-    var index = cards.findIndex(function (card) { return Number(card.getAttribute("data-id")) === current.id; });
+    var key = entryKey();
+    var cards = Array.prototype.slice.call(document.querySelectorAll("#library-grid [" + key + "]"));
+    var index = cards.findIndex(function (card) { return Number(card.getAttribute(key)) === current.id; });
     var next = cards[index + step];
     if (index < 0 || !next) return;
     returnFocus = next;
-    openEntry(Number(next.getAttribute("data-id")));
+    openEntry(Number(next.getAttribute(key)));
+  }
+
+  // Grid cards name their entry in data-id, except in a find view (a trail), where data-entry does.
+  function entryKey() {
+    return document.querySelector("#library[data-finding]") ? "data-entry" : "data-id";
   }
 
   function onSubmit(event) {
@@ -544,7 +520,6 @@
     if (event.key === "Escape") { closeDialog(); event.preventDefault(); return; }
     var tag = (event.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
-    if (window.HbTrail && window.HbTrail.onKey(event)) { event.preventDefault(); return; }
     if (!current) return;
     if (event.key === "ArrowLeft") { cycleAsset(-1); event.preventDefault(); }
     else if (event.key === "ArrowRight") { cycleAsset(1); event.preventDefault(); }
@@ -558,11 +533,11 @@
     byId("app").inert = false;
     current = null;
     ticket++;
-    lb.removeAttribute("data-loose");
     document.dispatchEvent(new CustomEvent("hyperbridge:lightbox-closed"));
     if (!returnFocus) return;
-    var id = returnFocus.getAttribute("data-id");
-    var card = document.querySelector('#library-grid [data-id="' + id + '"]');
+    var key = entryKey();
+    var id = returnFocus.getAttribute(key);
+    var card = document.querySelector("#library-grid [" + key + '="' + id + '"]');
     if (card) card.focus();
   }
 
@@ -620,7 +595,7 @@
     setupFull();
     document.addEventListener("hyperbridge:open", function (event) {
       var id = event.detail.id;
-      openEntry(id, document.querySelector('#library-grid [data-id="' + id + '"]'));
+      openEntry(id, document.querySelector("#library-grid [" + entryKey() + '="' + id + '"]'));
     });
     setupFit();
     byId("lb-prev").addEventListener("click", function () { cycleAsset(-1); });
@@ -673,7 +648,6 @@
   init();
   window.HbLightbox = {
     openEntry: function (id) { return openEntry(id); },
-    showLoose: showLoose,
     close: closeDialog,
     isOpen: function () { return Boolean(lb && lb.open); },
   };

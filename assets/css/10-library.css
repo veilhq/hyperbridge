@@ -115,6 +115,25 @@ html.a11y-reduce-motion .library-card-grow { transition: none; }
 .find-flagged { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .find-flagged[hidden] { display: none; }
 .find-ai { --segment-count: 3; }
+/* Trail head: the path of steps back, then the places the step's image leads to as chips; the open one is pressed. */
+.find-trail { display: flex; flex-direction: column; gap: var(--space-2); }
+.find-trail[hidden] { display: none; }
+.find-trail-path { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); color: var(--text-muted); letter-spacing: var(--track-body); }
+.find-trail-crumb { padding: 0; font: inherit; color: inherit; background: transparent; border: 0; transition: color var(--motion-fast) var(--ease); }
+button.find-trail-crumb:hover { color: var(--interactive); }
+button.find-trail-crumb:focus-visible { outline: var(--border-rail) solid var(--focus); }
+span.find-trail-crumb { color: var(--text-bright); }
+.find-trail-sep { color: var(--text-dim); }
+.find-trail-hops { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.find-hop { gap: var(--space-1); cursor: pointer; text-transform: none; }
+.find-hop .icon-glyph { width: var(--icon-sm); height: var(--icon-sm); }
+.find-hop:hover { color: var(--text); border-color: var(--interactive); }
+.find-hop:focus-visible { outline: var(--border-rail) solid var(--focus); }
+.find-hop[aria-pressed="true"] { color: var(--selected); border-color: var(--selected); }
+.find-hop-count { color: var(--text-dim); }
+.find-hop-follow:disabled { opacity: 1; color: var(--selected); }
+@media (prefers-reduced-motion: reduce) { .find-trail-crumb { transition: none; } }
+html.a11y-reduce-motion .find-trail-crumb { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .library-card, .library-card-details, .library-card-grow, .library-card .library-card-image { transition: none; }
 }
