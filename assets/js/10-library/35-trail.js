@@ -17,6 +17,7 @@
   var TRAIL_KIND_NAMES = { channel: "Are.na channel", user: "Are.na profile", blog: "Tumblr blog", site: "site", creator: "creator",
     tag: "tag", color: "color", credit: "credit" };
   var LIBRARY_PLACES = ["creator", "credit", "tag", "color"];
+  var RABBIT_ICON = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 16a3 3 0 0 1 2.24 5"/><path d="M18 12h.01"/><path d="M18 21h-8a4 4 0 0 1-4-4 7 7 0 0 1 7-7h.2L9.6 6.4a1 1 0 1 1 2.8-2.8L15.8 7h.2c3.3 0 6 2.7 6 6v1a2 2 0 0 1-2 2h-1a3 3 0 0 0-3 3"/><path d="M20 8.54V4a2 2 0 1 0-4 0v3"/><path d="M7.612 12.524a3 3 0 1 0-1.6 4.3"/></svg>';
   // The open trail: {id, back, left, steps: [{origin, hops, active, images, more, checking, loading, places}]}.
   var trail = null;
 
@@ -223,7 +224,7 @@
   function hopCountText(hop, step) {
     if (hop.state === "cooling") return "";
     if (hop.state === "unchecked") return step.checking ? "..." : "--";
-    return String(hop.count || 0);
+    return HvUtils.pad2(hop.count || 0);
   }
 
   function renderCrumbs() {
@@ -243,36 +244,40 @@
     });
   }
 
+  function kindName(hop) { return TRAIL_KIND_NAMES[hop.url.split(":")[0]] || TRAIL_KIND_NAMES[hop.kind] || hop.kind; }
+
+  // Lists where the step's image leads as branches of a path fork; the open branch carries the Follow action.
   function renderHops(step) {
     var box = $("#find-trail-hops");
     box.textContent = "";
     step.hops.forEach(function (hop, i) {
-      var chip = makeEl("button", "status-chip status-chip-outlined-muted find-hop");
-      chip.type = "button";
-      chip.setAttribute("data-hop", i);
-      chip.setAttribute("aria-pressed", i === step.active ? "true" : "false");
-      var kind = TRAIL_KIND_NAMES[hop.url.split(":")[0]] || TRAIL_KIND_NAMES[hop.kind] || hop.kind;
-      var tip = hop.state === "cooling" ? hop.label + " is resting: the site asked us to slow down"
-        : hop.state === "unchecked" ? "Not checked yet; opening it checks" : "Open the " + kind + " " + hop.label;
-      chip.setAttribute("data-tooltip", tip + (i < 9 ? " (" + (i + 1) + ")" : ""));
-      chip.innerHTML = trailGlyph(hop.state === "cooling" ? "cooling" : hopIcon(hop));
-      chip.appendChild(makeEl("span", "find-hop-label", hop.label));
-      var count = hopCountText(hop, step);
-      if (count) chip.appendChild(makeEl("span", "find-hop-count", count));
-      box.appendChild(chip);
+      var branch = makeEl("div", "path-fork-branch");
+      if (hop.state === "unchecked") branch.setAttribute("data-state", "unknown");
+      else if (hop.state === "cooling") branch.setAttribute("data-state", "resting");
+      var take = branch.appendChild(makeEl("button", "path-fork-take"));
+      take.type = "button";
+      take.setAttribute("data-hop", i);
+      take.setAttribute("aria-pressed", i === step.active ? "true" : "false");
+      var kind = kindName(hop);
+      take.setAttribute("data-tooltip", hop.state === "cooling" ? hop.label + " is resting: the site asked us to slow down"
+        : hop.state === "unchecked" ? "Not checked yet; opening it checks" : "Open the " + kind + " " + hop.label);
+      take.appendChild(makeEl("span", "path-fork-key", i < 9 ? String(i + 1) : ""));
+      take.insertAdjacentHTML("beforeend", trailGlyph(hop.state === "cooling" ? "cooling" : hopIcon(hop)));
+      take.appendChild(makeEl("span", "path-fork-label", hop.label));
+      take.appendChild(makeEl("span", "path-fork-kind", kind));
+      take.appendChild(makeEl("span", "path-fork-count", hopCountText(hop, step)));
+      if (i === step.active && (hop.followable || (hop.kind === "creator" && step.places.length))) {
+        var follow = branch.appendChild(makeEl("button", "action-icon find-hop-follow"));
+        follow.type = "button";
+        follow.innerHTML = trailGlyph(hop.followed ? "followed" : "follow");
+        var label = hop.followed ? "Following " + hop.label : "Follow " + hop.label + " in Discover";
+        follow.setAttribute("aria-label", label);
+        follow.setAttribute("data-tooltip", label);
+        follow.disabled = Boolean(hop.followed);
+        follow.setAttribute("data-follow", i);
+      }
+      box.appendChild(branch);
     });
-    var hop = step.hops[step.active];
-    var followable = hop && (hop.followable || (hop.kind === "creator" && step.places.length));
-    if (!followable) return;
-    var follow = makeEl("button", "action-icon find-hop-follow");
-    follow.type = "button";
-    follow.innerHTML = trailGlyph(hop.followed ? "followed" : "follow");
-    var label = hop.followed ? "Following " + hop.label : "Follow " + hop.label + " in Discover";
-    follow.setAttribute("aria-label", label);
-    follow.setAttribute("data-tooltip", label);
-    follow.disabled = Boolean(hop.followed);
-    follow.setAttribute("data-follow", step.active);
-    box.appendChild(follow);
   }
 
   function renderAsk(step) {
@@ -288,12 +293,18 @@
     if (!trail) return;
     var step = trailStep();
     var hop = step.hops[step.active];
-    $("#find-head-title").textContent = hop ? hop.label : "Thread";
-    var kind = hop ? TRAIL_KIND_NAMES[hop.url.split(":")[0]] || TRAIL_KIND_NAMES[hop.kind] || hop.kind : "";
+    var title = $("#find-head-title");
+    title.textContent = "";
+    var mark = title.appendChild(makeEl("span", "find-head-mark"));
+    mark.setAttribute("role", "img");
+    mark.setAttribute("aria-label", "Trail");
+    mark.innerHTML = RABBIT_ICON;
+    var kind = hop ? kindName(hop) : "";
     var shown = step.images.length;
     var desc = step.checking ? "Checking where this image leads..."
       : step.loading ? (hop ? "Opening the " + kind + " " + hop.label + "..." : "Finding where this image leads...")
-      : hop ? shown + (step.more ? "+" : "") + (shown === 1 ? " image" : " images") + " from the " + kind + ". Select to save; right-click one to follow its thread."
+      : hop ? shown + (step.more ? "+" : "") + (shown === 1 ? " image" : " images") + " from the " + kind + " " + hop.label
+        + ". Select to save; right-click one to follow its thread."
       : "Where this image leads.";
     if (trail.left !== null) desc += " " + trail.left + (trail.left === 1 ? " check" : " checks") + " left on this trail.";
     $("#find-head-desc").textContent = desc;
