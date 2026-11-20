@@ -79,14 +79,15 @@
     if (item.feedId) card.setAttribute("data-key", "feed-" + item.feedId);
     if (item.entryId) card.setAttribute("data-entry", item.entryId);
     card.setAttribute("aria-label", item.entryId ? "Open " + (item.title || "entry")
-      : "Select image " + (index + 1) + (item.fresh ? ", new" : "") + (item.fromCandidate ? ", from a new source" : ""));
+      : "Select image " + (index + 1) + (item.known_entry_id ? ", already in the library" : "") + (item.fresh ? ", new" : "")
+        + (item.fromCandidate ? ", from a new source" : ""));
     var img = document.createElement("img");
     img.className = "library-card-image";
     img.src = item.thumb;
     img.alt = "";
     reserveSpace(img, item.width, item.height);
     card.appendChild(img);
-    if (item.known_entry_id || item.aiLabel || item.fresh || item.fromCandidate) {
+    if (item.aiLabel || item.fresh || item.fromCandidate) {
       var flags = card.appendChild(makeEl("span", "library-card-flags"));
       if (item.fresh) {
         var fresh = flags.appendChild(makeEl("span", "status-chip status-chip-filled library-card-fresh"));
@@ -98,11 +99,11 @@
         sprout.setAttribute("data-tooltip", "New source: " + item.followLabel);
         sprout.innerHTML = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>';
       }
-      if (item.known_entry_id) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "Captured")).setAttribute("data-tooltip", "Already in the library");
       if (item.aiLabel) flags.appendChild(makeEl("span", "status-chip status-chip-outlined-accent", "AI label")).setAttribute("data-tooltip", item.aiLabel);
     }
     // A blurred AI-labeled image clears for good once it is selected.
     if (item.veiled) card.setAttribute("data-veiled", "true");
+    if (item.known_entry_id && !item.entryId) markCaptured(card, false);
     var details = card.appendChild(makeEl("span", "library-card-details"));
     if (item.feedId || item.entryId) {
       if (item.title) details.appendChild(makeEl("span", "library-card-title", item.title));
@@ -120,6 +121,21 @@
       else toggleSelected(index);
     });
     return card;
+  }
+
+  var CAPTURED_ICON = '<svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 15 2 2 4-4"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+
+  // Blurs a candidate already in the library behind a centered duplicate mark; animate plays the capture.
+  function markCaptured(card, animate) {
+    if (card.hasAttribute("data-captured")) return;
+    card.setAttribute("data-captured", animate ? "fresh" : "true");
+    var mark = makeEl("span", "library-captured-mark");
+    var badge = mark.appendChild(makeEl("span", "library-captured-icon"));
+    badge.setAttribute("role", "img");
+    badge.setAttribute("aria-label", "Already in the library");
+    badge.setAttribute("data-tooltip", "Already in the library");
+    badge.innerHTML = CAPTURED_ICON;
+    card.insertBefore(mark, card.querySelector(".library-card-details"));
   }
 
   function hostOf(pageUrl) {

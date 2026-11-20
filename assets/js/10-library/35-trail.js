@@ -318,7 +318,7 @@
     navigate(function () { pushStep(origin); });
   }
 
-  // Keeps the selected trail images in the library, optionally in a set; they stay in the grid marked as captured.
+  // Keeps the selected trail images in the library, optionally in a set; they stay in the grid and blur behind the captured mark.
   // With a set, selected images already in the library are placed in it too.
   function acceptTrail(setId) {
     var bridge = api();
@@ -341,9 +341,16 @@
       changed();
       if (trail !== mine || trailStep() !== step) return;
       var known = result.entry_ids || {};
-      step.images.forEach(function (item) { if (item.type !== "entry" && known[String(item.id)]) item.known_entry_id = known[String(item.id)]; });
-      var top = $("#library").scrollTop;
-      flip(function () { showTrailGrid(step, true); $("#library").scrollTop = top; });
+      clearSelection();
+      if (!candidates || !candidates.trail) return;
+      candidates.candidates.forEach(function (item, index) {
+        var entryId = item.feedId && known[String(item.feedId)];
+        if (!entryId) return;
+        item.known_entry_id = entryId;
+        item.raw.known_entry_id = entryId;
+        var card = grid.querySelector('[data-id="' + index + '"]');
+        if (card) markCaptured(card, true);
+      });
     }).catch(function () { toast("error", "Could not save those images."); });
   }
 
