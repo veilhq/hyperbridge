@@ -140,7 +140,6 @@ button.find-trail-crumb:hover { color: var(--interactive); }
 button.find-trail-crumb:focus-visible { outline: var(--border-hair) solid var(--focus); outline-offset: var(--border-hair); }
 span.find-trail-crumb { color: var(--text-bright); }
 .find-trail-sep { color: var(--text-dim); }
-.find-trail-hops { max-width: 40rem; }
 .find-hop-follow:disabled { opacity: 1; color: var(--selected); }
 @media (prefers-reduced-motion: reduce) { .find-trail-crumb { transition: none; } }
 html.a11y-reduce-motion .find-trail-crumb { transition: none; }
