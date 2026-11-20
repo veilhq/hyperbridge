@@ -6,10 +6,13 @@ import re
 from datetime import datetime
 from urllib.parse import urlsplit
 
+from bridge.ingest import checks
 from bridge.library import library
 
 PAGE = 50
 PER_BLOG = 24
+BACKFILL_LIMIT = 40
+BACKFILL_STEP = "tumblr"
 _IMG = re.compile(r"<img\b[^>]*>", re.I)
 _ATTR = re.compile(r"""\b(src|srcset|data-orig-width|data-orig-height)\s*=\s*"([^"]*)\"""", re.I)
 _TAG = re.compile(r"<[^>]+>")
@@ -93,10 +96,22 @@ def items(blog_url, fetcher, rng, newest=False) -> list:
     else:
         total = int(_read(fetcher, host, 0, 1).get("posts-total") or 0)
         data = _read(fetcher, host, rng.randint(0, max(0, total - PAGE)), PAGE)
-    collection = str((data.get("tumblelog") or {}).get("title") or host)[:200]
     posts = [post for post in data["posts"] if post_images(post)]
+    picked = posts[:PER_BLOG] if newest else rng.sample(posts, min(PER_BLOG, len(posts)))
+    return page_items(dict(data, posts=picked), host)
+
+
+def reblog_fields(post) -> dict:
+    """Return the blog a post was reblogged from and the blog that first posted it, '' when it is an original."""
+    return {"reblog_from": str(post.get("reblogged-from-url") or "")[:500],
+            "reblog_root": str(post.get("reblogged-root-url") or "")[:500]}
+
+
+def page_items(data, host) -> list:
+    """Return feed items for every image post in one read reply, carrying the blog handle and reblog links."""
+    collection = str((data.get("tumblelog") or {}).get("title") or host)[:200]
     result = []
-    for post in posts[:PER_BLOG] if newest else rng.sample(posts, min(PER_BLOG, len(posts))):
+    for post in data.get("posts") or []:
         details = post_details(post)
         tags = details["tags"]
         for full, preview, width, height in post_images(post)[:4]:
@@ -106,6 +121,7 @@ def items(blog_url, fetcher, rng, newest=False) -> list:
                 "term": (tags[0] if tags else host)[:100], "tags": tags, "source_ref": str(post.get("id") or ""),
                 "posted_at": details["posted_at"], "collection": collection,
                 "description": details["description"], "publisher": "",
+                "creator_handle": f"https://{host}/", **reblog_fields(post),
             })
     return result
 
@@ -129,27 +145,41 @@ def follow(conn, url, fetcher) -> dict:
 _POST_LINK = re.compile(r"/post/(\d+)")
 
 
-def backfill(conn, fetcher, limit=None) -> int:
-    """Fill tags, posted date, post id and blog name on saved entries that came from a Tumblr post link; returns how many changed."""
+def backfill(conn, fetcher, limit=BACKFILL_LIMIT) -> int:
+    """Fill tags, posted date, post id and blog name on saved entries that came from a Tumblr post link; returns how many changed.
+
+    Reads at most limit due posts; a post that cannot be read waits longer after each failure, and the pass stops when Tumblr pushes back.
+    """
     rows = conn.execute(
-        "SELECT id, source_url FROM entries WHERE source_service = '' AND source_url LIKE '%/post/%'").fetchall()
-    done = 0
-    for row in rows[:limit]:
+        "SELECT id, source_url FROM entries WHERE source_service = '' AND source_url LIKE '%/post/%'"
+        f" AND {checks.due()} ORDER BY id", (BACKFILL_STEP, checks.now())).fetchall()
+    done = tries = 0
+    for row in rows:
         match = _POST_LINK.search(row["source_url"])
         host = target(row["source_url"])
         if not match or not host or "are.na" in host:
             continue
+        if tries >= limit:
+            break
+        tries += 1
         try:
             data = _read_post(fetcher, host, match.group(1))
-        except Exception:  # noqa: BLE001 - a post that cannot be read is left for a later run
+        except Exception as err:  # noqa: BLE001 - a post that cannot be read waits for a later run
+            if checks.pushed_back(err):
+                break
+            checks.failed(conn, row["id"], BACKFILL_STEP)
             continue
         post = (data.get("posts") or [None])[0]
         if not post:
+            checks.failed(conn, row["id"], BACKFILL_STEP)
             continue
+        reblog = reblog_fields(post)
         conn.execute(
-            "UPDATE entries SET source_service = 'tumblr', source_ref = ?, posted_at = ?, collection = ? WHERE id = ?",
+            "UPDATE entries SET source_service = 'tumblr', source_ref = ?, posted_at = ?, collection = ?,"
+            " creator_handle = ?, reblog_from = ?, reblog_root = ? WHERE id = ?",
             (str(post.get("id") or match.group(1)), str(post.get("date-gmt") or "")[:10],
-             str((data.get("tumblelog") or {}).get("title") or host)[:200], row["id"]))
+             str((data.get("tumblelog") or {}).get("title") or host)[:200], f"https://{host}/",
+             reblog["reblog_from"], reblog["reblog_root"], row["id"]))
         library.add_entry_tags(conn, row["id"], post.get("tags") or [])
         done += 1
     return done

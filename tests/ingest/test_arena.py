@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bridge.core.fetchguard import FetchError  # noqa: E402
 from bridge.ingest import arena  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from tests.core.test_db import LibraryCase  # noqa: E402
@@ -73,20 +74,16 @@ class SamplingTests(unittest.TestCase):
 
 
 class RetryTests(unittest.TestCase):
-    def test_a_rate_limited_read_is_retried_then_succeeds(self):
+    def test_a_rate_limited_read_is_not_retried(self):
         calls = []
 
-        def flaky(url):
+        def limited(url):
             calls.append(url)
-            if len(calls) < 3:
-                raise OSError("HTTP 429")
-            return SimpleNamespace(body=b'{"ok": 1}')
+            raise FetchError("http_status", "HTTP 429", 429)
 
-        with unittest.mock.patch.object(arena.time, "sleep") as sleep:
-            self.assertEqual(arena._json(flaky, "u", retries=3), {"ok": 1})
-        self.assertEqual((len(calls), sleep.call_count), (3, 2))
-        with self.assertRaises(OSError):
-            arena._json(lambda url: (_ for _ in ()).throw(OSError("HTTP 500")), "u", retries=3)
+        with self.assertRaises(FetchError):
+            arena._json(limited, "u")
+        self.assertEqual(len(calls), 1)
 
 
 class OriginFake(FakeArena):
@@ -168,6 +165,52 @@ class OriginTests(LibraryCase):
             self.conn.execute("UPDATE entries SET source_url = ? WHERE id = ?", (f"https://www.are.na/me/{slug}", entry))
         self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1)), 2)
         self.assertEqual(arena.backfill_origins(self.conn, OriginFake(), random.Random(1), max_channels=None), 1)
+
+    def known_blocks(self, *refs):
+        for number, ref in enumerate(refs, start=1):
+            entry = self.saved(number, "x")
+            self.conn.execute("UPDATE entries SET source_service = 'arena', source_ref = ? WHERE id = ?", (ref, entry))
+
+    def test_an_unreadable_block_waits_longer_after_each_failure(self):
+        self.known_blocks("77", "78")
+        calls = []
+
+        def missing(url):
+            calls.append(url)
+            raise FetchError("http_status", "HTTP 404", 404)
+
+        arena.backfill_origins(self.conn, missing, random.Random(1), max_channels=0)
+        arena.backfill_origins(self.conn, missing, random.Random(1), max_channels=0)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([row[0] for row in self.conn.execute("SELECT failures FROM entry_checks")], [1, 1])
+        self.conn.execute("UPDATE entry_checks SET checked_at = '2000-01-01T00:00:00'")
+        arena.backfill_origins(self.conn, missing, random.Random(1), max_channels=0)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual([row[0] for row in self.conn.execute("SELECT failures FROM entry_checks")], [2, 2])
+
+    def test_pushback_stops_the_pass_without_counting_against_the_entries(self):
+        self.known_blocks("77", "78", "79")
+        calls = []
+
+        def limited(url):
+            calls.append(url)
+            raise FetchError("http_status", "HTTP 429", 429)
+
+        arena.backfill_origins(self.conn, limited, random.Random(1), max_channels=None)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM entry_checks").fetchone()[0], 0)
+
+    def test_block_reads_stop_at_the_limit(self):
+        self.known_blocks("77", "78", "79")
+        fake, calls = OriginFake(), []
+
+        def counting(url):
+            calls.append(url)
+            return fake(url)
+
+        self.assertEqual(arena.backfill_origins(self.conn, counting, random.Random(1), max_channels=0, block_limit=2), 2)
+        self.assertEqual(len(calls), 2)
+
 
 class FollowTests(LibraryCase):
     def test_follow_lists_dedupes_and_unfollows(self):

@@ -2,11 +2,10 @@
 
 import json
 import re
-import time
 from datetime import datetime
 from urllib.parse import urlencode, urlsplit
 
-from bridge.ingest import capture
+from bridge.ingest import capture, checks
 from bridge.ingest import discover
 
 API = "https://api.are.na/v2"
@@ -14,20 +13,12 @@ API_V3 = "https://api.are.na/v3"
 PAGE_SIZE = 100
 MAX_PAGES = 20
 PER_CHANNEL = 12
-RETRIES = 4
-RETRY_WAIT = 5
 _RESERVED = {"explore", "search", "block", "blocks", "about", "pricing", "tools", "log-in", "sign-up", "feed", "notifications"}
 
 
-def _json(fetcher, url, retries=0) -> dict:
-    """Read a JSON reply; with retries, wait and try again when Are.na answers that it is being asked too often."""
-    for attempt in range(retries + 1):
-        try:
-            return json.loads(bytes(fetcher(url).body).decode("utf-8", "replace"))
-        except Exception as err:  # noqa: BLE001 - only a rate limit is retried
-            if "429" not in str(err) or attempt == retries:
-                raise
-            time.sleep(RETRY_WAIT * (attempt + 1))
+def _json(fetcher, url) -> dict:
+    """Read one JSON reply; a failure, including a rate limit, is raised rather than retried."""
+    return json.loads(bytes(fetcher(url).body).decode("utf-8", "replace"))
 
 
 def target(url):
@@ -93,6 +84,29 @@ def _block_fields(block) -> dict:
             **block_details(block)}
 
 
+def owner_url(block, fallback="") -> str:
+    """Return the Are.na profile link of whoever added a block, else the fallback owner slug's link, else ''."""
+    slug = (block.get("user") or block.get("owner") or {}).get("slug") or fallback
+    return f"https://www.are.na/{slug}" if slug and slug != "channel" else ""
+
+
+def source_link(block) -> str:
+    """Return the page a block's image was taken from, or '' when Are.na does not know it."""
+    url = str((block.get("source") or {}).get("url") or "")
+    return url[:500] if url.startswith(("http://", "https://")) else ""
+
+
+def block_item(block, page_url, collection, owner="") -> dict:
+    """Return one feed item for an image block, with the owner handle and source link that trail hops follow."""
+    return {
+        "source_id": "arena", "url": block["image"]["src"],
+        "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
+        **_block_fields(block), "title": (block.get("title") or "")[:300], "creator": "",
+        "page_url": page_url, "term": collection[:100], "collection": collection[:200],
+        "creator_handle": owner_url(block, owner), "source_link": source_link(block),
+    }
+
+
 def channel_items(channel_url, fetcher, rng, newest=False) -> list:
     """Return feed items sampled from one channel, or its newest blocks when asked."""
     found = target(channel_url)
@@ -101,12 +115,8 @@ def channel_items(channel_url, fetcher, rng, newest=False) -> list:
     title, blocks = channel_blocks(found[1], fetcher, rng, newest)
     blocks = [block for block in blocks if _usable(block)]
     blocks = blocks[:PER_CHANNEL] if newest else rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
-    return [{
-        "source_id": "arena", "url": block["image"]["src"],
-        "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
-        **_block_fields(block), "title": (block.get("title") or "")[:300], "creator": "",
-        "page_url": channel_url, "term": title[:100], "collection": title[:200],
-    } for block in blocks]
+    owner = [part for part in urlsplit(channel_url).path.split("/") if part][0]
+    return [block_item(block, channel_url, title, owner) for block in blocks]
 
 
 def user_items(user_url, fetcher, rng, newest=False) -> list:
@@ -128,12 +138,7 @@ def user_items(user_url, fetcher, rng, newest=False) -> list:
         data = first if page == 1 else _json(fetcher, url + str(page))
         blocks = [block for block in data.get("data") or [] if (block.get("image") or {}).get("src")]
         blocks = rng.sample(blocks, min(PER_CHANNEL, len(blocks)))
-    return [{
-        "source_id": "arena", "url": block["image"]["src"],
-        "thumb": (block["image"].get("large") or {}).get("src") or block["image"]["src"],
-        **_block_fields(block), "title": (block.get("title") or "")[:300], "creator": "",
-        "page_url": f"https://www.are.na/block/{block.get('id')}", "term": found[1], "collection": found[1],
-    } for block in blocks]
+    return [block_item(block, f"https://www.are.na/block/{block.get('id')}", found[1], found[1]) for block in blocks]
 
 
 _JUNK_TITLE = re.compile(r"^(original_)?[0-9a-f-]{12,}|^(img|dsc|image|untitled|screen[ _-]?shot|tumblr)\b", re.I)
@@ -151,57 +156,64 @@ def _clean(text, limit) -> str:
 
 
 BLOCK_LIMIT = 50
+CHANNEL_LIMIT = 5
+BLOCK_STEP = "arena-block"
 _ROW_COLUMNS = ("e.id, e.source_key, e.source_url, e.title, e.creator, e.description, e.publisher, e.source_ref,"
                 " e.collection, e.domain, e.manual_fields")
 
 
-def backfill_origins(conn, fetcher, rng, max_channels=2, retries=0) -> int:
+def backfill_origins(conn, fetcher, rng, max_channels=2, block_limit=BLOCK_LIMIT) -> int:
     """Match saved Are.na images to their blocks, recording the block and channel words and filling empty fields.
 
-    Handles up to max_channels channels per call (all of them when None), waiting out rate limits retries times; entries saved from a block page,
-    and up to BLOCK_LIMIT feed-saved entries whose block is known but never read, are read directly.
+    Reads up to block_limit blocks (feed-saved entries whose block is known, then entries saved from a block page) and up to
+    max_channels channels (all of them when None). An image that cannot be matched waits longer after each failed try,
+    and the pass stops as soon as Are.na pushes back.
     """
     now = datetime.now().isoformat(timespec="seconds")
     known = conn.execute(
         f"SELECT {_ROW_COLUMNS} FROM entries e WHERE e.source_service = 'arena' AND e.source_ref != ''"
-        " AND NOT EXISTS (SELECT 1 FROM entry_origins o WHERE o.entry_id = e.id) LIMIT ?", (BLOCK_LIMIT,)).fetchall()
-    done = 0
-    for row in known:
-        try:
-            done += _match_block(conn, int(row["source_ref"]), row, fetcher, now, retries)
-        except Exception:  # noqa: BLE001 - an unreadable block is retried on a later refresh
-            continue
+        f" AND NOT EXISTS (SELECT 1 FROM entry_origins o WHERE o.entry_id = e.id) AND {checks.due('e')}"
+        " ORDER BY e.id LIMIT ?", (BLOCK_STEP, now, int(block_limit))).fetchall()
     rows = conn.execute(
         f"SELECT {_ROW_COLUMNS} FROM entries e"
         " WHERE e.source_url LIKE '%are.na/%' AND e.source_key IS NOT NULL"
-        " AND e.source_ref = ''").fetchall()
+        f" AND e.source_ref = '' AND {checks.due('e')} ORDER BY e.id", (BLOCK_STEP, now)).fetchall()
+    blocks = [(int(row["source_ref"]), row) for row in known]
     by_channel = {}
     for row in rows:
         block = _BLOCK_LINK.search(row["source_url"])
         if block:
-            try:
-                done += _match_block(conn, int(block.group(1)), row, fetcher, now, retries)
-            except Exception:  # noqa: BLE001 - an unreadable block is retried on a later refresh
-                pass
+            blocks.append((int(block.group(1)), row))
             continue
         slug = discover._arena_slug(row["source_url"])
         if slug:
             by_channel.setdefault(slug, []).append(row)
+    done = 0
+    for block_id, row in blocks[:max(0, int(block_limit))]:
+        try:
+            done += _match_block(conn, block_id, row, fetcher, now)
+        except Exception as err:  # noqa: BLE001 - an unreadable block waits for a later run
+            if checks.pushed_back(err):
+                return done
+            checks.failed(conn, row["id"], BLOCK_STEP, now)
     slugs = list(by_channel)
     rng.shuffle(slugs)
     for slug in slugs[:max_channels]:
         try:
-            done += _match_channel(conn, slug, by_channel[slug], fetcher, now, retries)
-        except Exception:  # noqa: BLE001 - an unreadable channel is retried on a later refresh
-            continue
+            done += _match_channel(conn, slug, by_channel[slug], fetcher, now)
+        except Exception as err:  # noqa: BLE001 - an unreadable channel waits for a later run
+            if checks.pushed_back(err):
+                return done
+            for row in by_channel[slug]:
+                checks.failed(conn, row["id"], BLOCK_STEP, now)
     return done
 
 
 _BLOCK_LINK = re.compile(r"are\.na/block/(\d+)")
 
 
-def _match_block(conn, block_id, row, fetcher, now, retries=0) -> int:
-    block = _json(fetcher, f"{API_V3}/blocks/{block_id}", retries)
+def _match_block(conn, block_id, row, fetcher, now) -> int:
+    block = _json(fetcher, f"{API_V3}/blocks/{block_id}")
     conn.execute(
         "INSERT OR REPLACE INTO entry_origins (entry_id, block_id, channel_slug, channel_title, channel_text, checked_at)"
         " VALUES (?, ?, '', '', '', ?)", (row["id"], block.get("id") or block_id, now))
@@ -215,8 +227,8 @@ def _image_path(url) -> str:
     return f"{parts.netloc}{parts.path}".lower()
 
 
-def _match_channel(conn, slug, entries, fetcher, now, retries=0) -> int:
-    info = _json(fetcher, f"{API_V3}/channels/{slug}", retries)
+def _match_channel(conn, slug, entries, fetcher, now) -> int:
+    info = _json(fetcher, f"{API_V3}/channels/{slug}")
     pages = min(MAX_PAGES, max(1, -(-int((info.get("counts") or {}).get("contents") or 0) // PAGE_SIZE)))
     wanted = {_image_path(row["source_key"]): row for row in entries}
     found = {}
@@ -230,7 +242,7 @@ def _match_channel(conn, slug, entries, fetcher, now, retries=0) -> int:
     for page in range(1, pages + 1):
         if len(found) == len(wanted):
             break
-        scan(_json(fetcher, _contents_url(slug, page), retries).get("data") or [])
+        scan(_json(fetcher, _contents_url(slug, page)).get("data") or [])
     title = _clean(info.get("title"), 120)
     text = _clean(_text(info.get("description")), 400)
     for key, row in wanted.items():
@@ -241,6 +253,8 @@ def _match_channel(conn, slug, entries, fetcher, now, retries=0) -> int:
         if block:
             _fill_entry(conn, row, block)
             conn.execute("UPDATE entries SET collection = ? WHERE id = ? AND collection = ''", (title, row["id"]))
+        else:
+            checks.failed(conn, row["id"], BLOCK_STEP, now)
     return len(wanted)
 
 
@@ -263,6 +277,9 @@ def _fill_entry(conn, row, block) -> None:
     if updates:
         sets = ", ".join(f"{column} = ?" for column in updates)
         conn.execute(f"UPDATE entries SET {sets} WHERE id = ?", (*updates.values(), row["id"]))
+    conn.execute("UPDATE entries SET source_link = CASE WHEN source_link = '' THEN ? ELSE source_link END,"
+                 " creator_handle = CASE WHEN creator_handle = '' THEN ? ELSE creator_handle END WHERE id = ?",
+                 (source_link(block), owner_url(block), row["id"]))
 
 
 SEARCH_CHANNELS = 20

@@ -328,6 +328,21 @@
       <div class="lightbox-caption" id="lb-caption"></div>
       <div class="lightbox-status" id="lb-status"></div>
 
+      <section class="lightbox-trail" id="lb-trail" aria-label="Thread" hidden>
+        <div class="lightbox-trail-path">
+          <button class="action-icon" id="lb-trail-back" type="button" aria-label="Back a step" data-tooltip="Back a step (Backspace)"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
+          <div class="lightbox-trail-crumbs" id="lb-trail-crumbs"></div>
+          <span class="lightbox-trail-position" id="lb-trail-position"></span>
+        </div>
+        <div class="lightbox-trail-keep" id="lb-trail-keep" hidden>
+          <button class="action-icon" id="lb-trail-save" type="button" aria-label="Keep" data-tooltip="Keep in the library"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/><path d="M12 7v6"/><path d="M15 10H9"/></svg></button>
+          <button class="action-icon" id="lb-trail-save-set" type="button" aria-label="Keep in a set" data-tooltip="Keep in a set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
+          <button class="action-icon" id="lb-trail-skip" type="button" aria-label="Skip" data-tooltip="Skip to the next image"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></button>
+        </div>
+        <div class="lightbox-label">Leads to <span class="lightbox-trail-left" id="lb-trail-left"></span></div>
+        <div class="lightbox-trail-hops" id="lb-trail-hops"></div>
+      </section>
+
       <section class="lightbox-field" id="lb-view">
         <div class="lightbox-label" id="lb-description-label" hidden>Description</div>
         <div class="lightbox-description" id="lb-description" hidden></div>
@@ -368,6 +383,7 @@
 
       <div class="lightbox-actions" id="lb-actions">
         <button class="action-icon" id="act-edit" type="button" aria-label="Edit" data-tooltip="Edit"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg></button>
+        <button class="action-icon" id="act-trail" type="button" aria-label="Follow the thread" data-tooltip="Follow the thread"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/><circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/><circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/><circle cx="12" cy="19.5" r="2.5"/></svg></button>
         <button class="action-icon" id="act-save" type="button" aria-label="Download" data-tooltip="Download"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg></button>
         <button class="action-icon" id="act-save-all" type="button" aria-label="Download all" data-tooltip="Download all"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m9 13 3 3 3-3"/></svg></button>
         <button class="action-icon action-icon-danger" id="act-discard" type="button" aria-label="Discard" data-tooltip="Discard"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H8c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>

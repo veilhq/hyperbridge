@@ -4,10 +4,11 @@ import html
 import json
 import re
 
-from bridge.ingest import capture
+from bridge.ingest import capture, checks
 from bridge.library import library
 
-LIMIT = 50
+LIMIT = 40
+STEP = "social"
 _X_POST = re.compile(r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/[^/?#]+/status/(\d+)", re.I)
 _HASHTAG = re.compile(r"(?<![\w&])#([^\W\d_][\w]*)", re.U)
 _PUBLISHERS = {"x": "X", "instagram": "Instagram"}
@@ -66,22 +67,33 @@ def mark_source(conn, entry_id, post) -> None:
 
 
 def backfill(conn, fetcher, limit=LIMIT) -> int:
-    """Read each unfilled X or Instagram post link once and record its tags, creator, caption and date; returns how many changed."""
+    """Read up to limit due X or Instagram post links and record their tags, creator, caption and date; returns how many changed.
+
+    A post that cannot be read waits longer after each failure, and a platform that pushes back is skipped for the rest of the pass.
+    """
     rows = conn.execute(
         "SELECT id, source_url, creator, description, publisher FROM entries"
-        " WHERE source_service = '' AND (source_url LIKE '%/status/%' OR source_url LIKE '%instagram.com/%')").fetchall()
-    done = 0
+        " WHERE source_service = '' AND (source_url LIKE '%/status/%' OR source_url LIKE '%instagram.com/%')"
+        f" AND {checks.due()} ORDER BY id", (STEP, checks.now())).fetchall()
+    done = tries = 0
+    stopped = set()
     for row in rows:
-        if done >= limit:
-            break
         url = row["source_url"]
         post_id = x_post_id(url)
         embed = capture.instagram_embed_url(url)
-        if not post_id and not embed:
+        service = "x" if post_id else "instagram"
+        if (not post_id and not embed) or service in stopped:
             continue
+        if tries >= limit:
+            break
+        tries += 1
         try:
             post = x_post(fetcher, post_id) if post_id else instagram_post(fetcher(embed).body)
-        except Exception:  # noqa: BLE001 - a post that cannot be read is retried on a later run
+        except Exception as err:  # noqa: BLE001 - a post that cannot be read waits for a later run
+            if checks.pushed_back(err):
+                stopped.add(service)
+            else:
+                checks.failed(conn, row["id"], STEP)
             continue
         conn.execute(
             "UPDATE entries SET source_service = ?, source_ref = ?, collection = ?, posted_at = ?,"

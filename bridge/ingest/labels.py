@@ -55,7 +55,8 @@ def _read_label(fetcher, url) -> str:
 
 def check_new(conn, fetcher, limit=CHECK_LIMIT) -> int:
     """Check the newest unchecked feed images for AI labels and record what was found; returns how many were labeled."""
-    rows = conn.execute("SELECT id, url FROM feed_items WHERE state = 'new' AND ai_checked = 0 ORDER BY id DESC LIMIT ?",
+    rows = conn.execute("SELECT id, url FROM feed_items WHERE state = 'new' AND ai_checked = 0 AND trail = ''"
+                        " ORDER BY id DESC LIMIT ?",
                         (int(limit),)).fetchall()
     if not rows:
         return 0

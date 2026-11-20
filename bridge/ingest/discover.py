@@ -13,6 +13,7 @@ from bridge.library import library, sets
 MAX_CANDIDATES = 60
 MIN_EDGE = 150
 THUMB_EDGE = 240
+PROBE_WORKERS = 4
 _IMAGE_LINK = re.compile(r"\.(?:png|jpe?g|gif|webp)(?:$|\?)", re.IGNORECASE)
 _LAZY_ATTRS = ("data-src", "data-original", "data-lazy-src", "data-full-url")
 
@@ -126,6 +127,17 @@ def _probe(url, fetcher):
         return None
 
 
+def _probe_until(urls, probe, limit) -> list:
+    """Probe candidate URLs a few at a time, in page order, and stop once limit usable images are found."""
+    found = []
+    with ThreadPoolExecutor(max_workers=PROBE_WORKERS) as pool:
+        for start in range(0, len(urls), PROBE_WORKERS):
+            found += [item for item in pool.map(probe, urls[start:start + PROBE_WORKERS]) if item]
+            if len(found) >= limit:
+                break
+    return found[:limit]
+
+
 def _pin_candidate(pin, board_name, board_url):
     """Build a candidate from a Pinterest pin: its preview for the card, the full-size URL to capture, its board and section, and its details."""
     collection = " / ".join(part for part in (board_name, pin["section"]) if part)
@@ -163,11 +175,9 @@ def discover(conn, url, fetcher=None) -> dict:
             title = capture.extract_metadata(response.body, base)["title"]
         probe = lambda item: _probe(item, fetcher)  # noqa: E731
     if board:
-        probed = [probe(pin) for pin in urls]
+        candidates = [item for item in (probe(pin) for pin in urls) if item][:limit]
     else:
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            probed = list(pool.map(probe, urls))
-    candidates = [item for item in probed if item][:limit]
+        candidates = _probe_until(urls, probe, limit)
     for item in candidates:
         try:
             key = capture.normalize_url(item["url"])

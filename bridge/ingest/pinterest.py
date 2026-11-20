@@ -1,12 +1,10 @@
 """Reads the pins of a public Pinterest board, section by section, through the JSON endpoints the board page itself calls."""
 import json
-from concurrent.futures import ThreadPoolExecutor
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote, urlencode, urlsplit
 
-PIN_LIMIT = 1000
+PIN_LIMIT = 200
 PAGE_SIZE = 25
-SECTION_WORKERS = 4
 _HANDLER = {"X-Pinterest-PWS-Handler": "www/[username]/[slug].js"}
 _RESERVED = {"pin", "search", "ideas", "today", "explore", "business", "settings", "_saved", "_created", "videos", "shop"}
 _RESOURCE = "https://www.pinterest.com/resource/{name}/get/?"
@@ -84,7 +82,10 @@ def _section_pins(fetcher, section, source, limit):
 
 
 def board_pins(ref, fetcher, limit=PIN_LIMIT):
-    """Return (board name, pins) for a public board or one of its sections; each pin names its section."""
+    """Return (board name, up to limit pins) for a public board or one of its sections; each pin names its section.
+
+    Sections are read one after another and stop once limit pins are found.
+    """
     username, slug, section_slug = ref
     source = "/" + quote(username) + "/" + quote(slug) + "/"
     board = _read(fetcher, "BoardResource", {"username": username, "slug": slug, "field_set_key": "detail"}, source).get("data") or {}
@@ -95,18 +96,18 @@ def board_pins(ref, fetcher, limit=PIN_LIMIT):
         sections = [item for item in sections if item.get("slug") == section_slug]
         if not sections:
             return board.get("name") or "", []
-    with ThreadPoolExecutor(max_workers=SECTION_WORKERS) as pool:
-        grouped = list(pool.map(lambda item: _section_pins(fetcher, item, source, limit), sections))
     pins, seen = [], set()
-    for group in grouped:
-        for pin in group:
+    for section in sections:
+        if len(pins) >= limit:
+            break
+        for pin in _section_pins(fetcher, section, source, limit - len(pins)):
             if pin["url"] not in seen:
                 seen.add(pin["url"])
                 pins.append(pin)
-    if not section_slug and len(pins) < int(board.get("pin_count") or 0):
+    if not section_slug and len(pins) < min(limit, int(board.get("pin_count") or 0)):
         options = {"board_id": board["id"], "board_url": source, "field_set_key": "react_grid_pin",
                    "filter_section_pins": False, "layout": "default"}
-        for item in _pages(fetcher, "BoardFeedResource", options, source, limit):
+        for item in _pages(fetcher, "BoardFeedResource", options, source, limit - len(pins)):
             pin = _pin(item)
             if pin and pin["url"] not in seen:
                 seen.add(pin["url"])

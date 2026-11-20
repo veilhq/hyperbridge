@@ -1,8 +1,6 @@
 """Reads the Tumblr post or Pinterest pin a saved entry came from once, and fills the title, description, source site,
 posted date and tags the entry is missing."""
-from datetime import datetime
-
-from bridge.ingest import arena, capture, enrich, pinterest, tumblr
+from bridge.ingest import arena, capture, checks, enrich, pinterest, tumblr
 from bridge.library import library
 
 LIMIT = 40
@@ -57,23 +55,29 @@ def _fill(conn, row, found) -> bool:
 
 
 def details(conn, fetcher, limit=LIMIT) -> int:
-    """Read up to limit not-yet-read Tumblr and Pinterest entries from their source and fill what they lack; returns how many changed.
+    """Read up to limit due Tumblr and Pinterest entries from their source and fill what they lack; returns how many changed.
 
-    Edit times are left alone so sync does not churn; a source that cannot be read is retried at the next start.
+    Edit times are left alone so sync does not churn; a source that cannot be read waits longer after each failure,
+    and a service that pushes back is skipped for the rest of the pass.
     """
     rows = conn.execute(
         "SELECT id, title, description, publisher, posted_at, creator, collection, domain, manual_fields,"
         " source_url, source_service, source_ref FROM entries"
         " WHERE source_service IN ('tumblr', 'pinterest') AND source_ref != ''"
-        " AND NOT EXISTS (SELECT 1 FROM entry_checks WHERE entry_checks.entry_id = entries.id AND step = ?)"
-        " ORDER BY id LIMIT ?", (STEP, int(limit))).fetchall()
+        f" AND {checks.due()} ORDER BY id LIMIT ?", (STEP, checks.now(), int(limit))).fetchall()
     done = 0
+    stopped = set()
     for row in rows:
+        if row["source_service"] in stopped:
+            continue
         try:
             found = _LOOKUPS[row["source_service"]](fetcher, row)
-        except Exception:  # noqa: BLE001 - a post or pin that cannot be read is left for a later run
+        except Exception as err:  # noqa: BLE001 - a post or pin that cannot be read waits for a later run
+            if checks.pushed_back(err):
+                stopped.add(row["source_service"])
+                continue
+            checks.failed(conn, row["id"], STEP)
             continue
         done += _fill(conn, row, found)
-        conn.execute("INSERT OR REPLACE INTO entry_checks (entry_id, step, checked_at) VALUES (?, ?, ?)",
-                     (row["id"], STEP, datetime.now().isoformat(timespec="seconds")))
+        checks.passed(conn, row["id"], STEP)
     return done

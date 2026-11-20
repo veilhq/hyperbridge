@@ -52,6 +52,8 @@ from bridge.ingest import feed_sources  # noqa: E402
 from bridge.ingest import similar  # noqa: E402
 from bridge.ingest import sources  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
+from bridge.ingest import trail  # noqa: E402
+from bridge.library import creators  # noqa: E402
 from bridge.core import db  # noqa: E402
 from bridge.core import prefs  # noqa: E402
 from bridge.core import storage  # noqa: E402
@@ -466,6 +468,37 @@ class HyperbridgeAPI:
     def unfollow_source(self, source_id: int) -> bool:
         """Stop following a source."""
         return self._feed_call("unfollow_source", lambda conn: arena.unfollow(conn, source_id), False)
+
+    def trail_hops(self, ref: dict) -> dict:
+        """Return the places an image ({entry} or {feed} id) leads to from the library and stored fields, with no requests."""
+        return self._feed_call("trail_hops", lambda conn: trail.hops(conn, dict(ref or {}), capture.default_fetcher()),
+                               {"hops": []})
+
+    def trail_check(self, ref: dict, trail_id: str) -> dict:
+        """Check an image's unchecked places on other sites, one paced request each, within the trail's budget."""
+        return self._feed_call("trail_check", lambda conn: trail.check(conn, dict(ref or {}), str(trail_id),
+                                                                       capture.default_fetcher()), {"hops": [], "left": 0})
+
+    def trail_images(self, place: dict, trail_id: str, more: bool = False) -> dict:
+        """Return a place's images for a trail step, reading its next page when more is set."""
+        return self._feed_call("trail_images", lambda conn: trail.images(conn, dict(place or {}), str(trail_id),
+                                                                         capture.default_fetcher(), bool(more)),
+                               {"images": [], "more": False, "count": 0, "state": "failed", "places": []})
+
+    def trail_save(self, feed_id: int, set_id: int | None = None) -> dict:
+        """Keep a trail image in the library, optionally placing it in a set."""
+        result = self._feed_call("trail_save", lambda conn: trail.save(conn, int(feed_id), set_id), None)
+        return {"ok": False, "error": "Could not keep that image."} if result is None else {"ok": True, **result}
+
+    def confirm_creator(self, name: str, url: str, creator_id: int | None = None) -> dict:
+        """Link a profile link to a creator (made from the name when new) after the Operator says they are the same person."""
+        result = self._feed_call("confirm_creator", lambda conn: creators.confirm(
+            conn, str(name or ""), str(url or ""), int(creator_id) if creator_id else None), None)
+        return {"ok": False, "error": "Could not link that creator."} if result is None else {"ok": True, "creator": result}
+
+    def reject_creator(self, name: str, url: str) -> bool:
+        """Remember that a profile link is not the named creator so it is not suggested again."""
+        return self._feed_call("reject_creator", lambda conn: creators.reject(conn, str(name or ""), str(url or "")), False)
 
     def toggle_fullscreen(self) -> bool:
         """Switch the window between fullscreen and windowed; returns whether it is now fullscreen."""

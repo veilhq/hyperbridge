@@ -17,6 +17,7 @@ from bridge.ingest import tumblr
 
 MAX_CHANNELS = 3
 ROUNDS = 3
+REFRESH_BLOCK_LIMIT = 10
 FEED_SOURCES = ("arena", "tumblr", "pinterest", "rss")
 STALE_HOURS = 6
 PRUNE_DISMISSED_DAYS = 180
@@ -26,7 +27,10 @@ LATEST_STALE_MINUTES = 30
 FRESH_DAYS = 14
 # Sources whose posts carry a real date; Pinterest boards do not, so they stay in Discover only.
 LATEST_SOURCES = "('arena', 'tumblr', 'rss')"
-_LATEST = f"state = 'new' AND set_id IS NULL AND source_id IN {LATEST_SOURCES}"
+_LATEST = f"state = 'new' AND set_id IS NULL AND trail = '' AND source_id IN {LATEST_SOURCES}"
+TRAIL_DAYS = 1
+# Fields hops follow, stored on feed items when pulled and carried onto entries when saved.
+HOP_FIELDS = ("source_link", "creator_handle", "reblog_from", "reblog_root")
 # New in Latest: arrived after the last visit and posted within FRESH_DAYS of arriving, so old archive pulls do not count.
 _FRESH = f"(created_at > ? AND posted_at != '' AND posted_at >= date(created_at, '-{FRESH_DAYS} days'))"
 
@@ -87,13 +91,17 @@ def pull_round(weights, fetcher, rng, kinds=None):
 
 
 def prune(conn) -> int:
-    """Delete dismissed items older than PRUNE_DISMISSED_DAYS and unseen ones older than PRUNE_UNSEEN_DAYS."""
+    """Delete dismissed items older than PRUNE_DISMISSED_DAYS, unseen ones older than PRUNE_UNSEEN_DAYS, and trail
+    images and checked trail places older than TRAIL_DAYS."""
     now = datetime.now()
     dismissed = (now - timedelta(days=PRUNE_DISMISSED_DAYS)).isoformat(timespec="seconds")
     unseen = (now - timedelta(days=PRUNE_UNSEEN_DAYS)).isoformat(timespec="seconds")
+    trail = (now - timedelta(days=TRAIL_DAYS)).isoformat(timespec="seconds")
+    conn.execute("DELETE FROM trail_places WHERE checked_at < ?", (trail,))
     return conn.execute(
-        "DELETE FROM feed_items WHERE (state = 'dismissed' AND created_at < ?) OR (state = 'new' AND created_at < ?)",
-        (dismissed, unseen)).rowcount
+        "DELETE FROM feed_items WHERE (trail != '' AND created_at < ?)"
+        " OR (state = 'dismissed' AND created_at < ?) OR (state = 'new' AND created_at < ?)",
+        (trail, dismissed, unseen)).rowcount
 
 
 def refresh(conn, fetcher=None, rng=None, replace=False, share=None) -> dict:
@@ -109,7 +117,7 @@ def refresh(conn, fetcher=None, rng=None, replace=False, share=None) -> dict:
     followed = [item["url"] for item in sources_followed]
     kinds = {item["url"]: item["kind"] for item in sources_followed}
     try:
-        arena.backfill_origins(conn, fetcher, rng)
+        arena.backfill_origins(conn, fetcher, rng, block_limit=REFRESH_BLOCK_LIMIT)
     except Exception:  # noqa: BLE001 - missing origins only leave the library less described
         pass
     share = sources.SHARES[prefs.get("discover_new_sources")] if share is None else share
@@ -125,7 +133,7 @@ def refresh(conn, fetcher=None, rng=None, replace=False, share=None) -> dict:
         pulled, round_failed, round_jobs = pull_round(weights, fetcher, rng, kinds)
         failed, jobs = failed + round_failed, jobs + round_jobs
         if replace and (pulled or not weights):
-            conn.execute("DELETE FROM feed_items WHERE state = 'new' AND set_id IS NULL")
+            conn.execute("DELETE FROM feed_items WHERE state = 'new' AND set_id IS NULL AND trail = ''")
         added += store(conn, pulled)
         sources.mark_pulled(conn, {item["origin_url"] for item in pulled} & candidates)
         if added or not weights or round_failed == round_jobs:
@@ -189,26 +197,33 @@ def list_latest(conn, offset=0, limit=60, show_flagged=False, since=None) -> dic
     return {"items": mark_captured(conn, items), "total": total, "flagged": flagged, "stale": stale}
 
 
-def store(conn, items, set_id=None) -> int:
-    """Insert items not already saved or seen, marked for a set when one is given; returns how many were new."""
+def store(conn, items, set_id=None, trail="") -> int:
+    """Insert items not already seen, marked for a set or a trail place when given; returns how many were new.
+
+    Feed and set pulls skip images already saved and take over unseen trail rows; trail pulls keep saved images so a
+    trail can show them marked as saved.
+    """
     added = 0
     for item in items:
         try:
             key = capture.normalize_url(item["url"])
         except ValueError:
             continue
-        if conn.execute("SELECT 1 FROM entries WHERE source_key = ?", (key,)).fetchone():
-            continue
+        if not trail:
+            if conn.execute("SELECT 1 FROM entries WHERE source_key = ?", (key,)).fetchone():
+                continue
+            conn.execute("DELETE FROM feed_items WHERE url = ? AND trail != '' AND state = 'new'", (item["url"],))
         cursor = conn.execute(
             "INSERT OR IGNORE INTO feed_items"
             " (source_id, url, thumb, width, height, title, creator, page_url, term, created_at,"
-            " source_ref, collection, posted_at, tags, set_id, description, publisher, origin_url)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " source_ref, collection, posted_at, tags, set_id, description, publisher, origin_url, trail,"
+            " source_link, creator_handle, reblog_from, reblog_root)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["source_id"], item["url"], item["thumb"], item["width"], item["height"], item["title"],
              item["creator"], item["page_url"], item["term"], _now(),
              item.get("source_ref", ""), item.get("collection", ""), item.get("posted_at", ""),
              json.dumps(item.get("tags") or []), set_id, item.get("description", ""), item.get("publisher", ""),
-             item.get("origin_url", "")),
+             item.get("origin_url", ""), trail, *(item.get(name, "") for name in HOP_FIELDS)),
         )
         added += cursor.rowcount
     return added
@@ -220,7 +235,7 @@ def list_items(conn, offset=0, limit=60, show_flagged=False) -> dict:
     Items carrying an AI label are left out and counted as flagged unless show_flagged is set. Items from a suggested
     source carry from_candidate and the source as follow_url and follow_label.
     """
-    unseen = "state = 'new' AND set_id IS NULL AND source_id IN ('arena', 'tumblr', 'pinterest', 'rss')"
+    unseen = "state = 'new' AND set_id IS NULL AND trail = '' AND source_id IN ('arena', 'tumblr', 'pinterest', 'rss')"
     shown = unseen if show_flagged else unseen + " AND ai_label = ''"
     total = conn.execute(f"SELECT COUNT(*) FROM feed_items WHERE {shown}").fetchone()[0]
     flagged = conn.execute(f"SELECT COUNT(*) FROM feed_items WHERE {unseen} AND ai_label != ''").fetchone()[0]
@@ -230,7 +245,7 @@ def list_items(conn, offset=0, limit=60, show_flagged=False) -> dict:
         f" LEFT JOIN candidate_sources c ON c.url = f.origin_url AND c.state IN {sources.ACTIVE}"
         f" WHERE f.id IN (SELECT id FROM feed_items WHERE {shown}) ORDER BY f.id LIMIT ? OFFSET ?",
         (max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
-    newest = conn.execute("SELECT MAX(created_at) FROM feed_items").fetchone()[0]
+    newest = conn.execute("SELECT MAX(created_at) FROM feed_items WHERE trail = ''").fetchone()[0]
     stale = not newest or (datetime.now() - datetime.fromisoformat(newest)).total_seconds() > STALE_HOURS * 3600
     items = [_candidate_fields(dict(row)) for row in rows]
     return {"items": mark_captured(conn, items), "total": total, "flagged": flagged, "stale": stale}
@@ -284,6 +299,8 @@ def accept(conn, ids, set_id=None) -> dict:
                 " description = ?, publisher = ? WHERE id = ?",
                 (row["page_url"] or row["url"], capture.source_domain(row["page_url"] or row["url"]), row["source_id"], row["source_ref"], row["collection"], row["posted_at"],
                  row["description"], row["publisher"], result["entry_id"]))
+            conn.execute(f"UPDATE entries SET {', '.join(name + ' = ?' for name in HOP_FIELDS)} WHERE id = ?",
+                         (*(row[name] for name in HOP_FIELDS), result["entry_id"]))
             capture.keep_details(conn, result["entry_id"], row["title"], row["creator"])
             library.add_entry_tags(conn, result["entry_id"], json.loads(row["tags"] or "[]"))
         conn.execute("UPDATE feed_items SET state = 'saved' WHERE id = ?", (row["id"],))

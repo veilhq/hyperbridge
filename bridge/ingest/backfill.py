@@ -25,7 +25,7 @@ def local_steps(conn) -> list:
 def source_steps(conn, fetcher) -> list:
     """Return the lookups that ask outside services for missing details, as (name, callable) pairs."""
     return [
-        ("arena", lambda: arena.backfill_origins(conn, fetcher, random.Random(), max_channels=None, retries=arena.RETRIES)),
+        ("arena", lambda: arena.backfill_origins(conn, fetcher, random.Random(), max_channels=arena.CHANNEL_LIMIT)),
         ("tumblr", lambda: tumblr.backfill(conn, fetcher)),
         ("social", lambda: social.backfill(conn, fetcher)),
         ("details", lambda: restore.details(conn, fetcher)),

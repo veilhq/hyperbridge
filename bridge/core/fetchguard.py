@@ -26,11 +26,16 @@ def _tls_context() -> ssl.SSLContext:
 
 
 class FetchError(Exception):
-    """Raised for any refused or failed fetch; .reason is a short machine-readable code."""
+    """Raised for any refused or failed fetch; .reason is a short machine-readable code.
 
-    def __init__(self, reason: str, message: str = ""):
+    An http_status error also carries .status and the server's Retry-After header text, when sent.
+    """
+
+    def __init__(self, reason: str, message: str = "", status: int = 0, retry_after: str = ""):
         super().__init__(message or reason)
         self.reason = reason
+        self.status = status
+        self.retry_after = retry_after
 
 
 @dataclass
@@ -231,7 +236,7 @@ def safe_fetch(
                 current = urljoin(current, headers["location"])
                 continue
             if not 200 <= status < 300:
-                raise FetchError("http_status", f"HTTP {status}")
+                raise FetchError("http_status", f"HTTP {status}", status, headers.get("retry-after", ""))
             declared = headers.get("content-length", "")
             if not partial and declared.strip().isdigit() and int(declared) > max_bytes:
                 raise FetchError("too_large", f"Content-Length {declared} exceeds {max_bytes}")

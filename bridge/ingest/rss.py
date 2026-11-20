@@ -218,6 +218,11 @@ def items(feed_url, fetcher, rng, newest=False) -> list:
         found = sorted(found, key=lambda entry: entry["date"], reverse=True)[:PER_FEED]
     else:
         found = rng.sample(found, min(PER_FEED, len(found)))
+    return entry_items(found, collection, final)
+
+
+def entry_items(found, collection, final) -> list:
+    """Return feed items, one per image, for parsed feed entries read from the feed at final."""
     result = []
     for entry in found:
         caption = _caption(entry["markup"])[:1000]

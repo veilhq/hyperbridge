@@ -559,10 +559,11 @@ def extract_metadata(html_bytes, base_url) -> dict:
 
 
 def default_fetcher():
-    """Return the guarded fetcher from fetchguard, imported on first use."""
+    """Return the process-wide paced fetcher around fetchguard's guarded fetch, built on first use."""
+    from bridge.core import pacer
     from bridge.core.fetchguard import safe_fetch
 
-    return safe_fetch
+    return pacer.shared(safe_fetch)
 
 
 def _open_image(body: bytes):

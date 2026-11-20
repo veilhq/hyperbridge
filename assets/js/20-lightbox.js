@@ -346,29 +346,60 @@
     byId("f-creator").focus();
   }
 
-  // Fetches an entry and shows it in the dialog.
+  // Fetches an entry and shows it in the dialog; resolves true once it is shown.
   function openEntry(id, trigger) {
     var bridge = api();
-    if (!bridge || !bridge.get_entry) return;
+    if (!bridge || !bridge.get_entry) return Promise.resolve(false);
     var mine = ++ticket;
     if (trigger) returnFocus = trigger;
     var sets = bridge.list_sets ? Promise.resolve(bridge.list_sets()).catch(function () { return []; }) : Promise.resolve([]);
-    Promise.all([bridge.get_entry(id), sets]).then(function (loaded) {
+    return Promise.all([bridge.get_entry(id), sets]).then(function (loaded) {
       var entry = loaded[0];
       allSets = loaded[1] || [];
-      if (mine !== ticket) return;
+      if (mine !== ticket) return false;
       if (!entry) {
         toast("error", "Entry not found.");
         changed();
-        return;
+        return false;
       }
       current = entry;
       assetIndex = 0;
+      lb.removeAttribute("data-loose");
+      byId("lb-image").onerror = null;
       closeForm();
       render();
       if (!lb.open) openDialog();
       lb.focus();
-    }).catch(function () { toast("error", "Could not open entry."); });
+      return true;
+    }).catch(function () { toast("error", "Could not open entry."); return false; });
+  }
+
+  // Shows an image that is not in the library (a trail image) from its link, with only its title and credit.
+  function showLoose(item) {
+    ticket++;
+    current = null;
+    lb.setAttribute("data-loose", "true");
+    lb.setAttribute("data-single", "true");
+    if (lb.open) replay(document.querySelector(".lightbox-rail"));
+    byId("lb-form").hidden = true;
+    byId("lb-view").hidden = true;
+    byId("lb-actions").hidden = true;
+    byId("lb-status").textContent = "";
+    byId("lb-swatches").hidden = true;
+    byId("lb-strip").textContent = "";
+    byId("lb-title").textContent = item.title || "Untitled";
+    var caption = byId("lb-caption");
+    caption.textContent = "";
+    [item.creator, item.collection].filter(Boolean).forEach(function (part, i) {
+      if (i) caption.appendChild(makeEl("span", "lightbox-caption-sep", " / "));
+      caption.appendChild(makeEl("span", "", part));
+    });
+    var image = byId("lb-image");
+    image.alt = item.title || "Trail image";
+    image.onerror = function () { image.onerror = null; if (item.thumb && image.src !== item.thumb) swapImage(image, item.thumb); };
+    if (!lb.open) { image.removeAttribute("src"); openDialog(); }
+    swapImage(image, item.url || item.thumb);
+    lb.focus();
   }
 
   function cycleAsset(step) {
@@ -513,6 +544,8 @@
     if (event.key === "Escape") { closeDialog(); event.preventDefault(); return; }
     var tag = (event.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (window.HbTrail && window.HbTrail.onKey(event)) { event.preventDefault(); return; }
+    if (!current) return;
     if (event.key === "ArrowLeft") { cycleAsset(-1); event.preventDefault(); }
     else if (event.key === "ArrowRight") { cycleAsset(1); event.preventDefault(); }
     else if (event.key === "ArrowUp") { moveEntry(-1); event.preventDefault(); }
@@ -525,6 +558,8 @@
     byId("app").inert = false;
     current = null;
     ticket++;
+    lb.removeAttribute("data-loose");
+    document.dispatchEvent(new CustomEvent("hyperbridge:lightbox-closed"));
     if (!returnFocus) return;
     var id = returnFocus.getAttribute("data-id");
     var card = document.querySelector('#library-grid [data-id="' + id + '"]');
@@ -600,6 +635,9 @@
     lb.addEventListener("close", onClosed);
     lb.addEventListener("keydown", onKey);
     byId("act-edit").addEventListener("click", openForm);
+    byId("act-trail").addEventListener("click", function () {
+      if (current) document.dispatchEvent(new CustomEvent("hyperbridge:trail", { detail: { entry: current.id } }));
+    });
     byId("act-discard").addEventListener("click", onDiscard);
     byId("act-save").addEventListener("click", onSaveAsset);
     byId("act-save-all").addEventListener("click", onSaveAll);
@@ -633,4 +671,10 @@
   }
 
   init();
+  window.HbLightbox = {
+    openEntry: function (id) { return openEntry(id); },
+    showLoose: showLoose,
+    close: closeDialog,
+    isOpen: function () { return Boolean(lb && lb.open); },
+  };
 })();

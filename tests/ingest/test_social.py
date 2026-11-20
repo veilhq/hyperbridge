@@ -55,15 +55,29 @@ class SocialTests(LibraryCase):
         self.assertEqual(tuple(row), ("studio", "Instagram", "instagram", "Abc123"))
         self.assertEqual(self.tags(entry), ["type_2", "wayfinding"])
 
-    def test_filled_fields_are_kept_and_unreadable_posts_are_retried(self):
+    def test_filled_fields_are_kept_and_unreadable_posts_are_retried_after_a_wait(self):
         kept = self.saved("https://twitter.com/ada/status/5")
         self.conn.execute("UPDATE entries SET creator = 'Ada L' WHERE id = ?", (kept,))
         broken = self.saved("https://www.instagram.com/p/Zzz/")
         self.assertEqual(social.backfill(self.conn, lambda url: (_ for _ in ()).throw(OSError("down"))), 0)
+        self.assertEqual(social.backfill(self.conn, fetcher), 0)
+        self.conn.execute("UPDATE entry_checks SET checked_at = '2000-01-01T00:00:00'")
         self.assertEqual(social.backfill(self.conn, fetcher), 2)
         self.assertEqual(self.conn.execute("SELECT creator FROM entries WHERE id = ?", (kept,)).fetchone()[0], "Ada L")
         self.assertEqual(social.backfill(self.conn, fetcher), 0)
         self.assertTrue(broken)
+
+    def test_reads_stop_at_the_limit(self):
+        for number in range(3):
+            self.saved(f"https://x.com/ada/status/{number + 10}")
+        calls = []
+
+        def counting(url):
+            calls.append(url)
+            return fetcher(url)
+
+        self.assertEqual(social.backfill(self.conn, counting, limit=2), 2)
+        self.assertEqual(len(calls), 2)
 
 
 if __name__ == "__main__":

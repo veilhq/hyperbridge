@@ -31,6 +31,7 @@ QUERY_TERM_WEIGHT = 0.3
 NEIGHBOR_PULLS = 3
 NEIGHBOR_QUERIES = 1
 NEIGHBOR_WEIGHT = 2.0
+SEARCH_WORKERS = 3
 FIELD_WEIGHTS = {"tag": 1.0, "collection": 1.0, "origin": 1.0, "creator": 1.0, "title": 0.5}
 _WORD = re.compile(r"[a-z0-9][a-z0-9']*")
 _STOPWORDS = frozenset(
@@ -335,7 +336,7 @@ def search(conn, set_id, fetcher=None, rng=None) -> dict:
     phrases = tag_queries(own, rng, count, used) if own else queries(profile(conn, set_id), rng, count, used)
     jobs = [lambda url=url: _pull_one(url, fetcher, rng) for url in urls]
     jobs += [lambda phrase=phrase: _search_one(phrase, fetcher, rng, bool(urls)) for phrase in phrases]
-    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, min(SEARCH_WORKERS, len(jobs)))) as pool:
         found = list(pool.map(lambda job: job(), jobs))
     items = [item for batch, _ in found for item in batch]
     added = feed.store(conn, items, int(set_id))
