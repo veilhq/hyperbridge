@@ -209,6 +209,7 @@
   position: fixed; inset: 0; margin: auto; height: fit-content; width: calc(var(--space-6) * 17); max-width: 90vw;
   color: var(--text); z-index: calc(var(--z-modal) + 1);
 }
+.board-promote:not([open]) { display: none; }
 .board-promote-form { display: contents; }
 .board-field { display: flex; flex-direction: column; gap: var(--space-2); }
 .board-field-row { display: flex; justify-content: space-between; }
