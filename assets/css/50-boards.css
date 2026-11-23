@@ -1,0 +1,224 @@
+/* === Hyperbridge: scratch boards - freeform canvases kept on this machine === */
+#library[data-boards-view] > :not(.boards-view):not(.library-sentinel) { display: none; }
+#library[data-boards-view] { padding: 0; overflow: hidden; }
+#app:has(#library[data-boards-view]) ~ .select-bar { display: none; }
+
+.boards-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.board-legend { color: var(--text-dim); text-transform: uppercase; letter-spacing: var(--track-label); font-variant-numeric: tabular-nums; }
+
+/* ---- Header: board tabs, staleness readout, promote and clear ---- */
+.boards-bar {
+  display: flex; align-items: center; gap: var(--space-3); flex: none;
+  padding: var(--space-3) var(--space-4); border-bottom: var(--border-hair) solid var(--border);
+}
+.boards-spacer { flex: 1; }
+.boards-tabs { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.board-tab {
+  display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; flex: none;
+  padding: var(--space-1) var(--space-3); color: var(--text-muted); letter-spacing: var(--track-body);
+  background: transparent; border: var(--border-hair) solid transparent; border-radius: var(--radius);
+  transition: color var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease);
+}
+.board-tab:hover { color: var(--text-bright); border-color: var(--border); }
+.board-tab[aria-selected="true"] { color: var(--selected); background: var(--selected-wash); border-color: var(--selected-border); }
+.board-tab:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: calc(var(--space-1) * -1); }
+.board-tab-input { width: calc(var(--space-6) * 5); }
+.boards-readout { display: flex; align-items: center; gap: var(--space-4); white-space: nowrap; }
+.board-stat b { color: var(--text-bright); font-weight: inherit; margin-right: var(--space-1); }
+#boards-clear[data-armed] { color: var(--error); }
+
+/* Staleness meter: one cell per day the board has gone untouched, warning once a week has passed. */
+.board-stale { display: inline-flex; align-items: center; gap: var(--space-2); }
+.board-stale-cells { display: inline-grid; grid-auto-flow: column; gap: var(--border-rail); }
+.board-stale-cell { width: var(--space-1); height: var(--space-1); background: var(--border-strong); }
+.board-stale-cell.is-on { background: var(--magnitude); }
+.board-stale.is-stale .board-stale-cell.is-on { background: var(--warning); }
+.board-stale.is-stale .board-legend { color: var(--warning); }
+
+/* ---- Library tray ---- */
+.boards-main { position: relative; flex: 1; min-height: 0; display: flex; }
+.board-tray {
+  width: calc(var(--space-6) * 8); flex: none; display: flex; flex-direction: column; min-height: 0;
+  background: var(--bg-surface); border-right: var(--border-hair) solid var(--border);
+}
+.board-tray[hidden] { display: none; }
+.board-tray-head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); border-bottom: var(--border-hair) solid var(--border); }
+.board-tray-filter { display: flex; padding: var(--space-3) var(--space-4) 0; }
+.board-tray-filter[hidden] { display: none; }
+.board-filter-chip {
+  display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 0 0 var(--space-2);
+  color: var(--selected); border: var(--border-hair) solid var(--selected-border); border-radius: var(--radius);
+  text-transform: uppercase; letter-spacing: var(--track-label);
+}
+.board-filter-chip i { width: var(--space-2); height: var(--space-2); background: var(--swatch); }
+.board-filter-chip button { display: inline-flex; padding: var(--space-1); color: var(--text-dim); background: none; border: 0; }
+.board-filter-chip button:hover { color: var(--interactive); }
+.board-filter-chip .icon-glyph { width: var(--icon-sm); height: var(--icon-sm); }
+.board-tray-grid { flex: 1; overflow-y: auto; padding: var(--space-3) var(--space-4); columns: 2; column-gap: var(--space-2); }
+.board-tray-item {
+  position: relative; display: block; break-inside: avoid; margin-bottom: var(--space-2); cursor: grab;
+  border-radius: var(--radius); outline: var(--border-hair) solid transparent; outline-offset: var(--border-rail);
+  transition: outline-color var(--motion-fast) var(--ease);
+}
+.board-tray-item img { display: block; width: 100%; height: auto; border-radius: var(--radius); pointer-events: none; }
+.board-tray-item:hover { outline-color: var(--interactive-border); }
+.board-tray-mark {
+  display: none; place-items: center; position: absolute; top: var(--space-1); right: var(--space-1);
+  width: var(--space-4); height: var(--space-4); background: var(--selected); color: var(--bg); border-radius: var(--radius);
+}
+.board-tray-mark .icon-glyph { width: var(--icon-sm); height: var(--icon-sm); }
+.board-tray-item.is-on-board .board-tray-mark { display: grid; }
+.board-tray-empty { font-family: var(--font-body); font-size: var(--fs-prose-sm); color: var(--text-dim); column-span: all; margin: 0; }
+
+/* ---- Canvas: the calibration dots are the grid; they pan and scale with the board ---- */
+.board-canvas {
+  position: relative; flex: 1; min-width: 0; overflow: hidden; touch-action: none; user-select: none;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1.5px);
+}
+.board-canvas.is-snap { background-image: radial-gradient(circle, var(--text-dim) 1px, transparent 1.5px); }
+.board-canvas.tool-note, .board-canvas.tool-label, .board-canvas.tool-frame { cursor: crosshair; }
+.board-canvas.is-space, .board-canvas.is-panning { cursor: grab; }
+.board-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; --canvas-inv: 1; }
+.board-empty {
+  position: absolute; inset: 0; margin: 0; display: grid; place-items: center; pointer-events: none;
+  font-family: var(--font-body); font-size: var(--fs-prose-ui); color: var(--text-dim);
+}
+.board-empty[hidden] { display: none; }
+
+/* ---- Board nodes: the HyperKit canvas selection ring and resize grip ---- */
+.board-world .board-node { position: absolute; box-sizing: border-box; }
+.board-node > .resize-grip { display: none; }
+.board-world.is-single .board-node.is-selected > .resize-grip { display: inline-flex; }
+.board-caption {
+  position: absolute; left: 0; top: 100%; margin-top: calc(var(--space-2) * var(--canvas-inv));
+  display: flex; gap: calc(var(--space-2) * var(--canvas-inv)); white-space: nowrap; pointer-events: none;
+  font-size: calc(var(--fs-mono) * var(--canvas-inv)); letter-spacing: var(--track-body); color: var(--text-muted);
+  opacity: 0; transition: opacity var(--motion-fast) var(--ease);
+}
+.board-caption span + span { color: var(--text-dim); }
+.board-node:hover .board-caption, .board-node.is-selected .board-caption { opacity: 1; }
+
+.board-image { background: var(--bg-card); border-radius: var(--radius); }
+.board-image img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius); pointer-events: none; -webkit-user-drag: none; }
+
+.board-badge {
+  display: none; position: absolute; left: calc(var(--space-1) * var(--canvas-inv)); top: calc(var(--space-1) * var(--canvas-inv));
+  padding: calc(var(--space-1) * var(--canvas-inv)); line-height: var(--lh-tight);
+  font-size: calc(var(--fs-mono) * var(--canvas-inv)); letter-spacing: var(--track-body); font-variant-numeric: tabular-nums;
+  background: var(--selected); color: var(--bg); border-radius: calc(var(--radius) * var(--canvas-inv));
+}
+.board-canvas.show-order .board-image .board-badge, .board-order-thumb .board-badge { display: block; }
+.board-order-path { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.board-order-path polyline { fill: none; stroke: var(--selected); stroke-opacity: 0.5; stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+/* Note: the cap note - a neutral card under a solid hue strip. */
+.board-note {
+  display: flex; flex-direction: column;
+  background: var(--bg-card); color: var(--text-bright); border: var(--border-hair) solid var(--border); border-radius: var(--radius);
+  font-family: var(--font-body); font-size: var(--fs-prose-ui); font-weight: var(--fw-medium); line-height: var(--lh-ui);
+}
+.board-note::before { content: ""; flex: none; height: var(--space-3); background: var(--note-card-color, var(--note-color-1)); border-radius: var(--radius) var(--radius) 0 0; }
+.board-note.note-c0 { --note-card-color: var(--note-color-1); }
+.board-note.note-c1 { --note-card-color: var(--note-color-2); }
+.board-note.note-c2 { --note-card-color: var(--note-color-3); }
+.board-note-text { flex: 1; min-height: 0; overflow: hidden; padding: var(--note-padding); white-space: pre-wrap; word-break: break-word; outline: none; }
+.board-note-text:empty::before { content: "Note"; color: var(--text-dim); }
+
+/* Label: a free prose heading; it scales with the board because it is content. */
+.board-label {
+  font-family: var(--font-body); font-size: var(--fs-prose-xl); font-weight: var(--fw-semibold);
+  color: var(--text-bright); line-height: var(--lh-ui); white-space: nowrap; border-radius: var(--radius);
+}
+.board-label-text { outline: none; min-width: var(--space-4); }
+
+/* Frame: one elevation step and a hairline; the legend sits outside the top edge. */
+.board-frame { background: var(--bg-card); border: calc(var(--border-hair) * var(--canvas-inv)) solid var(--border-strong); border-radius: var(--radius); }
+.board-frame-label {
+  position: absolute; left: 0; bottom: 100%; margin-bottom: calc(var(--space-2) * var(--canvas-inv));
+  display: flex; gap: calc(var(--space-2) * var(--canvas-inv)); white-space: nowrap;
+  font-size: calc(var(--fs-mono) * var(--canvas-inv)); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--text-muted);
+}
+.board-frame-name { outline: none; }
+.board-frame-count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.board-frame-draft {
+  position: absolute; box-sizing: border-box; pointer-events: none; border-radius: var(--radius);
+  background: var(--selected-wash); border: calc(var(--border-hair) * var(--canvas-inv)) solid var(--selected-border);
+}
+
+/* Swatch: a color pulled from an image's palette; the fill is the datum. */
+.board-swatch { border-radius: var(--radius); }
+.board-swatch-fill { width: 100%; height: 100%; border-radius: var(--radius); background: var(--swatch); box-shadow: inset 0 0 0 calc(var(--border-hair) * var(--canvas-inv)) var(--border); }
+.board-swatch-hex {
+  position: absolute; left: 0; top: 100%; margin-top: calc(var(--space-1) * var(--canvas-inv));
+  display: flex; align-items: center; gap: calc(var(--space-1) * var(--canvas-inv)); white-space: nowrap; pointer-events: none;
+  font-size: calc(var(--fs-mono) * var(--canvas-inv)); letter-spacing: var(--track-body); text-transform: uppercase; color: var(--text-muted);
+  opacity: 0; transition: opacity var(--motion-fast) var(--ease);
+}
+.board-swatch-hex .icon-glyph { display: none; width: calc(var(--icon-sm) * var(--canvas-inv)); height: calc(var(--icon-sm) * var(--canvas-inv)); }
+.board-swatch:hover .board-swatch-hex, .board-swatch.is-selected .board-swatch-hex, .board-swatch.is-filter .board-swatch-hex { opacity: 1; }
+.board-swatch.is-filter .board-swatch-hex { color: var(--selected); }
+.board-swatch.is-filter .board-swatch-hex .icon-glyph { display: block; }
+
+/* Drop ghost: the dashed rule shows where a drop will land. */
+.board-ghost {
+  position: absolute; box-sizing: border-box; display: grid; place-items: center; pointer-events: none;
+  border: calc(var(--border-hair) * var(--canvas-inv)) dashed var(--text-dim); border-radius: var(--radius);
+  font-size: calc(var(--fs-mono) * var(--canvas-inv)); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--text-dim);
+}
+.board-ghost[hidden] { display: none; }
+
+/* ---- Floating chrome: dock and context bar ---- */
+.board-dock, .board-ctx {
+  display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1);
+  background: var(--chrome-glass); border: var(--border-hair) solid var(--border); border-radius: var(--radius-pill);
+  backdrop-filter: blur(8px);
+}
+.board-dock .action-icon, .board-ctx .action-icon { border-radius: var(--radius-pill); }
+.board-dock .action-icon.is-active, .board-ctx .action-icon.is-active { color: var(--selected); background: var(--selected-wash); }
+.board-dock { position: absolute; left: 50%; bottom: var(--space-5); translate: -50% 0; z-index: 2; }
+.board-ctx { position: absolute; z-index: 2; translate: -50% calc(-100% - var(--space-5)); }
+.board-ctx[hidden] { display: none; }
+.board-ctx .select-count { padding: 0 var(--space-2); }
+.board-dock-sep { width: var(--border-hair); height: var(--space-4); background: var(--border); margin: 0 var(--space-1); }
+.board-zoom { min-width: 5ch; text-align: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Note color: three preset hues plus free hex entry. */
+.board-hues { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); }
+.board-hue {
+  width: var(--space-4); height: var(--space-4); padding: 0; border: 0; border-radius: var(--radius); background: var(--hue);
+  outline: var(--border-hair) solid transparent; outline-offset: var(--border-hair); transition: outline-color var(--motion-fast) var(--ease);
+}
+.board-hue:hover { outline-color: var(--interactive-border); }
+.board-hue[aria-pressed="true"] { outline-color: var(--selected); }
+.board-hex {
+  display: inline-flex; align-items: center; gap: var(--space-1); height: var(--space-5); padding: 0 var(--space-2); box-sizing: border-box;
+  color: var(--text-dim); background: var(--bg); border: var(--border-hair) solid var(--border-strong); border-radius: var(--radius-pill);
+  transition: border-color var(--motion-fast) var(--ease);
+}
+.board-hex:focus-within { border-color: var(--focus); }
+.board-hex.is-invalid { border-color: var(--error); }
+.board-hex i { width: var(--space-2); height: var(--space-2); border-radius: var(--radius); background: var(--hue); }
+.board-hex input {
+  width: 7ch; padding: 0; border: 0; outline: none; background: none; font: inherit; color: var(--text-bright);
+  letter-spacing: var(--track-body); text-transform: uppercase;
+}
+
+/* ---- Promote dialog ---- */
+.board-promote {
+  position: fixed; inset: 0; margin: auto; height: fit-content; width: calc(var(--space-6) * 17); max-width: 90vw;
+  color: var(--text); z-index: calc(var(--z-modal) + 1);
+}
+.board-promote-form { display: contents; }
+.board-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.board-field-row { display: flex; justify-content: space-between; }
+.board-order-strip { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-1); }
+.board-order-thumb { --canvas-inv: 1; position: relative; flex: none; height: calc(var(--space-6) * 2); border-radius: var(--radius); overflow: hidden; }
+.board-order-thumb img { display: block; height: 100%; }
+.board-confirm { color: var(--interactive); border: var(--border-hair) solid var(--interactive-border); }
+
+@media (prefers-reduced-motion: reduce) {
+  .board-tab, .board-node, .board-caption, .board-swatch-hex, .board-hue, .board-hex, .board-tray-item { transition: none; }
+}
+html.a11y-reduce-motion .board-tab, html.a11y-reduce-motion .board-caption, html.a11y-reduce-motion .board-swatch-hex,
+html.a11y-reduce-motion .board-hue, html.a11y-reduce-motion .board-hex, html.a11y-reduce-motion .board-tray-item { transition: none; }

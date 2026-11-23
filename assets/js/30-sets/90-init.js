@@ -93,6 +93,11 @@ function initSets() {
     stopHeadEdit();
   });
   document.addEventListener("hyperbridge:changed", refresh);
+  // The boards view replaces the Sets view and takes the active mark off the set tabs.
+  document.addEventListener("hyperbridge:boards", function (event) {
+    if (event.detail && event.detail.open && browsing) setBrowsing(false);
+    renderTabs();
+  });
   // Opening settings leaves the Sets view so the panel is not hidden behind it.
   new MutationObserver(function () {
     if (browsing && settingsOpen()) setBrowsing(false);

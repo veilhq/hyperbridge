@@ -21,6 +21,7 @@
       <button class="content-card sets-tab" id="sets-browse" type="button"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>Sets<span class="sets-tab-count" id="sets-count"></span></button>
       <button class="content-card sets-tab content-card-active" id="sets-all" type="button" aria-current="true"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 22H4a2 2 0 0 1-2-2V6"/><path d="m22 13-1.296-1.296a2.41 2.41 0 0 0-3.408 0L11 18"/><circle cx="12" cy="8" r="2"/><rect width="16" height="16" x="6" y="2" rx="2"/></svg>All<span class="sets-tab-count" id="all-count"></span></button>
       <button class="content-card sets-tab" id="sets-unsorted" type="button" data-tooltip="Entries in no set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>Unsorted<span class="sets-tab-count" id="unsorted-count"></span></button>
+      <button class="content-card sets-tab" id="sets-boards" type="button" data-tooltip="Scratch boards on this machine"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Boards<span class="sets-tab-count" id="boards-count"></span></button>
       <hr class="sets-stack-rule">
       <div class="sets-list" id="sets-list"></div>
       </nav>
@@ -284,6 +285,46 @@
       <div class="library-more" id="library-more" hidden>
         <button class="action-button action-button-ghost" id="feed-more" type="button">Discover more</button>
       </div>
+      <section class="boards-view" id="boards-view" aria-label="Scratch boards" hidden>
+        <header class="boards-bar">
+          <nav class="boards-tabs" id="boards-tabs" role="tablist" aria-label="Boards"></nav>
+          <button class="action-icon" id="boards-new" type="button" data-icon="plus" aria-label="New board" data-tooltip="New board"></button>
+          <span class="boards-spacer"></span>
+          <span class="boards-readout" id="boards-readout"></span>
+          <button class="action-icon" id="boards-promote" type="button" data-icon="bookmark-plus" aria-label="Promote to set" data-tooltip="Promote to set"></button>
+          <button class="action-icon action-icon-danger" id="boards-clear" type="button" data-icon="trash" aria-label="Clear board" data-tooltip="Clear board"></button>
+        </header>
+        <div class="boards-main">
+          <aside class="board-tray" id="board-tray" aria-label="Library" hidden>
+            <div class="board-tray-head"><span class="board-legend">Library</span><span class="board-legend" id="board-tray-count"></span></div>
+            <div class="board-tray-filter" id="board-tray-filter" hidden></div>
+            <div class="board-tray-grid" id="board-tray-grid"></div>
+          </aside>
+          <div class="board-canvas tool-select" id="board-canvas" aria-label="Board canvas">
+            <div class="board-world" id="board-world"></div>
+            <p class="board-empty" id="board-empty" hidden>Drag from the library, paste an image, or press N for a note.</p>
+            <div class="board-ctx" id="board-ctx" hidden></div>
+            <div class="board-dock" id="board-dock">
+              <button class="action-icon is-active" type="button" data-tool="select" data-icon="pointer" aria-label="Select and move" data-tooltip="Select and move  V"></button>
+              <button class="action-icon" type="button" data-tool="note" data-icon="note" aria-label="Note" data-tooltip="Note  N"></button>
+              <button class="action-icon" type="button" data-tool="label" data-icon="type" aria-label="Label" data-tooltip="Label  T"></button>
+              <button class="action-icon" type="button" data-tool="frame" data-icon="frame" aria-label="Frame" data-tooltip="Frame  F"></button>
+              <span class="board-dock-sep"></span>
+              <button class="action-icon" id="board-add-image" type="button" data-icon="image-plus" aria-label="Add image" data-tooltip="Add image (or paste)"></button>
+              <button class="action-icon" id="board-tray-toggle" type="button" data-icon="images" aria-label="Library" data-tooltip="Library  L"></button>
+              <span class="board-dock-sep"></span>
+              <button class="action-icon" id="board-zoom-out" type="button" data-icon="zoom-out" aria-label="Zoom out" data-tooltip="Zoom out  -"></button>
+              <span class="board-zoom" id="board-zoom">100%</span>
+              <button class="action-icon" id="board-zoom-in" type="button" data-icon="zoom-in" aria-label="Zoom in" data-tooltip="Zoom in  +"></button>
+              <button class="action-icon" id="board-fit" type="button" data-icon="scan" aria-label="Fit board" data-tooltip="Fit board  0"></button>
+              <span class="board-dock-sep"></span>
+              <button class="action-icon" id="board-snap" type="button" data-icon="grip" aria-label="Snap to grid" data-tooltip="Snap to grid  G (hold Alt to bypass)" aria-pressed="false"></button>
+              <button class="action-icon" id="board-order" type="button" data-icon="list-ordered" aria-label="Reading order" data-tooltip="Reading order  O" aria-pressed="false"></button>
+            </div>
+            <input type="file" id="board-file" accept="image/*" multiple hidden>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -318,6 +359,23 @@
 <dialog class="full-view" id="full-view" aria-label="Full resolution image">
   <div class="full-view-scroll" id="full-view-scroll"><img class="full-view-image" id="full-view-image" alt=""></div>
   <button class="action-icon full-view-close" id="full-view-close" type="button" aria-label="Close" data-tooltip="Close"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+</dialog>
+<div class="modal-overlay" id="board-scrim"></div>
+<dialog class="modal-panel modal-panel-stack board-promote" id="board-promote" aria-labelledby="board-promote-title">
+  <form class="board-promote-form" id="board-promote-form" method="dialog" novalidate>
+    <div class="modal-head">
+      <h2 class="modal-title" id="board-promote-title">Promote to set</h2>
+      <p class="modal-hint">The board's images become a new set in reading order: frame by frame, then top-left to bottom-right. The board is cleared afterward; notes, labels and swatches go with it.</p>
+    </div>
+    <div class="modal-body">
+      <label class="board-field"><span class="board-legend">Set name</span><input class="form-input" id="board-promote-name" maxlength="100" autocomplete="off"></label>
+      <div class="board-field"><span class="board-field-row"><span class="board-legend">Order</span><span class="board-legend" id="board-promote-count"></span></span><div class="board-order-strip" id="board-promote-strip"></div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="action-icon" id="board-promote-cancel" type="button" data-icon="x" aria-label="Cancel" data-tooltip="Cancel"></button>
+      <button class="action-icon board-confirm" id="board-promote-confirm" type="submit" data-icon="check" aria-label="Promote" data-tooltip="Promote"></button>
+    </div>
+  </form>
 </dialog>
 <div class="modal-overlay" id="lb-scrim"></div>
 <dialog class="lightbox modal-sheet" id="lightbox" tabindex="-1" aria-labelledby="lb-title">

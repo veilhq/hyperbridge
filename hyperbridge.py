@@ -53,6 +53,7 @@ from bridge.ingest import similar  # noqa: E402
 from bridge.ingest import sources  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
 from bridge.ingest import trail  # noqa: E402
+from bridge.library import boards  # noqa: E402
 from bridge.library import creators  # noqa: E402
 from bridge.core import db  # noqa: E402
 from bridge.core import prefs  # noqa: E402
@@ -630,6 +631,62 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("remove_entries failed: %s", err)
             return 0
+
+    def list_boards(self) -> list:
+        """Return every scratch board, most recently touched first."""
+        return boards.list_boards()
+
+    def create_board(self, name: str = "") -> dict:
+        """Create an empty scratch board."""
+        return boards.create_board(name)
+
+    def get_board(self, board_id: int) -> dict | None:
+        """Return a board's document plus the grid tiles and palettes of the library images on it."""
+        board = boards.get_board(int(board_id))
+        if board is not None:
+            board["tiles"] = self.board_tiles(boards.entry_ids(board["doc"]))
+        return board
+
+    def board_tiles(self, entry_ids: list) -> list:
+        """Return a tile (thumbnail, size, title, palette) for each entry id that still exists."""
+        ids = [int(item) for item in list(entry_ids or [])[:_MAX_BULK] if str(item).isdigit()]
+        if not ids:
+            return []
+        conn = db.connect()
+        try:
+            tiles = _with_entry_tiles(conn, [{"type": "entry", "id": item} for item in ids])
+            palettes = {row["id"]: swatches.parse(row["swatches"]) for row in conn.execute(
+                f"SELECT id, swatches FROM entries WHERE id IN ({', '.join('?' * len(ids))})", ids)}
+        finally:
+            conn.close()
+        for tile in tiles:
+            tile["swatches"] = palettes.get(tile["id"], [])
+        return tiles
+
+    def save_board(self, board_id: int, doc) -> dict:
+        """Replace a board's JSON Canvas document."""
+        try:
+            return boards.save_board(int(board_id), doc)
+        except Exception as err:
+            logger.warning("save_board failed: %s", err)
+            return {"ok": False, "error": "That board could not be saved."}
+
+    def rename_board(self, board_id: int, name: str) -> dict:
+        """Rename a scratch board."""
+        return boards.rename_board(int(board_id), name)
+
+    def delete_board(self, board_id: int) -> bool:
+        """Clear a scratch board; its images stay in the library."""
+        return boards.delete_board(int(board_id))
+
+    def promote_board(self, board_id: int, name: str, order: list | None = None) -> dict:
+        """Turn a board's images into a set in the given reading order, then delete the board."""
+        try:
+            ids = [int(item) for item in list(order or [])[:_MAX_BULK] if str(item).isdigit()]
+            return boards.promote_board(int(board_id), name, ids)
+        except Exception as err:
+            logger.warning("promote_board failed: %s", err)
+            return {"ok": False, "error": "Could not promote that board."}
 
     def save_asset(self, asset_id: int) -> str:
         """Ask where to save one asset and copy it there; returns saved, cancelled or failed."""

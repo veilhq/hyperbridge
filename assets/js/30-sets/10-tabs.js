@@ -8,6 +8,10 @@ function announce(name, detail) {
   document.dispatchEvent(new CustomEvent(name, { detail: detail }));
 }
 
+function boardsOpen() {
+  return $("#library").hasAttribute("data-boards-view");
+}
+
 function markTab(button, active) {
   button.classList.toggle("content-card-active", active);
   if (active) button.setAttribute("aria-current", "true");
@@ -17,20 +21,21 @@ function markTab(button, active) {
 // Redraws the set cards below the fixed ones (every set until one is pinned, plus the open set when it is not pinned) and marks the active tab.
 function renderTabs() {
   var open = selectedSet();
+  var away = browsing || boardsOpen();
   var shown = pinnedSets();
   if (!shown.length) shown = sets.slice();
   if (open && shown.indexOf(open) < 0) shown = shown.concat([open]);
   $("#sets-list").innerHTML = shown.map(function (item) {
-    var active = !browsing && item.id === selectedId;
+    var active = !away && item.id === selectedId;
     return '<button class="content-card sets-tab sets-tab-set' + (active ? " content-card-active" : "") + '" type="button" data-set="' + item.id + '"' +
       (active ? ' aria-current="true"' : "") + ">" + '<span class="sets-tab-head"><span class="sets-tab-name">' + esc(item.name) + '</span><span class="sets-tab-count">' + item.count + "</span></span>" +
       (item.description ? '<span class="sets-tab-desc">' + esc(item.description) + "</span>" : "") + "</button>";
   }).join("");
-  markTab($("#sets-discover"), feedOpen === "discover" && !browsing);
-  markTab($("#sets-latest"), feedOpen === "latest" && !browsing);
-  markTab($("#sets-all"), selectedId === null && !feedOpen && !unsortedOpen && !browsing);
-  markTab($("#sets-unsorted"), unsortedOpen && !browsing);
-  markTab($("#sets-browse"), browsing);
+  markTab($("#sets-discover"), feedOpen === "discover" && !away);
+  markTab($("#sets-latest"), feedOpen === "latest" && !away);
+  markTab($("#sets-all"), selectedId === null && !feedOpen && !unsortedOpen && !away);
+  markTab($("#sets-unsorted"), unsortedOpen && !away);
+  markTab($("#sets-browse"), browsing && !boardsOpen());
   $("#sets-count").textContent = sets.length;
 }
 
