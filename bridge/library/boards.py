@@ -12,6 +12,9 @@ from bridge.library import sets
 
 MAX_NAME = 100
 MAX_DOC_BYTES = 4 * 1024 * 1024
+ADD_WIDTH = 240
+ADD_GAP = 24
+ADD_PER_ROW = 6
 
 
 def _now() -> str:
@@ -116,6 +119,48 @@ def save_board(board_id: int, doc) -> dict:
     if not changed:
         return {"ok": False, "error": "That board is gone."}
     return {"ok": True, "board": _summary(row)}
+
+
+def add_entries(board_id: int, tiles: list) -> dict:
+    """Lay library images out in rows below a board's current content, skipping any already on it.
+
+    tiles are {"id", "width", "height"} dicts in the order to place. Returns {"ok": True, "board": {...},
+    "added": n} or {"ok": False, "error": "..."}.
+    """
+    board = get_board(board_id)
+    if board is None:
+        return {"ok": False, "error": "That board is gone."}
+    doc = board["doc"]
+    present = set(entry_ids(doc))
+    fresh = []
+    for tile in tiles:
+        value = tile.get("id")
+        if isinstance(value, int) and not isinstance(value, bool) and value not in present:
+            present.add(value)
+            fresh.append(tile)
+    if not fresh:
+        return {"ok": True, "board": _summary_of(board), "added": 0}
+    placed = [node for node in doc["nodes"] if all(isinstance(node.get(k), (int, float)) for k in ("x", "y", "width", "height"))]
+    left = min((node["x"] for node in placed), default=0)
+    top = max((node["y"] + node["height"] for node in placed), default=-ADD_GAP * 2) + ADD_GAP * 2
+    x, row_height = left, 0
+    for index, tile in enumerate(fresh):
+        if index and index % ADD_PER_ROW == 0:
+            x, top, row_height = left, top + row_height + ADD_GAP, 0
+        width, height = tile.get("width") or 0, tile.get("height") or 0
+        tall = round(ADD_WIDTH * height / width) if width and height else round(ADD_WIDTH * 0.75)
+        doc["nodes"].append({"id": f"e{tile['id']}-{len(doc['nodes'])}", "type": "file", "file": f"hyperbridge:entry/{tile['id']}",
+                             "entry": tile["id"], "x": x, "y": top, "width": ADD_WIDTH, "height": tall})
+        x += ADD_WIDTH + ADD_GAP
+        row_height = max(row_height, tall)
+    saved = save_board(board_id, doc)
+    if not saved["ok"]:
+        return saved
+    return {**saved, "added": len(fresh)}
+
+
+def _summary_of(board: dict) -> dict:
+    return {key: board[key] for key in ("id", "name", "created_at", "updated_at", "items")}
 
 
 def rename_board(board_id: int, name) -> dict:

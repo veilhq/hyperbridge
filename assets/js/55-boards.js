@@ -1215,6 +1215,34 @@
     });
   }
 
+  // Adds library entries to a board from outside the board view, after any pending save of that board lands.
+  function addToBoard(target, ids, done) {
+    var named = target ? Promise.resolve({ ok: true, board: target }) : Promise.resolve(api().create_board(""));
+    named.then(function (made) {
+      if (!made || !made.ok) throw new Error("Could not make a board.");
+      if (!target) boards.unshift(made.board);
+      return saving.then(function () { return api().add_to_board(made.board.id, ids); });
+    }).then(function (result) {
+      if (!result || !result.ok) throw new Error((result && result.error) || "Could not add to that board.");
+      mergeSummary(result.board);
+      byId("boards-count").textContent = boards.length || "";
+      var name = "\"" + result.board.name + "\"";
+      toast(result.added ? "success" : "info", result.added ? "Added " + pad2(result.added) + " to " + name + "." : "Already on " + name + ".");
+      if (done) done();
+    }).catch(function (err) { toast("error", (err && err.message) || "Could not add to that board."); });
+  }
+
+  // The "Add to board" context menu entry: one row per board, or a new board when there are none.
+  function menuItem(ids, done) {
+    var rows = boards.map(function (item) {
+      return { label: esc(item.name), action: function () { addToBoard(item, ids, done); } };
+    });
+    if (!rows.length) rows.push({ label: "New board", action: function () { addToBoard(null, ids, done); } });
+    return { label: "Add to board", children: rows };
+  }
+
+  window.HbBoards = { menuItem: function (ids, done) { return api() && api().add_to_board ? menuItem(ids, done) : null; } };
+
   function refreshCount() {
     if (!api() || !api().list_boards) return;
     Promise.resolve(api().list_boards()).then(function (list) {

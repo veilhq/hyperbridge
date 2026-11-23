@@ -671,6 +671,14 @@ class HyperbridgeAPI:
             logger.warning("save_board failed: %s", err)
             return {"ok": False, "error": "That board could not be saved."}
 
+    def add_to_board(self, board_id: int, entry_ids: list) -> dict:
+        """Place library images on a board below what is already there."""
+        try:
+            return boards.add_entries(int(board_id), self.board_tiles(entry_ids))
+        except Exception as err:
+            logger.warning("add_to_board failed: %s", err)
+            return {"ok": False, "error": "Could not add to that board."}
+
     def rename_board(self, board_id: int, name: str) -> dict:
         """Rename a scratch board."""
         return boards.rename_board(int(board_id), name)

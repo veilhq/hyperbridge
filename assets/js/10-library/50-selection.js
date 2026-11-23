@@ -187,6 +187,8 @@
   function bulkMenuItems() {
     var items = [];
     if (setsCache.length) items.push({ label: "Add to set", children: setMenuItems() });
+    var board = window.HbBoards && window.HbBoards.menuItem(selectedIds(), clearSelection);
+    if (board) items.push(board);
     if (tagsCache.length) items.push({ label: "Add tag", children: tagMenuItems() });
     if (state.setId) items.push({ label: "Remove from set", action: bulkRemove });
     items.push({ label: "Download", action: bulkSave });
@@ -286,6 +288,8 @@
           }),
         });
       }
+      var board = window.HbBoards && window.HbBoards.menuItem([id]);
+      if (board) items.push(board);
       if (state.setId) {
         var shown = setsCache.filter(function (item) { return item.id === state.setId; })[0];
         if (shown && shown.cover_entry_id !== id && bridge.set_cover) {

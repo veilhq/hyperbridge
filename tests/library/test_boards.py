@@ -59,6 +59,29 @@ class BoardTests(LibraryOpsCase):
         self.assertFalse(boards.delete_board(board))
         self.assertEqual(boards.list_boards(), [])
 
+    def test_add_lays_images_in_a_row_below_existing_content(self):
+        board = boards.create_board("A")["board"]["id"]
+        boards.save_board(board, {"nodes": [image("n1", 4, x=48, y=0)], "edges": []})
+        result = boards.add_entries(board, [{"id": 5, "width": 400, "height": 200}, {"id": 4}, {"id": 6}])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["added"], 2)
+        self.assertEqual(result["board"]["items"], 3)
+        nodes = boards.get_board(board)["doc"]["nodes"][1:]
+        self.assertEqual([(n["entry"], n["x"], n["y"], n["height"]) for n in nodes], [(5, 48, 228, 120), (6, 312, 228, 180)])
+
+    def test_add_starts_an_empty_board_at_the_origin_and_wraps_rows(self):
+        board = boards.create_board("A")["board"]["id"]
+        boards.add_entries(board, [{"id": i, "width": 100, "height": 100} for i in range(1, 8)])
+        nodes = boards.get_board(board)["doc"]["nodes"]
+        self.assertEqual((nodes[0]["x"], nodes[0]["y"]), (0, 0))
+        self.assertEqual((nodes[6]["x"], nodes[6]["y"]), (0, 264))
+
+    def test_add_reports_nothing_new_and_missing_boards(self):
+        board = boards.create_board("A")["board"]["id"]
+        boards.add_entries(board, [{"id": 2}])
+        self.assertEqual(boards.add_entries(board, [{"id": 2}, {"id": True}])["added"], 0)
+        self.assertFalse(boards.add_entries(999, [{"id": 2}])["ok"])
+
     def test_entry_ids_skip_other_nodes_and_bad_values(self):
         doc = {"nodes": [image("a", 3), {"id": "b", "type": "file", "entry": True}, {"id": "c", "type": "text", "entry": 9},
                          image("d", 1), image("e", 3), "junk"]}
