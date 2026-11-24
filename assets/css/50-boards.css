@@ -4,6 +4,7 @@
 #app:has(#library[data-boards-view]) ~ .select-bar { display: none; }
 
 .boards-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.boards-view[hidden] { display: none; }
 .board-legend { color: var(--text-dim); text-transform: uppercase; letter-spacing: var(--track-label); font-variant-numeric: tabular-nums; }
 
 /* ---- Header: board tabs, staleness readout, promote and clear ---- */
