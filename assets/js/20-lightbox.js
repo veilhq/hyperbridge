@@ -12,6 +12,7 @@
   var ticket = 0;
   var lb;
   var swapToken = 0;
+  var descriptionEntry = null;
 
   function api() { return window.pywebview && window.pywebview.api; }
   function byId(id) { return document.getElementById(id); }
@@ -56,14 +57,38 @@
     if (!count) box.appendChild(makeEl("span", "lightbox-none", "No fields."));
   }
 
-  // Shows the description under its label, hidden when the entry has none.
+  // Shows the description under its label, hidden when the entry has none; long text starts clamped.
   function renderDescription(entry) {
     var value = byId("lb-description");
     var text = entry.description || "";
+    if (descriptionEntry !== entry.id) value.removeAttribute("data-expanded");
+    descriptionEntry = entry.id;
     value.textContent = text;
     value.hidden = !text;
     byId("lb-description-label").hidden = !text;
     value.classList.toggle("lightbox-caption-manual", entry.manual.indexOf("description") >= 0 && !!text);
+    requestAnimationFrame(syncDescriptionToggle);
+  }
+
+  // Shows the expand chevron only when the clamped text overflows, or while it is expanded.
+  function syncDescriptionToggle() {
+    var value = byId("lb-description");
+    var more = byId("lb-description-more");
+    var expanded = value.hasAttribute("data-expanded");
+    var overflows = !value.hidden && value.scrollHeight > value.clientHeight + 1;
+    more.hidden = !(expanded || overflows);
+    value.classList.toggle("lightbox-description-clamped", overflows && !expanded);
+    var label = expanded ? "Show less" : "Show full description";
+    more.setAttribute("aria-expanded", String(expanded));
+    more.setAttribute("aria-label", label);
+    more.setAttribute("data-tooltip", label);
+  }
+
+  function toggleDescription() {
+    var value = byId("lb-description");
+    if (value.hasAttribute("data-expanded")) value.removeAttribute("data-expanded");
+    else value.setAttribute("data-expanded", "");
+    syncDescriptionToggle();
   }
 
   var REMOVE_ICON = '<svg class="icon-glyph-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
@@ -679,6 +704,11 @@
       closeDialog();
     });
     byId("lb-tags").addEventListener("click", onTagsClick);
+    byId("lb-description-more").addEventListener("click", toggleDescription);
+    byId("lb-description").addEventListener("click", function () {
+      if (byId("lb-description").classList.contains("lightbox-description-clamped") && !window.getSelection().toString()) toggleDescription();
+    });
+    window.addEventListener("resize", function () { if (lb.open) syncDescriptionToggle(); });
     byId("lb-duplicates").addEventListener("click", function (event) {
       var chip = event.target.closest("[data-entry]");
       if (!chip) return;
