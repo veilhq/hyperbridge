@@ -270,7 +270,6 @@ def _apply_edits(conn, entry_id: int, record: dict, set_ids: set) -> bool:
         if clean:
             conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (clean,))
             conn.execute("INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?", (entry_id, clean))
-    conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM entry_tags)")
     conn.execute(f"DELETE FROM set_entries WHERE entry_id = ? AND set_id NOT IN ({','.join('?' * len(set_ids))})", (entry_id, *set_ids))
     return True
 

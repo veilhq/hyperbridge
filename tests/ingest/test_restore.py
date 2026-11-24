@@ -49,6 +49,7 @@ class RestoreDetailsTests(LibraryCase):
     def test_tumblr_and_pinterest_entries_get_their_source_details(self):
         post = self.add("tumblr", "77", "https://blog.tumblr.com/post/77/slug")
         pin = self.add("pinterest", "1001", "https://www.pinterest.com/pin/1001/", title="IMG_8841.jpg")
+        self.conn.execute("INSERT INTO tags (name) VALUES ('chair')")
         self.assertEqual(restore.details(self.conn, fetcher), 2)
         self.assertEqual(self.entry(post), {
             "title": "Blue chair", "description": "Blue chair\nOak and lacquer, 1962.", "publisher": "",
@@ -56,7 +57,7 @@ class RestoreDetailsTests(LibraryCase):
         self.assertEqual(self.entry(pin), {
             "title": "Quiet harbor", "description": "Boats at dusk", "publisher": "example.com",
             "posted_at": "2023-03-20", "updated_at": "2026-01-01T00:00:00"})
-        self.assertEqual((self.tags(post), self.tags(pin)), (["chairs"], ["sea"]))
+        self.assertEqual((self.tags(post), self.tags(pin)), (["chair"], []))
 
     def test_a_placeholder_title_is_replaced_but_hand_written_and_real_titles_are_kept(self):
         placeholder = self.add("pinterest", "1", "https://www.pinterest.com/pin/1/", title="Harbors", collection="Places / Harbors")

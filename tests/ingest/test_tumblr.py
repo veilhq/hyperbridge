@@ -74,24 +74,26 @@ class TumblrTests(LibraryCase):
 
     def test_refresh_stores_a_followed_blogs_images(self):
         tumblr.follow(self.conn, "https://blog.example/", FakeBlog())
+        self.conn.execute("INSERT INTO tags (name) VALUES ('signage')")
         result = feed.refresh(self.conn, FakeBlog(), random.Random(1))
         self.assertEqual(result["added"], 1)
         item = feed.list_items(self.conn)["items"][0]
         self.assertEqual(item["source_id"], "tumblr")
         self.assertEqual(feed.accept(self.conn, [item["id"]])["added"], 1)
         entry = library.get_entry(self.conn.execute("SELECT id FROM entries").fetchone()[0])
-        self.assertEqual(entry["tags"], ["signage", "type"])
+        self.assertEqual(entry["tags"], ["signage"])
         self.assertEqual(entry["source"], {"source_service": "tumblr", "source_ref": "11", "collection": "Blog",
                                            "posted_at": "2026-09-02"})
 
     def test_backfill_fills_saved_entries_from_their_post_link(self):
         entry = self.add_entry(title="x")
         self.conn.execute("UPDATE entries SET source_url = 'https://blog.example/post/11/slug' WHERE id = ?", (entry,))
+        self.conn.execute("INSERT INTO tags (name) VALUES ('signage')")
         self.assertEqual(tumblr.backfill(self.conn, FakeBlog()), 1)
         self.assertEqual(tumblr.backfill(self.conn, FakeBlog()), 0)
         row = self.conn.execute("SELECT source_service, source_ref, collection, posted_at FROM entries WHERE id = ?", (entry,)).fetchone()
         self.assertEqual(tuple(row), ("tumblr", "11", "Blog", "2026-09-02"))
-        self.assertEqual(len(self.conn.execute("SELECT 1 FROM entry_tags WHERE entry_id = ?", (entry,)).fetchall()), 2)
+        self.assertEqual(len(self.conn.execute("SELECT 1 FROM entry_tags WHERE entry_id = ?", (entry,)).fetchall()), 1)
 
 
 if __name__ == "__main__":

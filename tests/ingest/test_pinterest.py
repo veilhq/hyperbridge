@@ -132,7 +132,8 @@ class DiscoverBoardTests(LibraryCase):
     def test_saved_entries_keep_the_pin_description_site_date_and_tags(self):
         url = "https://i.pinimg.com/originals/aa/1.jpg"
         details = {url: {"source_service": "pinterest", "source_ref": "1001", "description": "Boats at dusk",
-                         "publisher": "example.com", "posted_at": "2023-03-20", "tags": ["sea"]}}
+                         "publisher": "example.com", "posted_at": "2023-03-20", "tags": ["sea", "boats"]}}
+        self.conn.execute("INSERT INTO tags (name) VALUES ('sea')")
         discover.add_candidates(self.conn, [url], BOARD, None, details)
         entry = self.conn.execute("SELECT * FROM entries").fetchone()
         self.assertEqual((entry["description"], entry["publisher"], entry["posted_at"]), ("Boats at dusk", "example.com", "2023-03-20"))

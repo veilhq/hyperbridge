@@ -66,21 +66,69 @@
     value.classList.toggle("lightbox-caption-manual", entry.manual.indexOf("description") >= 0 && !!text);
   }
 
-  function renderChips(box, names, className, emptyText, clickable) {
+  var REMOVE_ICON = '<svg class="icon-glyph-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  var ADD_ICON = '<svg class="icon-glyph-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
+
+  // Shows the entry's tags: the name filters the library, the x takes it off; the plus opens the vocabulary.
+  function renderTags(entry) {
+    var box = byId("lb-tags");
     box.textContent = "";
-    if (!names.length) {
-      box.appendChild(makeEl("span", "lightbox-none", emptyText));
-      return;
-    }
-    names.forEach(function (name) {
-      var chip = makeEl(clickable ? "button" : "span", "status-chip " + className + (clickable ? " lightbox-tag" : ""), name);
-      if (clickable) {
-        chip.type = "button";
-        chip.setAttribute("data-tag", name);
-        chip.setAttribute("data-tooltip", "Show entries tagged " + name);
-      }
+    if (!entry.tags.length) box.appendChild(makeEl("span", "lightbox-none", "No tags."));
+    entry.tags.forEach(function (name) {
+      var chip = makeEl("span", "status-chip status-chip-outlined-muted");
+      var label = makeEl("button", "lightbox-tag-name", name);
+      label.type = "button";
+      label.setAttribute("data-tag", name);
+      label.setAttribute("data-tooltip", "Show entries tagged " + name);
+      chip.appendChild(label);
+      var drop = makeEl("button", "lightbox-chip-remove");
+      drop.type = "button";
+      drop.innerHTML = REMOVE_ICON;
+      drop.setAttribute("data-untag", name);
+      drop.setAttribute("aria-label", "Remove tag " + name);
+      drop.setAttribute("data-tooltip", "Remove tag " + name);
+      chip.appendChild(drop);
       box.appendChild(chip);
     });
+    var add = makeEl("button", "action-icon lightbox-set-add");
+    add.type = "button";
+    add.id = "lb-tag-add";
+    add.setAttribute("aria-label", "Tag");
+    add.setAttribute("data-tooltip", "Tag");
+    add.innerHTML = ADD_ICON;
+    box.appendChild(add);
+  }
+
+  // Opens the vocabulary beside the plus, or takes a tag off; both re-read the entry afterward.
+  function onTagsClick(event) {
+    var bridge = api();
+    if (!current || !bridge) return;
+    var id = current.id;
+    var after = function () { if (current && current.id === id) reloadEntry(); };
+    var drop = event.target.closest("[data-untag]");
+    if (drop) {
+      var name = drop.getAttribute("data-untag");
+      Promise.resolve(bridge.remove_tags([id], name)).then(function (count) {
+        if (!count) { toast("error", "Could not remove the tag."); return; }
+        document.dispatchEvent(new CustomEvent("hyperbridge:tags"));
+        reloadEntry("Removed " + name + ".");
+      }).catch(function () { toast("error", "Could not remove the tag."); });
+      return;
+    }
+    var add = event.target.closest("#lb-tag-add");
+    if (add && window.HbTagPick && window.HvContextMenu) {
+      event.stopPropagation();
+      var counts = {};
+      current.tags.forEach(function (tag) { counts[tag] = 1; });
+      Promise.resolve(bridge.list_tags()).then(function (terms) {
+        window.HvContextMenu.openFor(add, window.HbTagPick.items(terms, counts, [id], after));
+      }).catch(function () { toast("error", "Could not load tags."); });
+      return;
+    }
+    var chip = event.target.closest("[data-tag]");
+    if (!chip) return;
+    document.dispatchEvent(new CustomEvent("hyperbridge:tag", { detail: { tag: chip.getAttribute("data-tag") } }));
+    closeDialog();
   }
 
   // Shows the entry's sets with a remove control, and a picker for the sets it is not in.
@@ -292,7 +340,7 @@
     renderStatus(entry);
     renderSwatches(entry);
     renderSource(entry);
-    renderChips(byId("lb-tags"), entry.tags, "status-chip-outlined-muted", "No tags.", true);
+    renderTags(entry);
     renderSets(entry);
     renderDuplicates(entry);
     byId("act-save").hidden = !entry.assets.length;
@@ -338,7 +386,6 @@
   function openForm() {
     if (!current) return;
     FORM_FIELDS.forEach(function (name) { byId("f-" + name).value = current[name] || ""; });
-    byId("f-tags").value = (current.tags || []).join(", ");
     byId("lb-view").hidden = true;
     byId("lb-form").hidden = false;
     byId("lb-actions").hidden = true;
@@ -401,7 +448,6 @@
     if (!bridge || !bridge.update_entry || !current) return;
     var values = {};
     FORM_FIELDS.forEach(function (name) { values[name] = byId("f-" + name).value; });
-    values.tags = byId("f-tags").value;
     Promise.resolve(bridge.update_entry(current.id, values)).then(function (entry) {
       if (!entry) {
         toast("error", "Could not save.");
@@ -422,7 +468,7 @@
       if (!entry || !current) return;
       current = entry;
       render();
-      toast("success", message);
+      if (message) toast("success", message);
       changed();
     });
   }
@@ -632,12 +678,7 @@
       document.dispatchEvent(new CustomEvent("hyperbridge:color", { detail: { color: chip.getAttribute("data-color") } }));
       closeDialog();
     });
-    byId("lb-tags").addEventListener("click", function (event) {
-      var chip = event.target.closest("[data-tag]");
-      if (!chip) return;
-      document.dispatchEvent(new CustomEvent("hyperbridge:tag", { detail: { tag: chip.getAttribute("data-tag") } }));
-      closeDialog();
-    });
+    byId("lb-tags").addEventListener("click", onTagsClick);
     byId("lb-duplicates").addEventListener("click", function (event) {
       var chip = event.target.closest("[data-entry]");
       if (!chip) return;

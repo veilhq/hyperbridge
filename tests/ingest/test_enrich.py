@@ -36,20 +36,22 @@ class EnrichTests(LibraryCase):
         found = enrich.known_keywords(self.conn, ["lamps", "chair", "ART", "2024", "12/05", "unknown"])
         self.assertEqual(found, ["Lamp", "chairs", "art"])
 
-    def test_a_pinterest_pin_is_tagged_with_its_service_board_and_section(self):
-        entry = self.add("a", source_service="pinterest", collection="Interiors / Lighting")
-        self.assertTrue(enrich.enrich_entry(self.conn, self.row(entry)))
-        self.assertEqual(self.tags(entry), ["interiors", "lighting", "pinterest"])
+    def test_the_service_site_and_board_never_become_tags(self):
+        for name in ("pinterest", "interiors", "behance.net", "are.na"):
+            self.conn.execute("INSERT INTO tags (name) VALUES (?)", (name,))
+        pin = self.add("a", source_service="pinterest", collection="Interiors / Lighting")
+        block = self.add("b", source_service="arena", collection="Type specimens")
+        web = self.add("c", domain="www.behance.net")
+        for entry in (pin, block, web):
+            enrich.enrich_entry(self.conn, self.row(entry))
+            self.assertEqual(self.tags(entry), [])
 
-    def test_an_arena_block_gets_the_are_na_tag_and_its_channel(self):
-        entry = self.add("a", source_service="arena", collection="Type specimens")
-        enrich.enrich_entry(self.conn, self.row(entry))
-        self.assertEqual(self.tags(entry), ["are.na", "type specimens"])
-
-    def test_a_plain_web_save_is_tagged_with_its_site(self):
-        entry = self.add("a", domain="www.behance.net")
-        enrich.enrich_entry(self.conn, self.row(entry))
-        self.assertEqual(self.tags(entry), ["behance.net"])
+    def test_extra_tags_apply_only_when_they_match_the_vocabulary(self):
+        self.conn.execute("INSERT INTO tags (name) VALUES ('Poster')")
+        entry = self.add("a", title="Kept")
+        self.assertTrue(enrich.enrich_entry(self.conn, self.row(entry), ["posters", "ada lovelace", "2024"]))
+        self.assertEqual(self.tags(entry), ["Poster"])
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM tags").fetchone()[0], 1)
 
     def test_tagged_entries_and_entries_with_hand_edited_tags_are_left_alone(self):
         tagged = self.add("a", title="Kept", source_service="tumblr", collection="Blog")
@@ -61,8 +63,9 @@ class EnrichTests(LibraryCase):
         self.assertEqual(self.tags(cleared), [])
 
     def test_enriched_tags_are_marked_so_removing_them_sticks(self):
+        self.conn.execute("INSERT INTO tags (name) VALUES ('poster')")
         entry = self.add("a", source_service="x")
-        enrich.enrich_entry(self.conn, self.row(entry))
+        enrich.enrich_entry(self.conn, self.row(entry), ["poster"])
         self.assertIn("tags", json.loads(self.row(entry)["manual_fields"]))
         self.conn.execute("DELETE FROM entry_tags")
         self.assertEqual(enrich.backfill(self.conn), 0)
@@ -94,17 +97,19 @@ class EnrichTests(LibraryCase):
         for text, expected in cases.items():
             self.assertEqual(enrich.strip_hashtags(text), expected, text)
 
-    def test_hashtags_leave_the_description_and_become_tags(self):
+    def test_hashtags_leave_the_description_and_known_ones_become_tags(self):
+        self.conn.execute("INSERT INTO tags (name) VALUES ('lighting')")
         entry = self.add("a", title="Lamp", description="Brass lamp #Lighting #interiors", source_service="pinterest")
         self.assertTrue(enrich.enrich_entry(self.conn, self.row(entry)))
         self.assertEqual(self.row(entry)["description"], "Brass lamp")
-        self.assertEqual(self.tags(entry), ["interiors", "lighting", "pinterest"])
+        self.assertEqual(self.tags(entry), ["lighting"])
 
-    def test_hashtags_are_added_to_an_already_tagged_entry(self):
+    def test_known_hashtags_are_added_to_an_already_tagged_entry(self):
+        self.conn.execute("INSERT INTO tags (name) VALUES ('brass')")
         entry = self.add("a", title="Lamp", description="Lamp #brass #glass")
         library.add_entry_tags(self.conn, entry, ["mine"])
         enrich.enrich_entry(self.conn, self.row(entry))
-        self.assertEqual(self.tags(entry), ["brass", "glass", "mine"])
+        self.assertEqual(self.tags(entry), ["brass", "mine"])
 
     def test_hand_edited_description_and_tags_are_left_alone(self):
         kept = self.add("a", title="Lamp", description="Mine #a #b", manual_fields='["description"]')

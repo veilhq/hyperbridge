@@ -57,7 +57,8 @@
     $("#sel-remove").hidden = picking || !state.setId;
     var feedMode = picking && candidates.feed;
     $("#sel-add").hidden = (picking && !feedMode && !candidates.trail) || !setsCache.length;
-    $("#sel-tag").hidden = picking || !tagsCache.length;
+    $("#sel-tag").hidden = picking;
+    refreshTagCounts();
     $("#sel-save").hidden = picking;
     $("#sel-recapture").hidden = picking;
     $("#sel-discard").hidden = picking && !feedMode;
@@ -120,13 +121,17 @@
     });
   }
 
-  function bulkTag(item) {
+  // How many of the selected entries carry each tag, so the tag menu can mark each term all, some or none.
+  var selectionTagCounts = {};
+  var tagCountTicket = 0;
+
+  function refreshTagCounts() {
     var bridge = api();
-    Promise.resolve(bridge.add_tags(selectedIds(), item.name)).then(function (count) {
-      toast(count ? "success" : "error", count ? "Tagged " + count + "." : "Could not tag.");
-      loadTags();
-      changed();
-    }).catch(function () { toast("error", "Could not tag."); });
+    var mine = ++tagCountTicket;
+    if (!selected.size || candidates || !bridge || !bridge.tag_counts) { selectionTagCounts = {}; return; }
+    Promise.resolve(bridge.tag_counts(selectedIds())).then(function (counts) {
+      if (mine === tagCountTicket) selectionTagCounts = counts || {};
+    }).catch(function () {});
   }
 
   function bulkRemove() {
@@ -179,9 +184,7 @@
   }
 
   function tagMenuItems() {
-    return tagsCache.map(function (item) {
-      return { label: escapeHtml(item.name), action: function () { bulkTag(item); } };
-    });
+    return window.HbTagPick ? window.HbTagPick.items(tagsCache, selectionTagCounts, selectedIds(), refreshTagCounts) : [];
   }
 
   function bulkMenuItems() {
@@ -189,7 +192,7 @@
     if (setsCache.length) items.push({ label: "Add to set", children: setMenuItems() });
     var board = window.HbBoards && window.HbBoards.menuItem(selectedIds(), clearSelection);
     if (board) items.push(board);
-    if (tagsCache.length) items.push({ label: "Add tag", children: tagMenuItems() });
+    if (window.HbTagPick) items.push({ label: "Tags", children: tagMenuItems() });
     if (state.setId) items.push({ label: "Remove from set", action: bulkRemove });
     items.push({ label: "Download", action: bulkSave });
     items.push({ label: "Re-capture at full size", action: bulkRecapture });
@@ -216,6 +219,7 @@
     $("#sel-discard").addEventListener("click", bulkDiscard);
     $("#sel-follow").addEventListener("click", function () { followChannels(followableIn(selectedIds())); });
     $("#sel-clear").addEventListener("click", clearSelection);
+    document.addEventListener("hyperbridge:tags", loadTags);
     document.addEventListener("keydown", function (event) {
       if ($("#app").inert) return;
       var tag = event.target && event.target.tagName;

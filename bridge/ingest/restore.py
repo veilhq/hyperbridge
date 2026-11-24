@@ -49,7 +49,7 @@ def _fill(conn, row, found) -> bool:
     tags = found.get("tags") or []
     if (tags and "tags" not in manual
             and not conn.execute("SELECT 1 FROM entry_tags WHERE entry_id = ?", (row["id"],)).fetchone()):
-        library.add_entry_tags(conn, row["id"], tags)
+        library.apply_known_tags(conn, row["id"], tags)
         return True
     return bool(updates)
 

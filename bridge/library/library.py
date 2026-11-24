@@ -143,8 +143,32 @@ def add_entry_tags(conn, entry_id: int, raw_tags) -> None:
             "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?", (entry_id, name))
 
 
+def known_terms(conn, raw_tags) -> list[str]:
+    """Return the names that match a tag already in the library, as that tag is spelled; a plural matches its singular and back.
+
+    Number-only names are dropped, and a name with no matching tag never creates one.
+    """
+    names = []
+    for word in parse_tags(raw_tags):
+        if NUMBER_ONLY.fullmatch(word):
+            continue
+        for form in tag_forms(word):
+            row = conn.execute("SELECT name FROM tags WHERE name = ?", (form,)).fetchone()
+            if row and row["name"] not in names:
+                names.append(row["name"])
+                break
+    return names
+
+
+def apply_known_tags(conn, entry_id: int, raw_tags) -> list[str]:
+    """Add to one entry only the names that match an existing tag; returns the tags added."""
+    names = known_terms(conn, raw_tags)
+    add_entry_tags(conn, entry_id, names)
+    return names
+
+
 def _set_tags(conn, entry_id: int, names: list[str]) -> None:
-    """Replace an entry's tags with the given names and drop tags nothing uses."""
+    """Replace an entry's tags with the given names; tags nothing uses stay in the vocabulary."""
     conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", (entry_id,))
     for name in names:
         conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
@@ -152,7 +176,6 @@ def _set_tags(conn, entry_id: int, names: list[str]) -> None:
             "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
             (entry_id, name),
         )
-    conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM entry_tags)")
 
 
 def list_tags() -> list[dict]:
@@ -176,18 +199,67 @@ def add_tags(entry_ids, raw_tags) -> int:
         ids = [row["id"] for row in conn.execute(
             f"SELECT id FROM entries WHERE id IN ({','.join('?' * len(entry_ids))})", [int(i) for i in entry_ids]
         )] if entry_ids else []
+        changed = set()
         for name in names if ids else []:
             conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
             for entry_id in ids:
-                added = conn.execute(
+                if conn.execute(
                     "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE name = ?",
                     (entry_id, name),
-                ).rowcount
-                if added:
-                    conn.execute("UPDATE entries SET updated_at = ? WHERE id = ?", (_now(), entry_id))
+                ).rowcount:
+                    changed.add(entry_id)
+        _retag(conn, sorted(changed))
     finally:
         conn.close()
     return len(ids)
+
+
+def remove_tags(entry_ids, name: str) -> int:
+    """Take one tag off every listed entry, keeping the tag in the vocabulary; returns how many entries lost it."""
+    ids = [int(i) for i in entry_ids or []]
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT id FROM tags WHERE name = ?", (str(name),)).fetchone()
+        if row is None or not ids:
+            return 0
+        held = [entry_id for entry_id in _tag_entries(conn, row["id"]) if entry_id in ids]
+        if held:
+            conn.execute(f"DELETE FROM entry_tags WHERE tag_id = ? AND entry_id IN ({','.join('?' * len(held))})",
+                         (row["id"], *held))
+            _retag(conn, held)
+    finally:
+        conn.close()
+    return len(held)
+
+
+def create_tag(name: str) -> dict:
+    """Add a term to the tag vocabulary; an existing tag of the same name (any case) is reused."""
+    names = parse_tags([name])
+    if not names or NUMBER_ONLY.fullmatch(names[0]):
+        return {"ok": False, "error": "Enter a tag name."}
+    conn = db.connect()
+    try:
+        existed = conn.execute("SELECT name FROM tags WHERE name = ?", (names[0],)).fetchone()
+        if existed is None:
+            conn.execute("INSERT INTO tags (name) VALUES (?)", (names[0],))
+    finally:
+        conn.close()
+    return {"ok": True, "name": existed["name"] if existed else names[0], "existed": existed is not None}
+
+
+def tag_counts(entry_ids) -> dict:
+    """Return how many of the listed entries carry each tag, for tags at least one of them has."""
+    ids = [int(i) for i in entry_ids or []]
+    if not ids:
+        return {}
+    conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT t.name, COUNT(*) AS count FROM entry_tags et JOIN tags t ON t.id = et.tag_id"
+            f" WHERE et.entry_id IN ({','.join('?' * len(ids))}) GROUP BY t.id", ids).fetchall()
+    finally:
+        conn.close()
+    return {row["name"]: row["count"] for row in rows}
 
 
 def _retag(conn, entry_ids) -> None:

@@ -43,6 +43,7 @@ class SocialTests(LibraryCase):
 
     def test_x_posts_fill_creator_text_date_and_tags(self):
         entry = self.saved("https://x.com/ada/status/99?s=20")
+        self.conn.execute("INSERT INTO tags (name) VALUES ('Poster')")
         self.assertEqual(social.backfill(self.conn, fetcher), 1)
         row = self.conn.execute("SELECT creator, description, publisher, source_service, source_ref, posted_at FROM entries WHERE id = ?", (entry,)).fetchone()
         self.assertEqual(tuple(row), ("ada", "Look & see #Poster", "X", "x", "99", "2026-03-04"))
@@ -50,10 +51,11 @@ class SocialTests(LibraryCase):
 
     def test_instagram_posts_fill_creator_caption_and_tags(self):
         entry = self.saved("https://www.instagram.com/p/Abc123/")
+        self.conn.execute("INSERT INTO tags (name) VALUES ('wayfinding')")
         self.assertEqual(social.backfill(self.conn, fetcher), 1)
         row = self.conn.execute("SELECT creator, publisher, source_service, source_ref FROM entries WHERE id = ?", (entry,)).fetchone()
         self.assertEqual(tuple(row), ("studio", "Instagram", "instagram", "Abc123"))
-        self.assertEqual(self.tags(entry), ["type_2", "wayfinding"])
+        self.assertEqual(self.tags(entry), ["wayfinding"])
 
     def test_filled_fields_are_kept_and_unreadable_posts_are_retried_after_a_wait(self):
         kept = self.saved("https://twitter.com/ada/status/5")

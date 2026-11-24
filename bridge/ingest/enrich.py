@@ -5,9 +5,7 @@ import re
 from bridge.ingest import capture
 from bridge.library import library
 
-_SERVICE_TAGS = {"arena": "are.na", "x": "x", "pinterest": "pinterest", "tumblr": "tumblr", "instagram": "instagram"}
-_SITE_SERVICES = frozenset(("rss",))
-_URL_TITLE =re.compile(r"^(https?://|www\.)\S+$", re.I)
+_URL_TITLE = re.compile(r"^(https?://|www\.)\S+$", re.I)
 _HASHTAG = r"(?<![\w&/])#([^\W\d_]\w*)"
 _EDGE_GAP = r"[\s.,;:|]*"
 _TAG_LINE = re.compile(rf"{_EDGE_GAP}(?:{_HASHTAG}{_EDGE_GAP})+")
@@ -33,31 +31,8 @@ def strip_hashtags(text) -> str:
 
 
 def known_keywords(conn, keywords) -> list[str]:
-    """Return the page keywords that name a tag already in the library, as that tag is spelled; a plural matches its singular and back.
-
-    Number-only keywords are dropped, and a keyword with no matching tag never creates one.
-    """
-    names = []
-    for word in library.parse_tags(list(keywords or [])):
-        if library.NUMBER_ONLY.fullmatch(word):
-            continue
-        for form in library.tag_forms(word):
-            row = conn.execute("SELECT name FROM tags WHERE name = ?", (form,)).fetchone()
-            if row:
-                names.append(row["name"])
-                break
-    return names
-
-
-def source_tags(row) -> list[str]:
-    """Return tags implied by an entry's source: its service or site, and each part of its board, section or channel."""
-    service = row["source_service"] or ""
-    names = [_SERVICE_TAGS.get(service, service)] if service and service not in _SITE_SERVICES else []
-    if not names:
-        domain = re.sub(r"^www\.", "", row["domain"] or "")
-        names.append(domain)
-    names.extend(part for part in str(row["collection"] or "").split(" / "))
-    return [name.lower() for name in library.parse_tags(names)]
+    """Return the page keywords that name a tag already in the library, as that tag is spelled; a plural matches its singular and back."""
+    return library.known_terms(conn, list(keywords or []))
 
 
 def fallback_title(row) -> str:
@@ -105,9 +80,10 @@ def _clean_description(conn, row, manual) -> list[str]:
 
 
 def enrich_entry(conn, row, extra_tags=()) -> bool:
-    """Strip hashtags from the description, then add source tags (plus extra tags, such as post hashtags and known page keywords) to an untagged entry and a fallback title to an untitled one.
+    """Strip hashtags from the description, then tag an untagged entry and give an untitled one a fallback title.
 
-    Hashtag words become tags unless the entry's tags were edited by hand. Returns True when anything changed.
+    Extra tags (post hashtags, page keywords) and description hashtags apply only when they match an existing tag,
+    and never to an entry whose tags were edited by hand. Returns True when anything changed.
     """
     manual = manual_fields(row)
     hashtags = _clean_description(conn, row, manual)
@@ -121,13 +97,11 @@ def enrich_entry(conn, row, extra_tags=()) -> bool:
             conn.execute("UPDATE entries SET title = ? WHERE id = ?", (found, row["id"]))
             changed = True
     if "tags" not in manual and not conn.execute("SELECT 1 FROM entry_tags WHERE entry_id = ?", (row["id"],)).fetchone():
-        names = source_tags(row) + [name.lower() for name in library.parse_tags(list(extra_tags) + hashtags)]
-        if names:
-            library.add_entry_tags(conn, row["id"], names)
+        if library.apply_known_tags(conn, row["id"], list(extra_tags) + hashtags):
             conn.execute("UPDATE entries SET manual_fields = ? WHERE id = ?", (json.dumps(manual + ["tags"]), row["id"]))
             changed = True
     elif "tags" not in manual and hashtags:
-        library.add_entry_tags(conn, row["id"], hashtags)
+        library.apply_known_tags(conn, row["id"], hashtags)
     return changed
 
 

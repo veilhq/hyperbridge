@@ -549,6 +549,30 @@ class HyperbridgeAPI:
             logger.warning("add_tags failed: %s", err)
             return 0
 
+    def remove_tags(self, entry_ids: list, name: str) -> int:
+        """Take one tag off the given entries and return how many lost it."""
+        try:
+            return library.remove_tags(list(entry_ids or [])[:_MAX_BULK], name)
+        except Exception as err:
+            logger.warning("remove_tags failed: %s", err)
+            return 0
+
+    def create_tag(self, name: str) -> dict:
+        """Add a term to the tag vocabulary."""
+        try:
+            return library.create_tag(name)
+        except Exception as err:
+            logger.warning("create_tag failed: %s", err)
+            return {"ok": False, "error": "Could not add the tag."}
+
+    def tag_counts(self, entry_ids: list) -> dict:
+        """Return how many of the given entries carry each tag."""
+        try:
+            return library.tag_counts(list(entry_ids or [])[:_MAX_BULK])
+        except Exception as err:
+            logger.warning("tag_counts failed: %s", err)
+            return {}
+
     def rename_tag(self, old: str, new: str) -> dict:
         """Rename a tag everywhere, merging it into another tag when the new name already exists."""
         try:

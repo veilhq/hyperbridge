@@ -132,10 +132,13 @@
     found.slice(0, SHOWN).forEach(function (item) { listEl.appendChild(buildRow(item)); });
     var note = "";
     if (!tags.length) note = "No tags yet.";
-    else if (!found.length) note = "No tags match.";
+    else if (!found.length) note = "No tags match. Press Enter to add it.";
     else if (found.length > SHOWN) note = (found.length - SHOWN) + " more. Filter to narrow the list.";
     if (note) listEl.appendChild(makeEl("span", "settings-source-desc", note));
     sortEl.textContent = byName ? "A to Z" : "Most used";
+    var typed = filterEl.value.trim();
+    $("#tags-add").disabled = !typed || exists(typed);
+    $("#tags-add").setAttribute("data-tooltip", typed && !exists(typed) ? "Add " + typed + " to the vocabulary" : "Type a new tag in the box to add it");
     $("#tags-prune").disabled = !tags.some(function (item) { return item.count === 1; });
   }
 
@@ -187,6 +190,20 @@
     }).catch(function () { toast("error", "Could not tidy tags."); });
   }
 
+  // Adds the filter text as a new vocabulary term.
+  function add() {
+    var bridge = api();
+    var name = filterEl.value.trim();
+    if (!bridge || !bridge.create_tag || !name || exists(name)) return;
+    showError("");
+    Promise.resolve(bridge.create_tag(name)).then(function (result) {
+      if (!result || !result.ok) { showError((result && result.error) || "Could not add the tag."); return; }
+      filterEl.value = "";
+      document.dispatchEvent(new CustomEvent("hyperbridge:tags"));
+      return done("Added " + result.name + ".");
+    }).catch(function () { showError("Could not add the tag."); });
+  }
+
   function prune() {
     var bridge = api();
     var single = tags.filter(function (item) { return item.count === 1; }).length;
@@ -213,6 +230,10 @@
     sortEl = $("#tags-sort");
     errorEl = $("#tags-error");
     filterEl.addEventListener("input", render);
+    filterEl.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") { event.preventDefault(); add(); }
+    });
+    $("#tags-add").addEventListener("click", add);
     sortEl.addEventListener("click", function () { byName = !byName; render(); });
     $("#tags-prune").addEventListener("click", prune);
     $("#tags-tidy").addEventListener("click", tidy);

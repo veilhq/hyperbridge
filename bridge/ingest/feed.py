@@ -302,7 +302,7 @@ def accept(conn, ids, set_id=None) -> dict:
             conn.execute(f"UPDATE entries SET {', '.join(name + ' = ?' for name in HOP_FIELDS)} WHERE id = ?",
                          (*(row[name] for name in HOP_FIELDS), result["entry_id"]))
             capture.keep_details(conn, result["entry_id"], row["title"], row["creator"])
-            library.add_entry_tags(conn, result["entry_id"], json.loads(row["tags"] or "[]"))
+            library.apply_known_tags(conn, result["entry_id"], json.loads(row["tags"] or "[]"))
         conn.execute("UPDATE feed_items SET state = 'saved' WHERE id = ?", (row["id"],))
         if set_id and sets.place(result["entry_id"], int(set_id)):
             placed += 1

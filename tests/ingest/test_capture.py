@@ -301,7 +301,7 @@ class RunCaptureTests(LibraryCase):
                          ("Poster", "2024-03-08", "2024", "Ada Lovelace"))
         tags = {row[0] for row in self.conn.execute(
             "SELECT t.name FROM tags t JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = ?", (entry_id,))}
-        self.assertEqual(tags, {"example.com", "Poster"})
+        self.assertEqual(tags, {"Poster"})
 
     def test_non_image_body_is_rejected(self):
         url = "https://example.com/fake.png"

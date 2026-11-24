@@ -180,7 +180,7 @@ def backfill(conn, fetcher, limit=BACKFILL_LIMIT) -> int:
             (str(post.get("id") or match.group(1)), str(post.get("date-gmt") or "")[:10],
              str((data.get("tumblelog") or {}).get("title") or host)[:200], f"https://{host}/",
              reblog["reblog_from"], reblog["reblog_root"], row["id"]))
-        library.add_entry_tags(conn, row["id"], post.get("tags") or [])
+        library.apply_known_tags(conn, row["id"], post.get("tags") or [])
         done += 1
     return done
 

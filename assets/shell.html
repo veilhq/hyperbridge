@@ -135,10 +135,11 @@
         <section class="settings-panel" aria-labelledby="tags-title">
           <header class="settings-panel-head">
             <h2 class="settings-subhead" id="tags-title">Tags</h2>
-            <p class="settings-source-desc">Rename, merge or delete tags. A change applies to every entry that carries the tag and reaches your other machines on the next sync. Renaming a tag to the name of another tag merges them.</p>
+            <p class="settings-source-desc">Your tag vocabulary. Captures only pick up a hashtag or keyword that matches a term here, so new terms come from you. Rename, merge or delete a term and the change applies to every entry that carries it, reaching your other machines on the next sync. Renaming a term to another term's name merges them.</p>
           </header>
           <div class="settings-follow-form">
-            <input class="form-input" id="tags-filter" placeholder="Filter tags" maxlength="40" aria-label="Filter tags" autocomplete="off">
+            <input class="form-input" id="tags-filter" placeholder="Filter or add a tag" maxlength="40" aria-label="Filter or add a tag" autocomplete="off">
+            <button class="action-button action-button-ghost" id="tags-add" type="button" disabled>Add</button>
             <button class="action-button action-button-ghost" id="tags-sort" type="button">Most used</button>
             <button class="action-button action-button-ghost" id="tags-tidy" type="button" data-tooltip="Delete number-only tags and merge each plural into its singular">Tidy</button>
             <button class="action-button action-button-ghost" id="tags-prune" type="button">Delete single-use</button>
@@ -333,7 +334,7 @@
   <button class="action-icon" id="sel-accept" type="button" aria-label="Add to this set" data-tooltip="Add to this set" hidden><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
   <button class="action-icon" id="sel-add" type="button" aria-label="Add to set" data-tooltip="Add to set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
   <button class="action-icon" id="sel-follow" type="button" aria-label="Add channels to sources" data-tooltip="Add channels to sources" hidden><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></button>
-  <button class="action-icon" id="sel-tag" type="button" aria-label="Add tag" data-tooltip="Add tag"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>
+  <button class="action-icon" id="sel-tag" type="button" aria-label="Tags" data-tooltip="Tags"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>
   <button class="action-icon" id="sel-remove" type="button" aria-label="Remove from set" data-tooltip="Remove from set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
   <button class="action-icon" id="sel-recapture" type="button" aria-label="Re-capture at full size" data-tooltip="Re-capture at full size"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
   <button class="action-icon" id="sel-save" type="button" aria-label="Download" data-tooltip="Download"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg></button>
@@ -374,6 +375,23 @@
     <div class="modal-actions">
       <button class="action-icon" id="board-promote-cancel" type="button" data-icon="x" aria-label="Cancel" data-tooltip="Cancel"></button>
       <button class="action-icon board-confirm" id="board-promote-confirm" type="submit" data-icon="check" aria-label="Promote" data-tooltip="Promote"></button>
+    </div>
+  </form>
+</dialog>
+<div class="modal-overlay" id="tag-new-scrim"></div>
+<dialog class="modal-panel modal-panel-stack tag-new" id="tag-new" aria-labelledby="tag-new-title">
+  <form class="tag-new-form" id="tag-new-form" method="dialog" novalidate>
+    <div class="modal-head">
+      <h2 class="modal-title" id="tag-new-title">New tag</h2>
+      <p class="modal-hint" id="tag-new-hint"></p>
+    </div>
+    <div class="modal-body">
+      <input class="form-input" id="tag-new-name" maxlength="40" autocomplete="off" aria-label="Tag name">
+      <span class="settings-follow-error" id="tag-new-error" role="alert" hidden></span>
+    </div>
+    <div class="modal-actions">
+      <button class="action-icon" id="tag-new-cancel" type="button" aria-label="Cancel" data-tooltip="Cancel"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      <button class="action-icon tag-new-confirm" id="tag-new-confirm" type="submit" aria-label="Add tag" data-tooltip="Add tag"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
     </div>
   </form>
 </dialog>
@@ -425,8 +443,6 @@
         <input class="form-input" id="f-type" autocomplete="off">
         <label class="lightbox-label" for="f-year">Year</label>
         <input class="form-input" id="f-year" autocomplete="off" inputmode="numeric">
-        <label class="lightbox-label" for="f-tags">Tags</label>
-        <input class="form-input" id="f-tags" autocomplete="off" placeholder="Separate with commas">
         <div class="lightbox-actions">
           <button class="action-icon" type="submit" aria-label="Done" data-tooltip="Done"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
           <button class="action-icon" id="f-cancel" type="button" aria-label="Cancel" data-tooltip="Cancel"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>

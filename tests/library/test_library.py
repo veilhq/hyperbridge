@@ -84,12 +84,46 @@ class TagEditTests(LibraryOpsCase):
         self.assertEqual(library.parse_tags(" #Poster, poster ,, Retro  Type "), ["Poster", "Retro Type"])
         self.assertEqual(len(library.parse_tags([f"t{i}" for i in range(50)])), library.MAX_TAGS)
 
-    def test_update_replaces_tags_and_drops_unused_ones(self):
+    def test_update_replaces_tags_and_keeps_unused_ones_in_the_vocabulary(self):
         entry = self.add_entry(title="x")
         self.assertEqual(library.update_entry(entry, {"tags": "a, b"})["tags"], ["a", "b"])
         self.assertEqual(library.update_entry(entry, {"tags": "b, c"})["tags"], ["b", "c"])
         names = [row[0] for row in self.conn.execute("SELECT name FROM tags ORDER BY name")]
-        self.assertEqual(names, ["b", "c"])
+        self.assertEqual(names, ["a", "b", "c"])
+
+    def test_create_tag_adds_a_term_once_and_refuses_blank_or_numbers(self):
+        self.assertEqual(library.create_tag(" Poster "), {"ok": True, "name": "Poster", "existed": False})
+        self.assertEqual(library.create_tag("poster"), {"ok": True, "name": "Poster", "existed": True})
+        self.assertFalse(library.create_tag("  ")["ok"])
+        self.assertFalse(library.create_tag("2024")["ok"])
+        self.assertEqual(library.list_tags(), [{"name": "Poster", "count": 0}])
+
+    def test_remove_tags_takes_a_term_off_only_the_listed_entries_and_keeps_it(self):
+        first = self.add_entry(title="a")
+        second = self.add_entry(title="b")
+        library.add_tags([first, second], "glass")
+        self.assertEqual(library.remove_tags([first, 9999], "glass"), 1)
+        self.assertEqual((library.get_entry(first)["tags"], library.get_entry(second)["tags"]), ([], ["glass"]))
+        self.assertEqual(library.remove_tags([first], "glass"), 0)
+        self.assertEqual(library.remove_tags([first], "missing"), 0)
+        library.remove_tags([second], "glass")
+        self.assertEqual(library.list_tags(), [{"name": "glass", "count": 0}])
+
+    def test_tag_counts_reports_how_many_listed_entries_hold_each_tag(self):
+        first = self.add_entry(title="a")
+        second = self.add_entry(title="b")
+        other = self.add_entry(title="c")
+        library.add_tags([first, second], "glass")
+        library.add_tags([first, other], "brass")
+        self.assertEqual(library.tag_counts([first, second]), {"glass": 2, "brass": 1})
+        self.assertEqual(library.tag_counts([]), {})
+
+    def test_known_terms_never_create_a_tag(self):
+        self.conn.execute("INSERT INTO tags (name) VALUES ('Lamp')")
+        entry = self.add_entry(title="a")
+        self.assertEqual(library.apply_known_tags(self.conn, entry, ["lamps", "lamp", "glass", "1999"]), ["Lamp"])
+        self.assertEqual([row[0] for row in self.conn.execute("SELECT name FROM tags")], ["Lamp"])
+        self.assertEqual(library.get_entry(entry)["tags"], ["Lamp"])
 
     def test_tags_are_searchable_after_edit(self):
         entry = self.add_entry(title="x")

@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bridge.ingest import enrich  # noqa: E402
 from bridge.ingest import feed  # noqa: E402
 from bridge.ingest import rss  # noqa: E402
 from tests.core.test_db import LibraryCase  # noqa: E402
@@ -117,10 +116,6 @@ class RssTests(LibraryCase):
     def test_a_feed_is_used_when_the_home_page_cannot_be_read(self):
         items = rss.items("https://site.example/rss.xml", FakeSite({"https://site.example/rss.xml": RSS}), random.Random(1))
         self.assertEqual(len(items), 2)
-
-    def test_saved_feed_images_are_tagged_with_their_site_not_the_service(self):
-        row = {"source_service": "rss", "domain": "www.site.example", "collection": "Figs"}
-        self.assertEqual(enrich.source_tags(row), ["site.example", "figs"])
 
 
 if __name__ == "__main__":

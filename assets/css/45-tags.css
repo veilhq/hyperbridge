@@ -1,0 +1,19 @@
+/* ===== Hyperbridge: tag vocabulary picker and the new-tag dialog ===== */
+
+/* Each picker row leads with its state for the chosen entries: check (all), dash (some), blank (none). */
+.tag-pick-mark { display: inline-block; vertical-align: middle; margin-right: var(--space-2); color: var(--selected); }
+
+/* Above the lightbox, so a tag can be made from inside it. */
+#tag-new-scrim, .tag-new { z-index: calc(var(--z-modal) + 2); }
+.tag-new {
+  position: fixed; inset: 0; margin: auto; height: fit-content; width: calc(var(--space-6) * 12); max-width: 90vw;
+  color: var(--text);
+}
+.tag-new:not([open]) { display: none; }
+.tag-new-form { display: contents; }
+.tag-new-confirm { color: var(--interactive); border: var(--border-hair) solid var(--interactive-border); }
+
+/* A lightbox tag chip: the name filters the library, the x takes the tag off. */
+.lightbox-tag-name { padding: 0; font: inherit; color: inherit; letter-spacing: inherit; background: transparent; border: 0; cursor: pointer; }
+.lightbox-tag-name:hover { color: var(--interactive); }
+.lightbox-tag-name:focus-visible { outline: var(--border-rail) solid var(--focus); }

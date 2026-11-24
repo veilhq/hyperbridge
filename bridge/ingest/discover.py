@@ -210,7 +210,7 @@ def add_candidates(conn, urls, page_url, set_id, details=None) -> dict:
             capture.keep_details(conn, result["entry_id"], own.get("title"), own.get("creator"))
             tags = own.get("tags")
             if isinstance(tags, list):
-                library.add_entry_tags(conn, result["entry_id"], [str(tag) for tag in tags])
+                library.apply_known_tags(conn, result["entry_id"], [str(tag) for tag in tags])
         if set_id and sets.place(result["entry_id"], int(set_id)):
             placed += 1
     return {"added": added, "placed": placed}

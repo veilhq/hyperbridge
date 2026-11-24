@@ -102,6 +102,6 @@ def backfill(conn, fetcher, limit=LIMIT) -> int:
             " publisher = CASE WHEN publisher = '' THEN ? ELSE publisher END WHERE id = ?",
             (post["service"], post["ref"], post["creator"][:200], post["posted"], post["creator"][:200],
              post["text"][:1000], _PUBLISHERS[post["service"]], row["id"]))
-        library.add_entry_tags(conn, row["id"], post["tags"])
+        library.apply_known_tags(conn, row["id"], post["tags"])
         done += 1
     return done
