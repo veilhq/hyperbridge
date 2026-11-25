@@ -40,7 +40,8 @@
 .colors-card-name.is-blank { color: var(--text-dim); }
 .colors-card-name-input { font-family: var(--font-body); font-size: calc(var(--fs-prose-ui) * var(--font-body-scale)); }
 .colors-card-hex { color: var(--text-muted); letter-spacing: var(--track-body); text-transform: uppercase; }
-.colors-card-actions { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-2); }
+.colors-card-actions { display: flex; align-items: center; padding: var(--space-1); }
+.colors-card-actions .action-icon { flex: 1 1 0; width: auto; min-width: 0; }
 
 /* ---- Board tray: saved colors drag onto the board as swatches ---- */
 .board-tray-mode .segmented-option { padding: var(--space-1) var(--space-3); }
