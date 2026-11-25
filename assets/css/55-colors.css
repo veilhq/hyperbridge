@@ -1,0 +1,54 @@
+/* === Hyperbridge: saved colors - hex values kept on this machine for later === */
+#library[data-colors-view] > :not(.colors-view):not(.library-sentinel) { display: none; }
+#library[data-colors-view] { padding: 0; overflow: hidden; }
+#app:has(#library[data-colors-view]) ~ .select-bar { display: none; }
+
+.colors-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.colors-view[hidden] { display: none; }
+.colors-add { display: flex; align-items: center; gap: var(--space-2); }
+.colors-add-name { width: calc(var(--space-6) * 6); height: var(--space-5); padding: 0 var(--space-2); box-sizing: border-box; }
+
+/* ---- Grid: each card is the fill, its name and hex, and its actions ---- */
+.colors-grid {
+  flex: 1; min-height: 0; overflow-y: auto; align-content: start;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-6) * 5), 1fr)); gap: var(--space-3);
+  padding: var(--space-4);
+}
+.colors-grid:empty { display: none; }
+.colors-empty { margin: 0; padding: var(--space-6); text-align: center; font-family: var(--font-body); font-size: var(--fs-prose-ui); color: var(--text-dim); }
+.colors-empty[hidden] { display: none; }
+.colors-card { display: flex; flex-direction: column; border: var(--border-hair) solid var(--border); border-radius: var(--radius); background: var(--bg-surface); }
+.colors-card-fill {
+  height: calc(var(--space-6) * 3); padding: 0; border: 0; cursor: copy;
+  background: var(--swatch); border-radius: var(--radius) var(--radius) 0 0; box-shadow: inset 0 calc(var(--border-hair) * -1) 0 var(--border);
+}
+.colors-card-fill:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: calc(var(--border-rail) * -1); }
+.colors-card-meta { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3) 0; min-width: 0; }
+.colors-card-name {
+  padding: 0; border: 0; background: none; text-align: left; cursor: text; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-body); font-size: calc(var(--fs-prose-ui) * var(--font-body-scale)); color: var(--text-bright);
+}
+.colors-card-name.is-blank { color: var(--text-dim); }
+.colors-card-name-input { font-family: var(--font-body); font-size: calc(var(--fs-prose-ui) * var(--font-body-scale)); }
+.colors-card-hex { color: var(--text-muted); letter-spacing: var(--track-body); text-transform: uppercase; }
+.colors-card-actions { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-2); }
+.colors-card-actions .boards-spacer { flex: 1; }
+.colors-card-source { padding: 0; border: 0; background: none; border-radius: var(--radius); cursor: pointer; display: flex; }
+.colors-card-source img { width: var(--space-5); height: var(--space-5); object-fit: cover; border-radius: var(--radius); }
+.colors-card-source:hover img { outline: var(--border-hair) solid var(--interactive-border); }
+
+/* ---- Board tray: saved colors drag onto the board as swatches ---- */
+.board-tray-mode .segmented-option { padding: var(--space-1) var(--space-3); }
+.board-tray-colors { display: flex; flex-direction: column; gap: var(--space-2); column-span: all; }
+.board-tray-color {
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1); cursor: grab; min-width: 0;
+  border-radius: var(--radius); outline: var(--border-hair) solid transparent; transition: outline-color var(--motion-fast) var(--ease);
+}
+.board-tray-color:hover { outline-color: var(--interactive-border); }
+.board-tray-color i { flex: none; width: var(--space-5); height: var(--space-5); border-radius: var(--radius); background: var(--swatch); box-shadow: inset 0 0 0 var(--border-hair) var(--border); }
+.board-tray-color span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-tray-color b { font-weight: inherit; color: var(--text-muted); letter-spacing: var(--track-body); }
+
+@media (prefers-reduced-motion: reduce) { .board-tray-color { transition: none; } }
+html.a11y-reduce-motion .board-tray-color { transition: none; }

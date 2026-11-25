@@ -8,8 +8,10 @@ function announce(name, detail) {
   document.dispatchEvent(new CustomEvent(name, { detail: detail }));
 }
 
+// True while the boards or saved colors view has taken over the library pane.
 function boardsOpen() {
-  return $("#library").hasAttribute("data-boards-view");
+  var library = $("#library");
+  return library.hasAttribute("data-boards-view") || library.hasAttribute("data-colors-view");
 }
 
 function markTab(button, active) {

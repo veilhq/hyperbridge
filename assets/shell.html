@@ -22,6 +22,7 @@
       <button class="content-card sets-tab content-card-active" id="sets-all" type="button" aria-current="true"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 22H4a2 2 0 0 1-2-2V6"/><path d="m22 13-1.296-1.296a2.41 2.41 0 0 0-3.408 0L11 18"/><circle cx="12" cy="8" r="2"/><rect width="16" height="16" x="6" y="2" rx="2"/></svg>All<span class="sets-tab-count" id="all-count"></span></button>
       <button class="content-card sets-tab" id="sets-unsorted" type="button" data-tooltip="Entries in no set"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>Unsorted<span class="sets-tab-count" id="unsorted-count"></span></button>
       <button class="content-card sets-tab" id="sets-boards" type="button" data-tooltip="Scratch boards on this machine"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Boards<span class="sets-tab-count" id="boards-count"></span></button>
+      <button class="content-card sets-tab" id="sets-colors" type="button" data-tooltip="Saved colors on this machine"><svg class="icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>Colors<span class="sets-tab-count" id="colors-count"></span></button>
       <hr class="sets-stack-rule">
       <div class="sets-list" id="sets-list"></div>
       </nav>
@@ -297,7 +298,13 @@
         </header>
         <div class="boards-main">
           <aside class="board-tray" id="board-tray" aria-label="Library" hidden>
-            <div class="board-tray-head"><span class="board-legend">Library</span><span class="board-legend" id="board-tray-count"></span></div>
+            <div class="board-tray-head">
+              <div class="segmented board-tray-mode" id="board-tray-mode" role="group" aria-label="Tray contents">
+                <button class="segmented-option" type="button" data-mode="library" aria-pressed="true">Library</button>
+                <button class="segmented-option" type="button" data-mode="colors" aria-pressed="false">Colors</button>
+              </div>
+              <span class="board-legend" id="board-tray-count"></span>
+            </div>
             <div class="board-tray-filter" id="board-tray-filter" hidden></div>
             <div class="board-tray-grid" id="board-tray-grid"></div>
           </aside>
@@ -307,6 +314,7 @@
             <div class="board-ctx" id="board-ctx" hidden></div>
             <div class="board-dock" id="board-dock">
               <button class="action-icon is-active" type="button" data-tool="select" data-icon="pointer" aria-label="Select and move" data-tooltip="Select and move  V"></button>
+              <button class="action-icon" type="button" data-tool="hand" data-icon="hand" aria-label="Pan" data-tooltip="Pan  H (or hold Space, or two-finger swipe)"></button>
               <button class="action-icon" type="button" data-tool="note" data-icon="note" aria-label="Note" data-tooltip="Note  N"></button>
               <button class="action-icon" type="button" data-tool="label" data-icon="type" aria-label="Label" data-tooltip="Label  T"></button>
               <button class="action-icon" type="button" data-tool="frame" data-icon="frame" aria-label="Frame" data-tooltip="Frame  F"></button>
@@ -325,6 +333,20 @@
             <input type="file" id="board-file" accept="image/*" multiple hidden>
           </div>
         </div>
+      </section>
+      <section class="colors-view" id="colors-view" aria-label="Saved colors" hidden>
+        <header class="boards-bar">
+          <span class="board-legend">Colors</span>
+          <span class="board-legend" id="colors-tally"></span>
+          <span class="boards-spacer"></span>
+          <form class="colors-add" id="colors-add">
+            <label class="board-hex" id="colors-add-field" style="--hue:transparent"><i></i><input id="colors-add-hex" maxlength="7" spellcheck="false" autocomplete="off" placeholder="HEX" aria-label="Hex color"></label>
+            <input class="form-input colors-add-name" id="colors-add-name" maxlength="60" autocomplete="off" placeholder="Name (optional)" aria-label="Color name">
+            <button class="action-icon" type="submit" data-icon="plus" aria-label="Save color" data-tooltip="Save color"></button>
+          </form>
+        </header>
+        <div class="colors-grid" id="colors-grid"></div>
+        <p class="colors-empty" id="colors-empty" hidden>No saved colors yet. Right-click a color in an image's palette, save one from a board, or type a hex above.</p>
       </section>
     </main>
   </div>

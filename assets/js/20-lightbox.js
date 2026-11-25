@@ -252,7 +252,7 @@
       chip.style.backgroundColor = hex;
       chip.setAttribute("data-color", hex);
       chip.setAttribute("aria-label", "Show entries with a color like " + hex);
-      chip.setAttribute("data-tooltip", hex + " - show similar");
+      chip.setAttribute("data-tooltip", hex + " - show similar, right-click to save");
       box.appendChild(chip);
     });
   }
@@ -697,9 +697,19 @@
       toast("info", "Cancelled.");
     });
     byId("lb-form").addEventListener("submit", onSubmit);
+    // Right-click or Shift+click saves a palette color, linked to this image; a plain click shows similar entries.
+    function saveSwatch(event) {
+      var chip = event.target.closest("[data-color]");
+      if (!chip || !window.HbColors) return false;
+      event.preventDefault();
+      window.HbColors.save(chip.getAttribute("data-color"), current ? current.id : null);
+      return true;
+    }
+    byId("lb-swatches").addEventListener("contextmenu", function (event) { if (saveSwatch(event)) event.stopPropagation(); });
     byId("lb-swatches").addEventListener("click", function (event) {
       var chip = event.target.closest("[data-color]");
       if (!chip) return;
+      if (event.shiftKey && saveSwatch(event)) return;
       document.dispatchEvent(new CustomEvent("hyperbridge:color", { detail: { color: chip.getAttribute("data-color") } }));
       closeDialog();
     });

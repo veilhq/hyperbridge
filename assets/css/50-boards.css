@@ -79,7 +79,8 @@
 }
 .board-canvas.is-snap { background-image: radial-gradient(circle, var(--text-dim) 1px, transparent 1.5px); }
 .board-canvas.tool-note, .board-canvas.tool-label, .board-canvas.tool-frame { cursor: crosshair; }
-.board-canvas.is-space, .board-canvas.is-panning { cursor: grab; }
+.board-canvas.tool-hand, .board-canvas.tool-hand *, .board-canvas.is-space { cursor: grab; }
+.board-canvas.is-panning, .board-canvas.is-panning * { cursor: grabbing; }
 .board-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; --canvas-inv: 1; }
 .board-empty {
   position: absolute; inset: 0; margin: 0; display: grid; place-items: center; pointer-events: none;

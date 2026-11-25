@@ -7,6 +7,10 @@
   var ROW = 160;
   var NOTE_SIZE = 180;
   var SWATCH = 44;
+  var WHEEL_NOTCH = 120;
+  var WHEEL_GESTURE_MS = 200;
+  var WHEEL_ZOOM_RATE = 0.0015;
+  var PINCH_ZOOM_RATE = 0.01;
   var SWATCH_STRIDE = 56;
   var SAVE_MS = 400;
   var ARM_MS = 2500;
@@ -16,10 +20,12 @@
   var KEY_VIEW = "hyperbridge-board-view-";
   var KEY_SNAP = "hyperbridge-board-snap";
   var KEY_TRAY = "hyperbridge-board-tray";
+  var KEY_TRAY_MODE = "hyperbridge-board-tray-mode";
   var KEY_ACTIVE = "hyperbridge-board-active";
 
   var ICONS = {
     "pointer": '<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>',
+    "hand": '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
     "note": '<path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/>',
     "type": '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/>',
     "frame": '<line x1="22" x2="2" y1="6" y2="6"/><line x1="22" x2="2" y1="18" y2="18"/><line x1="6" x2="6" y1="2" y2="22"/><line x1="18" x2="18" y1="2" y2="22"/>',
@@ -82,7 +88,10 @@
   var filter = null;
   var colorFor = null;
   var dragEntry = null;
+  var dragColor = null;
   var ghostEl = null;
+  var trayMode = readStore(KEY_TRAY_MODE) === "colors" ? "colors" : "library";
+  var trayColors = [];
   var trayEntries = [];
   var trayTotal = 0;
   var saveTimer = 0;
@@ -129,6 +138,7 @@
       } else if (raw.type === "text" && raw.hb === "swatch" && parseHex(raw.color)) {
         base.type = "swatch";
         base.hex = parseHex(raw.color);
+        base.entry = typeof raw.entry === "number" ? raw.entry : null;
       } else {
         base.type = "raw";
         base.raw = raw;
@@ -146,7 +156,10 @@
       else if (n.type === "frame") { out.type = "group"; out.label = n.text; }
       else if (n.type === "note") { out.type = "text"; out.hb = "note"; out.text = n.text; out.color = typeof n.color === "string" ? n.color : String(n.color + 1); }
       else if (n.type === "label") { out.type = "text"; out.hb = "label"; out.text = n.text; }
-      else if (n.type === "swatch") { out.type = "text"; out.hb = "swatch"; out.text = n.hex; out.color = n.hex; }
+      else if (n.type === "swatch") {
+        out.type = "text"; out.hb = "swatch"; out.text = n.hex; out.color = n.hex;
+        if (n.entry != null) out.entry = n.entry;
+      }
       return out;
     });
     return { nodes: nodes, edges: board.edges || [] };
@@ -253,6 +266,35 @@
     applyView();
     storeView();
   }
+  function panBy(dx, dy) {
+    view = { z: view.z, x: view.x - dx, y: view.y - dy };
+    applyView();
+    storeView();
+  }
+
+  // Mouse wheels step in whole notches with no sideways delta; anything else is a trackpad.
+  // The verdict holds for the rest of a gesture so a swipe never flips into a zoom midway.
+  var wheelKind = null, wheelKindAt = 0;
+  function classifyWheel(event) {
+    var now = performance.now();
+    if (wheelKind && now - wheelKindAt < WHEEL_GESTURE_MS) { wheelKindAt = now; return wheelKind; }
+    var notch = event.wheelDeltaY && event.wheelDeltaY % WHEEL_NOTCH === 0;
+    wheelKind = event.deltaMode !== 0 || (event.deltaX === 0 && notch) ? "mouse" : "trackpad";
+    wheelKindAt = now;
+    return wheelKind;
+  }
+
+  // Trackpad: two-finger swipe pans, pinch (sent as Ctrl+wheel) zooms. Mouse wheel zooms.
+  function onWheel(event) {
+    if (!board) return;
+    event.preventDefault();
+    var r = canvas.getBoundingClientRect();
+    var sx = event.clientX - r.left, sy = event.clientY - r.top;
+    if (classifyWheel(event) === "mouse") zoomAt(sx, sy, Math.exp(-event.deltaY * WHEEL_ZOOM_RATE));
+    else if (event.ctrlKey) zoomAt(sx, sy, Math.exp(-event.deltaY * PINCH_ZOOM_RATE));
+    else panBy(event.deltaX, event.deltaY);
+  }
+
   function zoomCenter(factor) {
     var r = canvas.getBoundingClientRect();
     zoomAt(r.width / 2, r.height / 2, factor);
@@ -393,9 +435,24 @@
     toggle.classList.toggle("is-active", !tray.hidden);
     toggle.setAttribute("aria-pressed", tray.hidden ? "false" : "true");
     if (tray.hidden) return;
+    var colorsMode = trayMode === "colors";
+    var mode = byId("board-tray-mode");
+    mode.style.setProperty("--segment-index", colorsMode ? 1 : 0);
+    Array.prototype.forEach.call(mode.querySelectorAll("[data-mode]"), function (button) {
+      button.setAttribute("aria-pressed", button.getAttribute("data-mode") === trayMode ? "true" : "false");
+    });
+    var chip = byId("board-tray-filter");
+    if (colorsMode) {
+      chip.hidden = true;
+      byId("board-tray-count").textContent = pad2(trayColors.length);
+      byId("board-tray-grid").innerHTML = trayColors.length ? '<div class="board-tray-colors">' + trayColors.map(function (color) {
+        return '<div class="board-tray-color" draggable="true" data-hex="' + color.hex + '" data-entry="' + (color.entry_id || "") + '" data-tooltip="Drag onto the board">' +
+          '<i style="--swatch:' + color.hex + '"></i><span>' + esc(color.name || "") + "</span><b>" + color.hex + "</b></div>";
+      }).join("") + "</div>" : '<p class="board-tray-empty">No saved colors yet.</p>';
+      return;
+    }
     var on = onBoardIds();
     byId("board-tray-count").textContent = pad2(trayTotal);
-    var chip = byId("board-tray-filter");
     chip.hidden = !filter;
     chip.innerHTML = filter ? '<span class="board-filter-chip board-legend"><i style="--swatch:' + filter + '"></i>' + filter +
       '<button type="button" data-clear-filter aria-label="Clear color filter" data-tooltip="Clear color filter">' + icon("x") + "</button></span>" : "";
@@ -407,6 +464,11 @@
 
   function loadTray() {
     if (tray.hidden || !api()) { renderTray(); return; }
+    if (trayMode === "colors") {
+      if (!window.HbColors) { renderTray(); return; }
+      window.HbColors.list().then(function (found) { trayColors = found; renderTray(); });
+      return;
+    }
     Promise.resolve(api().list_entries("", 0, TRAY_LIMIT, null, "", "", filter || "")).then(function (result) {
       trayEntries = ((result && result.entries) || []).filter(function (entry) { return entry.thumb; });
       trayTotal = (result && result.total) || 0;
@@ -444,7 +506,10 @@
     if (sel.length === 1) {
       var n = sel[0];
       if (n.type === "image") buttons.push(["palette", "Pull palette", "pull"]);
-      if (n.type === "swatch") buttons.push(["filter", filter === n.hex ? "Clear color filter" : "Filter library by color", "filter", false, filter === n.hex]);
+      if (n.type === "swatch") {
+        buttons.push(["filter", filter === n.hex ? "Clear color filter" : "Filter library by color", "filter", false, filter === n.hex]);
+        buttons.push(["bookmark-plus", "Save color", "save-color"]);
+      }
       if (n.type === "note") buttons.push(["palette", "Note color", "recolor", false, colorFor === n.id]);
       if (n.type !== "frame") buttons.push(["bring-front", "Bring to front", "front"]);
     } else {
@@ -478,7 +543,7 @@
     hexes.forEach(function (hex, i) {
       var id = uid();
       ids[id] = true;
-      board.nodes.push({ id: id, type: "swatch", hex: hex, x: n.x + i * SWATCH_STRIDE, y: y, w: SWATCH, h: SWATCH });
+      board.nodes.push({ id: id, type: "swatch", hex: hex, entry: n.entry, x: n.x + i * SWATCH_STRIDE, y: y, w: SWATCH, h: SWATCH });
     });
     selected = ids;
     changed();
@@ -787,6 +852,13 @@
     applyView();
   }
 
+  function setTrayMode(value) {
+    if (value === trayMode) return;
+    trayMode = value;
+    writeStore(KEY_TRAY_MODE, value);
+    loadTray();
+  }
+
   function renderSnap() {
     var button = byId("board-snap");
     button.classList.toggle("is-active", snap);
@@ -856,6 +928,7 @@
     event.stopPropagation();
     if (event.code === "Space") { event.preventDefault(); spaceDown = true; canvas.classList.add("is-space"); return; }
     if (key === "v") setTool("select");
+    else if (key === "h") setTool("hand");
     else if (key === "n") setTool("note");
     else if (key === "t") setTool("label");
     else if (key === "f") setTool("frame");
@@ -901,7 +974,7 @@
     if (editing) commitEdit();
     if (colorFor) { colorFor = null; }
     var p = toWorld(event);
-    if (event.button === 1 || spaceDown) {
+    if (event.button === 1 || spaceDown || (tool === "hand" && event.button === 0)) {
       event.preventDefault();
       drag = { kind: "pan", lx: event.clientX, ly: event.clientY };
       canvas.classList.add("is-panning");
@@ -1060,6 +1133,7 @@
     event.dataTransfer.dropEffect = "copy";
     var p = toWorld(event);
     if (dragEntry) showGhost(p, DEF_W, dragEntry.width && dragEntry.height ? DEF_W * dragEntry.height / dragEntry.width : DEF_W * 0.75, "");
+    else if (dragColor) showGhost(p, SWATCH, SWATCH, "");
     else showGhost(p, DEF_W, DEF_W * 0.75, "Drop image");
   }
 
@@ -1071,6 +1145,16 @@
     hideGhost();
     var p = toWorld(event);
     if (dragEntry) { placeEntry(tileFromEntry(dragEntry), p.x, p.y); dragEntry = null; return; }
+    if (dragColor) {
+      var id = uid();
+      board.nodes.push({ id: id, type: "swatch", hex: dragColor.hex, entry: dragColor.entry,
+        x: snapV(p.x - SWATCH / 2), y: snapV(p.y - SWATCH / 2), w: SWATCH, h: SWATCH });
+      dragColor = null;
+      selectOnly(id);
+      changed();
+      render();
+      return;
+    }
     var files = Array.prototype.slice.call((event.dataTransfer && event.dataTransfer.files) || []);
     if (files.length) addFiles(files, p);
   }
@@ -1083,6 +1167,7 @@
     if (!first) return;
     if (act === "pull") pullPalette(first);
     else if (act === "filter") toggleFilter(first.hex);
+    else if (act === "save-color" && window.HbColors) window.HbColors.save(first.hex, first.entry);
     else if (act === "recolor") { colorFor = colorFor === first.id ? null : first.id; updateCtx(); }
     else if (act === "hue") { first.color = Number(button.getAttribute("data-i")); changed(); renderWorld(); }
     else if (act === "front") { board.nodes = board.nodes.filter(function (n) { return n !== first; }).concat([first]); changed(); renderWorld(); }
@@ -1141,12 +1226,7 @@
       else if (n.type === "frame" && event.target.closest(".board-frame-label")) beginEdit(n);
       else if (n.type === "swatch") toggleFilter(n.hex);
     });
-    canvas.addEventListener("wheel", function (event) {
-      if (!board) return;
-      event.preventDefault();
-      var r = canvas.getBoundingClientRect();
-      zoomAt(event.clientX - r.left, event.clientY - r.top, Math.exp(-event.deltaY * 0.0015));
-    }, { passive: false });
+    canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("dragover", onDragOver);
     canvas.addEventListener("dragleave", function (event) { if (!canvas.contains(event.relatedTarget)) hideGhost(); });
     canvas.addEventListener("drop", onDrop);
@@ -1177,6 +1257,14 @@
     byId("board-order").addEventListener("click", toggleOrder);
 
     byId("board-tray-grid").addEventListener("dragstart", function (event) {
+      var swatch = event.target.closest("[data-hex]");
+      if (swatch) {
+        var entryId = Number(swatch.getAttribute("data-entry"));
+        dragColor = { hex: swatch.getAttribute("data-hex"), entry: entryId || null };
+        event.dataTransfer.setData("text/plain", dragColor.hex);
+        event.dataTransfer.effectAllowed = "copy";
+        return;
+      }
       var item = event.target.closest("[data-entry]");
       if (!item) return;
       var id = Number(item.getAttribute("data-entry"));
@@ -1184,7 +1272,12 @@
       event.dataTransfer.setData("text/plain", "hyperbridge:entry/" + id);
       event.dataTransfer.effectAllowed = "copy";
     });
-    byId("board-tray-grid").addEventListener("dragend", function () { dragEntry = null; hideGhost(); });
+    byId("board-tray-grid").addEventListener("dragend", function () { dragEntry = null; dragColor = null; hideGhost(); });
+    byId("board-tray-mode").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-mode]");
+      if (button) setTrayMode(button.getAttribute("data-mode"));
+    });
+    document.addEventListener("hyperbridge:colors-changed", function () { if (isOpen && trayMode === "colors") loadTray(); });
     byId("board-tray-filter").addEventListener("click", function (event) {
       if (!event.target.closest("[data-clear-filter]")) return;
       filter = null;

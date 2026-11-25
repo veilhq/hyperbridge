@@ -54,6 +54,7 @@ from bridge.ingest import sources  # noqa: E402
 from bridge.ingest import pinterest  # noqa: E402
 from bridge.ingest import trail  # noqa: E402
 from bridge.library import boards  # noqa: E402
+from bridge.library import colors  # noqa: E402
 from bridge.library import creators  # noqa: E402
 from bridge.core import db  # noqa: E402
 from bridge.core import prefs  # noqa: E402
@@ -719,6 +720,31 @@ class HyperbridgeAPI:
         except Exception as err:
             logger.warning("promote_board failed: %s", err)
             return {"ok": False, "error": "Could not promote that board."}
+
+    def list_colors(self) -> list:
+        """Return every saved color, newest first, each with the thumbnail tile of its source image when it has one."""
+        saved = colors.list_colors()
+        tiles = {tile["id"]: tile for tile in self.board_tiles([item["entry_id"] for item in saved if item["entry_id"]])}
+        for item in saved:
+            tile = tiles.get(item["entry_id"])
+            item["source"] = {"title": tile.get("title") or "Untitled", "thumb": tile.get("thumb")} if tile else None
+        return saved
+
+    def save_color(self, hex_value: str, name: str = "", entry_id: int | None = None) -> dict:
+        """Save a hex color, optionally named and linked to the library image it came from."""
+        try:
+            return colors.save_color(hex_value, name, int(entry_id) if str(entry_id).isdigit() else None)
+        except Exception as err:
+            logger.warning("save_color failed: %s", err)
+            return {"ok": False, "error": "Could not save that color."}
+
+    def rename_color(self, color_id: int, name: str) -> dict:
+        """Set or clear a saved color's name."""
+        return colors.rename_color(int(color_id), name)
+
+    def delete_color(self, color_id: int) -> bool:
+        """Delete a saved color."""
+        return colors.delete_color(int(color_id))
 
     def save_asset(self, asset_id: int) -> str:
         """Ask where to save one asset and copy it there; returns saved, cancelled or failed."""
