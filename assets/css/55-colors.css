@@ -8,21 +8,29 @@
 .colors-add { display: flex; align-items: center; gap: var(--space-2); }
 .colors-add-name { width: calc(var(--space-6) * 6); height: var(--space-5); padding: 0 var(--space-2); box-sizing: border-box; }
 
-/* ---- Grid: each card is the fill, its name and hex, and its actions ---- */
+/* ---- Grid: each card is a plain color tile; name, hex and actions slide up on hover ---- */
 .colors-grid {
   flex: 1; min-height: 0; overflow-y: auto; align-content: start;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-6) * 5), 1fr)); gap: var(--space-3);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-6) * 4), 1fr)); gap: var(--space-3);
   padding: var(--space-4);
 }
 .colors-grid:empty { display: none; }
 .colors-empty { margin: 0; padding: var(--space-6); text-align: center; font-family: var(--font-body); font-size: var(--fs-prose-ui); color: var(--text-dim); }
 .colors-empty[hidden] { display: none; }
-.colors-card { display: flex; flex-direction: column; border: var(--border-hair) solid var(--border); border-radius: var(--radius); background: var(--bg-surface); }
-.colors-card-fill {
-  height: calc(var(--space-6) * 3); padding: 0; border: 0; cursor: copy;
-  background: var(--swatch); border-radius: var(--radius) var(--radius) 0 0; box-shadow: inset 0 calc(var(--border-hair) * -1) 0 var(--border);
+.colors-card {
+  position: relative; aspect-ratio: 1; overflow: hidden; background: var(--swatch);
+  border: var(--border-hair) solid var(--border); border-radius: var(--radius);
+  transition: border-color var(--motion-base) var(--ease);
 }
+.colors-card:hover, .colors-card:focus-within { border-color: var(--interactive); }
+.colors-card-fill { position: absolute; inset: 0; width: 100%; padding: 0; border: 0; background: none; cursor: copy; }
 .colors-card-fill:focus-visible { outline: var(--border-rail) solid var(--focus); outline-offset: calc(var(--border-rail) * -1); }
+.colors-card-details {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--bg-card); border-top: var(--border-hair) solid var(--border);
+  transform: translateY(100%); transition: transform var(--motion-slow) var(--ease);
+}
+.colors-card:hover .colors-card-details, .colors-card:focus-within .colors-card-details { transform: translateY(0); }
 .colors-card-meta { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3) 0; min-width: 0; }
 .colors-card-name {
   padding: 0; border: 0; background: none; text-align: left; cursor: text; min-width: 0;
@@ -33,10 +41,6 @@
 .colors-card-name-input { font-family: var(--font-body); font-size: calc(var(--fs-prose-ui) * var(--font-body-scale)); }
 .colors-card-hex { color: var(--text-muted); letter-spacing: var(--track-body); text-transform: uppercase; }
 .colors-card-actions { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-2); }
-.colors-card-actions .boards-spacer { flex: 1; }
-.colors-card-source { padding: 0; border: 0; background: none; border-radius: var(--radius); cursor: pointer; display: flex; }
-.colors-card-source img { width: var(--space-5); height: var(--space-5); object-fit: cover; border-radius: var(--radius); }
-.colors-card-source:hover img { outline: var(--border-hair) solid var(--interactive-border); }
 
 /* ---- Board tray: saved colors drag onto the board as swatches ---- */
 .board-tray-mode .segmented-option { padding: var(--space-1) var(--space-3); }
@@ -50,5 +54,5 @@
 .board-tray-color span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-tray-color b { font-weight: inherit; color: var(--text-muted); letter-spacing: var(--track-body); }
 
-@media (prefers-reduced-motion: reduce) { .board-tray-color { transition: none; } }
-html.a11y-reduce-motion .board-tray-color { transition: none; }
+@media (prefers-reduced-motion: reduce) { .board-tray-color, .colors-card, .colors-card-details { transition: none; } }
+html.a11y-reduce-motion .board-tray-color, html.a11y-reduce-motion .colors-card, html.a11y-reduce-motion .colors-card-details { transition: none; }

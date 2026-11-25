@@ -4,6 +4,7 @@
 
   var ICONS = {
     "copy": '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    "image": '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
     "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     "plus": '<path d="M5 12h14"/><path d="M12 5v14"/>',
     "trash": '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>'
@@ -77,18 +78,17 @@
   function cardHTML(item) {
     var name = item.name ? esc(item.name) : "Name";
     var source = item.source
-      ? '<button class="colors-card-source" type="button" data-act="source" aria-label="Open source image" data-tooltip="' + esc(item.source.title) + '">' +
-        (item.source.thumb ? '<img alt="" src="' + esc(item.source.thumb) + '">' : "") + "</button>"
+      ? '<button class="action-icon" type="button" data-act="source" aria-label="Open source image" data-tooltip="' + esc(item.source.title || "Open source image") + '">' + icon("image") + "</button>"
       : "";
-    return '<div class="colors-card" data-color-id="' + item.id + '">' +
-      '<button class="colors-card-fill" type="button" data-act="copy" style="--swatch:' + item.hex + '" aria-label="Copy ' + item.hex + '" data-tooltip="Copy ' + item.hex + '"></button>' +
-      '<div class="colors-card-meta"><button class="colors-card-name' + (item.name ? "" : " is-blank") + '" type="button" data-act="rename" data-tooltip="Rename">' + name + "</button>" +
+    return '<div class="colors-card" data-color-id="' + item.id + '" style="--swatch:' + item.hex + '">' +
+      '<button class="colors-card-fill" type="button" data-act="copy" aria-label="Copy ' + item.hex + '"></button>' +
+      '<div class="colors-card-details"><div class="colors-card-meta"><button class="colors-card-name' + (item.name ? "" : " is-blank") + '" type="button" data-act="rename" data-tooltip="Rename">' + name + "</button>" +
       '<span class="colors-card-hex">' + item.hex + "</span></div>" +
-      '<div class="colors-card-actions">' + source + '<span class="boards-spacer"></span>' +
+      '<div class="colors-card-actions">' + source +
       '<button class="action-icon" type="button" data-act="filter" aria-label="Show entries with a color like ' + item.hex + '" data-tooltip="Show similar">' + icon("search") + "</button>" +
       '<button class="action-icon" type="button" data-act="copy" aria-label="Copy hex" data-tooltip="Copy hex">' + icon("copy") + "</button>" +
       '<button class="action-icon action-icon-danger" type="button" data-act="delete" aria-label="Delete color" data-tooltip="Delete color">' + icon("trash") + "</button>" +
-      "</div></div>";
+      "</div></div></div>";
   }
 
   function render() {
